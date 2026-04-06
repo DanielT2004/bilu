@@ -2,8 +2,6 @@
 //  biluApp.swift
 //  bilu
 //
-//  Created by Danny on 3/13/26.
-//
 
 import SwiftUI
 
@@ -12,10 +10,9 @@ struct biluApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-               
+                Color(hex: "f0ede6").ignoresSafeArea()
                 HomeView()
             }
-            .ignoresSafeArea(.all)
         }
     }
 }

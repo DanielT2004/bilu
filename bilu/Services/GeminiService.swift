@@ -51,7 +51,17 @@ enum GeminiService {
                 #endif
                 return [fallbackRec]
             }
+            #if DEBUG
+            if let raw = String(data: data, encoding: .utf8) {
+                print("[GeminiService] RAW RESPONSE (first 2000 chars):\n\(raw.prefix(2000))")
+            }
+            #endif
             let decoded = try JSONDecoder().decode(VibeResult.self, from: data)
+            #if DEBUG
+            for rec in decoded.recommendations {
+                print("[GeminiService] REC | name=\(rec.name) | image=\(rec.image)")
+            }
+            #endif
             return decoded.recommendations
         } catch {
             return [fallbackRec]
