@@ -5,6 +5,7 @@
 
 import Foundation
 import Combine
+import CoreLocation
 
 enum Step: String, CaseIterable {
     case occasion
@@ -64,7 +65,9 @@ final class HomeViewModel: ObservableObject {
     @Published var step: Step = .occasion
     @Published var selection: VibeSelection
     @Published var recommendations: [Recommendation] = []
+    @Published var isEnriching: Bool = false
     @Published var loadingPhase: String = "Scanning the streets\nfor your vibe..."
+    @Published var detectedLocation: String = "Los Angeles"
 
     init() {
         self.selection = VibeSelection()
@@ -77,7 +80,7 @@ final class HomeViewModel: ObservableObject {
         selection.keyQuestionAnswer = ""
         selection.keyQuestionTimeWindow = nil
         selection.keyQuestionDate = nil
-        selection.foodFeeling = ""
+        selection.foodFeelings = []
         selection.location = ""
         selection.pricePoints = ["$$", "$$$"]
         selection.partySize = 2
@@ -109,8 +112,22 @@ final class HomeViewModel: ObservableObject {
     }
 
     func selectFoodFeeling(_ key: String) {
-        selection.foodFeeling = key
+        if key == "Surprise me" {
+            selection.foodFeelings = selection.foodFeelings.contains("Surprise me") ? [] : ["Surprise me"]
+        } else {
+            selection.foodFeelings.removeAll { $0 == "Surprise me" }
+            if let idx = selection.foodFeelings.firstIndex(of: key) {
+                selection.foodFeelings.remove(at: idx)
+            } else {
+                selection.foodFeelings.append(key)
+            }
+        }
+    }
+
+    func continueFromFoodFeeling() {
+        guard !selection.foodFeelings.isEmpty else { return }
         if fineTuneType == "none" {
+            selection.location = effectiveLocation
             Task {
                 try? await Task.sleep(nanoseconds: 260_000_000)
                 await submitSurvey()
@@ -119,6 +136,8 @@ final class HomeViewModel: ObservableObject {
             step = .location
         }
     }
+
+    var canContinueFromFoodFeeling: Bool { !selection.foodFeelings.isEmpty }
 
     // MARK: - Fine-tune
 
@@ -138,6 +157,16 @@ final class HomeViewModel: ObservableObject {
 
     var showPriceSection: Bool { fineTuneType == "price" || fineTuneType == "full" }
     var showPartySizeSection: Bool { fineTuneType == "full" }
+
+    func continueFromKeyQuestion() {
+        if selection.keyQuestionAnswer == "Here to study or work" {
+            selection.foodFeelings = ["Fresh & crisp"]
+            selection.location = effectiveLocation
+            Task { await submitSurvey() }
+        } else {
+            step = .foodFeeling
+        }
+    }
 
     var canContinueFromKeyQuestion: Bool {
         guard !selection.keyQuestionAnswer.isEmpty else { return false }
@@ -190,6 +219,7 @@ final class HomeViewModel: ObservableObject {
         step = .occasion
         selection = VibeSelection()
         recommendations = []
+        isEnriching = false
     }
 
     // MARK: - Survey Submit
@@ -213,15 +243,39 @@ final class HomeViewModel: ObservableObject {
             }
         }
 
-        recommendations = await GeminiService.getVibeRecommendations(selection: selection)
+        // Phase 1: Gemini results — show cards immediately
+        let result = await GeminiService.getVibeRecommendations(selection: selection)
+        recommendations = result.recommendations
         step = .reveal
+
+        // Phase 2: Places enrichment in background — updates images + map pins
+        let groundingPlaces = result.groundingPlaces ?? []
+        let location = effectiveLocation
+        isEnriching = true
+        Task {
+            let enriched = await GeminiService.enrichRecommendations(
+                result.recommendations,
+                groundingPlaces: groundingPlaces,
+                location: location
+            )
+            recommendations = enriched
+            isEnriching = false
+        }
     }
 
     // MARK: - Map label
 
     var mapLocationLabel: String {
         let loc = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
-        return loc.isEmpty ? "Los Angeles" : loc
+        if !loc.isEmpty { return loc }
+        return detectedLocation.isEmpty ? "Los Angeles" : detectedLocation
+    }
+
+    var effectiveLocation: String {
+        let loc = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !loc.isEmpty { return loc }
+        if !detectedLocation.isEmpty { return detectedLocation }
+        return "Los Angeles"
     }
 
     // MARK: - Progress

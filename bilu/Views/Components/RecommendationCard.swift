@@ -15,12 +15,12 @@ struct RecommendationCard: View {
     var body: some View {
         let _ = {
             #if DEBUG
-            print("[RecommendationCard] LOADING IMAGE | name=\(rec.name) | url=\(rec.image)")
+            print("[RecommendationCard] LOADING IMAGE | name=\(rec.name) | url=\(rec.image ?? "nil")")
             #endif
         }()
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .bottomLeading) {
-                AsyncImage(url: URL(string: imageError ? fallbackImage : rec.image)) { phase in
+                AsyncImage(url: URL(string: imageError ? fallbackImage : (rec.image ?? ""))) { phase in
                     switch phase {
                     case .success(let image):
                         image
@@ -37,7 +37,7 @@ struct RecommendationCard: View {
                                 imageError = true
                                 #if DEBUG
                                 print(
-                                    "[RecommendationCard] IMAGE_LOAD_FAILED → using stock fallback | name=\(rec.name) | error=\(error.localizedDescription) | url=\(String(rec.image.prefix(120)))…"
+                                    "[RecommendationCard] IMAGE_LOAD_FAILED → using stock fallback | name=\(rec.name) | error=\(error.localizedDescription) | url=\(String((rec.image ?? "").prefix(120)))…"
                                 )
                                 #endif
                             }
@@ -47,7 +47,7 @@ struct RecommendationCard: View {
                         Color.gray.opacity(0.2)
                     }
                 }
-                .frame(height: 180)
+                .frame(maxWidth: .infinity)
                 .clipped()
 
                 LinearGradient(
@@ -61,7 +61,12 @@ struct RecommendationCard: View {
                     .foregroundStyle(.white)
                     .padding(12)
             }
+            .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 180)
+            .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .onChange(of: rec.image) { _ in
+                imageError = false
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(rec.name)
@@ -89,6 +94,7 @@ struct RecommendationCard: View {
             }
             .padding(24)
         }
+        .frame(maxWidth: .infinity)
         .background(Color.white.opacity(0.4))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .overlay(

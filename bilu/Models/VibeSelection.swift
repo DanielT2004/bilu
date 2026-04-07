@@ -15,8 +15,8 @@ struct VibeSelection: Codable {
     /// Stored as YYYY-MM-DD.
     var keyQuestionDate: String?
 
-    /// v3 "Food feeling" selection (single-select).
-    var foodFeeling: String
+    /// v3 "Food feeling" selection (multi-select).
+    var foodFeelings: [String]
 
     /// Legacy fields (kept for backend compatibility).
     var vibe: [String]
@@ -36,7 +36,7 @@ struct VibeSelection: Codable {
         keyQuestionAnswer: String = "",
         keyQuestionTimeWindow: String? = nil,
         keyQuestionDate: String? = nil,
-        foodFeeling: String = "",
+        foodFeelings: [String] = [],
         vibe: [String] = [],
         hunger: [String] = [],
         location: String = "",
@@ -50,7 +50,7 @@ struct VibeSelection: Codable {
         self.keyQuestionAnswer = keyQuestionAnswer
         self.keyQuestionTimeWindow = keyQuestionTimeWindow
         self.keyQuestionDate = keyQuestionDate
-        self.foodFeeling = foodFeeling
+        self.foodFeelings = foodFeelings
         self.vibe = vibe
         self.hunger = hunger
         self.location = location

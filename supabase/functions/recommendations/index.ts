@@ -1,259 +1,46 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { GoogleGenAI } from "npm:@google/genai@1.46.0";
+import type { Recommendation, GroundingPlace } from "../_shared/places.ts";
 
 /** Gemini 3 Flash (preview) — see https://ai.google.dev/gemini-api/docs */
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 interface RequestBody {
   prompt: string;
   occasion?: string;
   vibe?: string[];
   hunger?: string[];
-  /** User-entered area (optional; primary location is inside `prompt`) */
   location?: string;
   googleSearch?: boolean;
   thinkingLevel?: string;
 }
 
-interface Recommendation {
-  name: string;
-  dish: string;
-  image: string;
-  explanation: string;
-  mapsUrl: string;
-}
+// ─── Gemini call ──────────────────────────────────────────────────────────────
 
-/** Filterable in Supabase → Edge Functions → Logs */
-function logPlaces(...args: unknown[]) {
-  console.log("[places]", ...args);
-}
-
-function logPlacesWarn(...args: unknown[]) {
-  console.warn("[places]", ...args);
-}
-
-// ─── Google Places helpers ────────────────────────────────────────────────────
-
-function parsePlaceIdFromMapsUrl(mapsUrl: string, logTag: string): string | null {
-  if (!mapsUrl) {
-    logPlaces(logTag, "parsePlaceId: empty mapsUrl");
-    return null;
-  }
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(mapsUrl);
-  } catch {
-    decoded = mapsUrl;
-  }
-
-  logPlaces(logTag, "parsePlaceId: raw mapsUrl (truncated)", mapsUrl.slice(0, 200));
-
-  const queryMatch = decoded.match(/(?:query_place_id|place_id)=([A-Za-z0-9_-]{27,})/);
-  if (queryMatch) {
-    logPlaces(logTag, "parsePlaceId: matched query_place_id / place_id", queryMatch[1]);
-    return queryMatch[1];
-  }
-
-  const chijMatch = decoded.match(/ChIJ[A-Za-z0-9_-]{20,}/);
-  if (chijMatch) {
-    logPlaces(logTag, "parsePlaceId: matched ChIJ token", chijMatch[0]);
-    return chijMatch[0];
-  }
-
-  logPlaces(logTag, "parsePlaceId: no place id pattern found in URL");
-  return null;
-}
-
-async function resolvePlaceIdByTextSearch(
-  placeName: string,
-  apiKey: string,
-  logTag: string,
-  searchArea = "Los Angeles, CA"
-): Promise<string | null> {
-  const textQuery = `${placeName} ${searchArea}`;
-  logPlaces(logTag, "textSearch: request", { textQuery });
-
-  const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "places.id",
-    },
-    body: JSON.stringify({ textQuery }),
-  });
-
-  const bodyText = await res.text();
-  if (!res.ok) {
-    logPlacesWarn(logTag, "textSearch: HTTP error", {
-      status: res.status,
-      bodySnippet: bodyText.slice(0, 500),
-    });
-    return null;
-  }
-
-  let data: { places?: Array<{ id?: string }> };
-  try {
-    data = JSON.parse(bodyText);
-  } catch (e) {
-    logPlacesWarn(logTag, "textSearch: invalid JSON", bodyText.slice(0, 300));
-    return null;
-  }
-
-  const rawId: string | undefined = data?.places?.[0]?.id;
-  if (!rawId) {
-    logPlacesWarn(logTag, "textSearch: no places[0].id in response", {
-      placesLength: data?.places?.length ?? 0,
-    });
-    return null;
-  }
-
-  const placeId = rawId.startsWith("places/") ? rawId.slice(7) : rawId;
-  logPlaces(logTag, "textSearch: resolved place id", { rawId, placeId });
-  return placeId;
-}
-
-async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string): Promise<string | null> {
-  const encoded = encodeURIComponent(placeId);
-  const url = `https://places.googleapis.com/v1/places/${encoded}`;
-  logPlaces(logTag, "placeDetails: GET", url);
-
-  const res = await fetch(url, {
-    headers: {
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "photos",
-    },
-  });
-
-  const bodyText = await res.text();
-  if (!res.ok) {
-    logPlacesWarn(logTag, "placeDetails: HTTP error", {
-      status: res.status,
-      placeId,
-      bodySnippet: bodyText.slice(0, 500),
-    });
-    return null;
-  }
-
-  let data: { photos?: Array<{ name?: string }> };
-  try {
-    data = JSON.parse(bodyText);
-  } catch (e) {
-    logPlacesWarn(logTag, "placeDetails: invalid JSON", bodyText.slice(0, 300));
-    return null;
-  }
-
-  const photoName = data?.photos?.[0]?.name ?? null;
-  if (!photoName) {
-    logPlacesWarn(logTag, "placeDetails: no photos[0].name (place may have no photos)", {
-      photosCount: data?.photos?.length ?? 0,
-    });
-    return null;
-  }
-
-  logPlaces(logTag, "placeDetails: first photo resource name", photoName);
-  return photoName;
-}
-
-async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string): Promise<string | null> {
-  const resource = photoName.endsWith("/media") ? photoName : `${photoName}/media`;
-  const mediaUrl =
-    `https://places.googleapis.com/v1/${resource}?maxWidthPx=800&skipHttpRedirect=true`;
-  logPlaces(logTag, "photoMedia: GET (truncated)", mediaUrl.slice(0, 180) + (mediaUrl.length > 180 ? "…" : ""));
-
-  const res = await fetch(mediaUrl, {
-    headers: { "X-Goog-Api-Key": apiKey },
-  });
-
-  const bodyText = await res.text();
-  if (!res.ok) {
-    logPlacesWarn(logTag, "photoMedia: HTTP error", {
-      status: res.status,
-      bodySnippet: bodyText.slice(0, 500),
-    });
-    return null;
-  }
-
-  let data: { photoUri?: string };
-  try {
-    data = JSON.parse(bodyText);
-  } catch (e) {
-    logPlacesWarn(logTag, "photoMedia: invalid JSON", bodyText.slice(0, 300));
-    return null;
-  }
-
-  const photoUri = (data?.photoUri as string) ?? null;
-  if (!photoUri) {
-    logPlacesWarn(logTag, "photoMedia: missing photoUri in JSON", data);
-    return null;
-  }
-
-  logPlaces(logTag, "photoMedia: got photoUri (truncated)", photoUri.slice(0, 120) + "…");
-  return photoUri;
-}
-
-async function enrichRecommendation(
-  rec: Recommendation,
-  placesApiKey: string,
-  index: number,
-  searchArea: string
-): Promise<{ rec: Recommendation; error: string | null }> {
-  const logTag = `[#${index} "${rec.name}"]`;
-
-  logPlaces(logTag, "── enrich start ──", {
-    mapsUrlLen: rec.mapsUrl?.length ?? 0,
-    imageBeforeTruncated: (rec.image ?? "").slice(0, 100),
-    searchArea,
-  });
-
-  let placeId = parsePlaceIdFromMapsUrl(rec.mapsUrl, logTag);
-
-  if (!placeId) {
-    placeId = await resolvePlaceIdByTextSearch(rec.name, placesApiKey, logTag, searchArea);
-  }
-
-  if (!placeId) {
-    const msg = `${logTag} ENRICHMENT_FAILED: no placeId from URL or text search`;
-    logPlacesWarn(msg);
-    return { rec, error: msg };
-  }
-
-  const photoName = await fetchPlaceDetails(placeId, placesApiKey, logTag);
-  if (!photoName) {
-    const msg = `${logTag} ENRICHMENT_FAILED: Place Details returned no photo name (placeId=${placeId})`;
-    logPlacesWarn(msg);
-    return { rec, error: msg };
-  }
-
-  const photoUri = await fetchPhotoUri(photoName, placesApiKey, logTag);
-  if (!photoUri) {
-    const msg = `${logTag} ENRICHMENT_FAILED: photo media URL failed (placeId=${placeId})`;
-    logPlacesWarn(msg);
-    return { rec, error: msg };
-  }
-
-  logPlaces(logTag, "ENRICHMENT_OK: replaced image with Places photo URL");
-  return { rec: { ...rec, image: photoUri }, error: null };
-}
-
-// ─── Gemini call (@google/genai — same API as docs, works in Deno via npm:) ───
-
-async function callGemini(prompt: string, geminiApiKey: string): Promise<Recommendation[]> {
+async function callGemini(
+  prompt: string,
+  geminiApiKey: string
+): Promise<{ recommendations: Recommendation[]; groundingPlaces: GroundingPlace[] }> {
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
+    systemInstruction: "You are a local discovery assistant. You MUST strictly adhere to the user's distance constraints of 2 miles radius. If a result is outside the specified radius, you are forbidden from suggesting it, even if it is highly rated.",
     contents: prompt,
     config: {
-      temperature: 1,
-      responseMimeType: "application/json",
+      temperature: 0.1,
+      thinkingConfig: { thinkingBudget: 0 },
+      tools: [{ googleMaps: {} }],
+      toolConfig: {
+        retrievalConfig: {
+          latLng: { latitude: 34.0224, longitude: -118.2851 },
+        },
+      },
     },
   });
 
@@ -272,10 +59,23 @@ async function callGemini(prompt: string, geminiApiKey: string): Promise<Recomme
     );
   }
 
-  return (parsed?.recommendations ?? []) as Recommendation[];
+  const groundingPlaces: GroundingPlace[] = (
+    (response.candidates?.[0]?.groundingMetadata as any)?.groundingChunks ?? []
+  )
+    .map((chunk: any) => chunk.maps)
+    .filter((m: any) => m?.placeId)
+    .map((m: any) => ({
+      placeId: m.placeId.startsWith("places/") ? m.placeId.slice(7) : m.placeId,
+      title: m.title ?? "",
+      uri: m.uri ?? "",
+    }));
+
+  console.log("[recommendations] Grounding chunks extracted:", groundingPlaces.length, "places");
+
+  return { recommendations: (parsed?.recommendations ?? []) as Recommendation[], groundingPlaces };
 }
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
+// ─── Handler ──────────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -291,7 +91,6 @@ serve(async (req: Request) => {
 
   try {
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    const placesApiKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
 
     if (!geminiApiKey) {
       return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), {
@@ -309,40 +108,15 @@ serve(async (req: Request) => {
       });
     }
 
-    const searchArea = body.location?.trim() || "Los Angeles, CA";
-    logPlaces("User area for Places text search:", searchArea);
+    const { recommendations, groundingPlaces } = await callGemini(body.prompt, geminiApiKey);
+    console.log("[recommendations] Gemini returned", recommendations.length, "recommendations");
 
-    // 1. Get recommendations from Gemini
-    const recommendations = await callGemini(body.prompt, geminiApiKey);
-    logPlaces("Gemini returned", recommendations.length, "recommendations");
-
-    // 2. Enrich with Google Places photos (if key is available)
-    let enriched: Recommendation[] = recommendations;
-    if (!placesApiKey) {
-      logPlacesWarn(
-        "GOOGLE_PLACES_API_KEY not set — skipping photo enrichment entirely (every card keeps Gemini/stock image)",
-      );
-    } else {
-      logPlaces("Starting Places enrichment for", recommendations.length, "items");
-      const results = await Promise.all(
-        recommendations.map((rec, i) =>
-          enrichRecommendation(rec, placesApiKey, i, searchArea)
-        )
-      );
-      enriched = results.map((r) => r.rec);
-      const enrichmentErrors = results.map((r) => r.error).filter(Boolean);
-      if (enrichmentErrors.length > 0) {
-        logPlacesWarn("Enrichment errors summary:", enrichmentErrors);
-      }
-    }
-
-    return new Response(JSON.stringify({ recommendations: enriched }), {
+    return new Response(JSON.stringify({ recommendations, groundingPlaces }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // Shows in Dashboard → Edge Functions → Logs (Invocations alone won’t print response bodies)
     console.error("[recommendations] 500:", message);
     return new Response(JSON.stringify({ error: message }), {
       status: 500,

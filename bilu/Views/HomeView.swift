@@ -247,7 +247,8 @@ struct HomeView: View {
                         Text(viewModel.mapLocationLabel)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(C.dark)
-                        Text("Searching within 2.0 km")
+                            .animation(.easeInOut(duration: 0.3), value: viewModel.mapLocationLabel)
+                        Text("Near you")
                             .font(.system(size: 10, weight: .light))
                             .foregroundColor(C.muted)
                     }
@@ -341,7 +342,7 @@ struct HomeView: View {
 
                 // Continue button
                 if viewModel.canContinueFromKeyQuestion {
-                    continueButton { viewModel.step = .foodFeeling }
+                    continueButton { viewModel.continueFromKeyQuestion() }
                         .padding(.horizontal, 16)
                         .padding(.top, 18)
                 }
@@ -485,7 +486,7 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
 
-            Text("Pick the feeling — we'll find the cuisine")
+            Text("Pick one or more — we'll find the cuisine")
                 .font(.system(size: 13, weight: .light))
                 .foregroundColor(C.muted)
                 .padding(.horizontal, 20)
@@ -499,12 +500,18 @@ struct HomeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 18)
-            .padding(.bottom, 32)
+
+            continueButton { viewModel.continueFromFoodFeeling() }
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 32)
+                .opacity(viewModel.canContinueFromFoodFeeling ? 1 : 0.4)
+                .disabled(!viewModel.canContinueFromFoodFeeling)
         }
     }
 
     private func foodFeelingCard(opt: FoodFeelingOption) -> some View {
-        let isSelected = viewModel.selection.foodFeeling == opt.key
+        let isSelected = viewModel.selection.foodFeelings.contains(opt.key)
         return Button { viewModel.selectFoodFeeling(opt.key) } label: {
             VStack(alignment: .leading, spacing: 3) {
                 Text(opt.title)
@@ -802,6 +809,8 @@ struct HomeView: View {
             .padding(.top, 24)
             .frame(maxWidth: .infinity)
 
+            BiluMapView(recommendations: viewModel.recommendations, isLoading: viewModel.isEnriching)
+
             ForEach(Array(viewModel.recommendations.enumerated()), id: \.offset) { _, rec in
                 RecommendationCard(rec: rec)
             }
@@ -820,6 +829,7 @@ struct HomeView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
     }
 

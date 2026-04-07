@@ -32,6 +32,13 @@ enum PromptBuilder {
 
         let fineTuneSection = priceSection + partySizeSection + openNowSection
 
+        let qualityChainSection: String
+        if selection.keyQuestionAnswer == "Best quality nearby" || selection.keyQuestionAnswer == "Something new & trendy" {
+            qualityChainSection = "\n        - REJECT: Corporate fast-casual or nationally franchised chains that expanded via investor or franchise rollout (e.g. Dave's Hot Chicken, Raising Cane's). These belong on 'fastest near me' — not 'best quality' or 'new & trendy' paths.\n        - ALLOW even if multi-location: Small chef-driven groups (2–8 locations) that grew organically from a cult local original and are independently owned with editorial recognition (e.g. Gjusta, Jon & Vinny's). Multiple locations do NOT disqualify a place if it is founder-led, press-recognized, and earned its expansion from a genuine local following."
+        } else {
+            qualityChainSection = ""
+        }
+
         return """
          DIRECTIVE: You are the 'VibeCheck Architect.' Your goal is to find high-flavor, high-soul, and culturally relevant dining near the user's area: \(locationLine).
 
@@ -39,23 +46,25 @@ enum PromptBuilder {
         USER CONTEXT:
         - Occasion: \(selection.occasion)
         - Key question answer: \(selection.keyQuestionAnswer)\(selection.keyQuestionTimeWindow.map { " (\($0))" } ?? "")\(selection.keyQuestionDate.map { " (\($0))" } ?? "")
-        - Food feeling: \(selection.foodFeeling)
+        - Food feeling: \(selection.foodFeelings.joined(separator: " + "))
         - Location: \(locationLine)
         \(fineTuneSection.isEmpty ? "" : fineTuneSection)
 
         \(discoverySection)REJECTION CRITERIA (CRITICAL):
         - STERNLY EXCLUDE: McDonald's, Shake Shack, Burger King, Chipotle, Subway, or any global fast-food franchise.
         - REJECT: Any location that is currently "Closed" or "Closing in <30 mins."\(selection.openNow ? "\n        - REJECT: Any spot that is not currently open." : "")
-        - REJECT: "Happy Hour" suggestions if the current time is outside the venue's verified HH window.
+        - REJECT: "Happy Hour" suggestions if the current time is outside the venue's verified HH window.\(qualityChainSection)
 
         RECOGNITION CRITERIA:
-        - PRIORITIZE: 4.0+ star places with substantial reviews.
+        - PRIORITIZE: Independent or small-local-group spots with 2,000+ Google reviews. A one-location spot with 4,000 reviews is a cult institution — weight this heavily over any chain.
+        - PRIORITIZE: Places with editorial coverage (Eater, LA Times, Infatuation, Beli, Michelin Bib Gourmand, James Beard nominations).
+        - DEPRIORITIZE: Corporate or nationally franchised chains, even if highly rated. A chain with 2,000 reviews signals consistent chain quality. An independent with 2,000+ reviews signals a true local legend.
 
         TASK:
-        1. DISCOVER: Provide 5 elite recommendations. For 'image', use a real restaurant/food image URL when found via search; otherwise use: https://source.unsplash.com/featured/?food,[DishName] (no fabricated URLs).
+        1. DISCOVER: Provide 5 elite recommendations.
         2. EXPLAIN: In 'explanation', mention the current vibe and why it fits the specific "Hunger Path" (e.g., the 'handheld weight' or the 'broth depth').
 
-        Return as JSON: { "recommendations": [{ "name": "", "dish": "", "image": "", "explanation": "", "mapsUrl": "" }] }
+        Return as JSON: { "recommendations": [{ "name": "", "dish": "", "explanation": "", "mapsUrl": "" }] }
         """.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

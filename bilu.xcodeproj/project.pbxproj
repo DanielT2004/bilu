@@ -6,13 +6,31 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		EB1D7EC92F8384330090AFCE /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EB1D7EC82F8384330090AFCE /* MapKit.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		EB1D7EC82F8384330090AFCE /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.4.sdk/System/Library/Frameworks/MapKit.framework; sourceTree = DEVELOPER_DIR; };
 		EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = bilu.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EB1D7EC42F836C160090AFCE /* Exceptions for "bilu" folder in "bilu" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EBCC8DC92F64BD4F00E9EF5D /* bilu */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EBCC8DCC2F64BD4F00E9EF5D /* bilu */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EB1D7EC42F836C160090AFCE /* Exceptions for "bilu" folder in "bilu" target */,
+			);
 			path = bilu;
 			sourceTree = "<group>";
 		};
@@ -23,16 +41,26 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EB1D7EC92F8384330090AFCE /* MapKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		EB1D7EC72F8384330090AFCE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				EB1D7EC82F8384330090AFCE /* MapKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		EBCC8DC12F64BD4F00E9EF5D = {
 			isa = PBXGroup;
 			children = (
 				EBCC8DCC2F64BD4F00E9EF5D /* bilu */,
+				EB1D7EC72F8384330090AFCE /* Frameworks */,
 				EBCC8DCB2F64BD4F00E9EF5D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -254,6 +282,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = bilu/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "bilu uses your location to find cafes near you";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -298,6 +328,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = bilu/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "bilu uses your location to find cafes near you";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
