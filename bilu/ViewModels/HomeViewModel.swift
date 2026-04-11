@@ -6,6 +6,7 @@
 import Foundation
 import Combine
 import CoreLocation
+import MapKit
 
 enum Step: String, CaseIterable {
     case occasion
@@ -60,6 +61,11 @@ struct FoodFeelingOption: Equatable {
     let isSurprise: Bool
 }
 
+enum CuisineMode {
+    case vibe
+    case country
+}
+
 @MainActor
 final class HomeViewModel: ObservableObject {
     @Published var step: Step = .occasion
@@ -67,7 +73,19 @@ final class HomeViewModel: ObservableObject {
     @Published var recommendations: [Recommendation] = []
     @Published var isEnriching: Bool = false
     @Published var loadingPhase: String = "Scanning the streets\nfor your vibe..."
-    @Published var detectedLocation: String = "Los Angeles"
+    @Published var detectedLocation: String = ""
+    @Published var cuisineMode: CuisineMode = .vibe
+    @Published var tikTokVideos: [String: [TikTokVideo]] = [:]
+    @Published var isFetchingTikTok: Bool = false
+
+    static let countries: [(flag: String, name: String)] = [
+        ("🇺🇸", "American"), ("🇮🇹", "Italian"), ("🇲🇽", "Mexican"),
+        ("🇯🇵", "Japanese"), ("🇨🇳", "Chinese"), ("🇮🇳", "Indian"),
+        ("🇹🇭", "Thai"), ("🇰🇷", "Korean"), ("🌊", "Mediterranean"),
+        ("🇫🇷", "French"), ("🇬🇷", "Greek"), ("🇻🇳", "Vietnamese"),
+        ("🥙", "Middle Eastern"), ("🇪🇸", "Spanish"), ("🇧🇷", "Brazilian"),
+        ("🇪🇹", "Ethiopian"), ("🇵🇪", "Peruvian")
+    ]
 
     init() {
         self.selection = VibeSelection()
@@ -81,6 +99,14 @@ final class HomeViewModel: ObservableObject {
         selection.keyQuestionTimeWindow = nil
         selection.keyQuestionDate = nil
         selection.foodFeelings = []
+        selection.selectedCountry = ""
+        selection.cuisineMode = "vibe"
+        cuisineMode = .vibe
+        selection.fineTuneApplied = false
+        selection.parking = []
+        selection.outdoorSeating = false
+        selection.petFriendly = false
+        selection.wheelchairAccess = false
         selection.location = ""
         selection.pricePoints = ["$$", "$$$"]
         selection.partySize = 2
@@ -100,7 +126,18 @@ final class HomeViewModel: ObservableObject {
     func selectKeyQuestionAnswer(_ key: String) {
         selection.keyQuestionAnswer = key
         selection.keyQuestionTimeWindow = nil
-        selection.keyQuestionDate = nil
+        // Pre-populate today's date for options that use the date sub-picker
+        let usesDatePicker = keyQuestion?.options.first(where: { $0.key == key })?.subPicker == .date
+        if usesDatePicker {
+            let df = DateFormatter()
+            df.calendar = Calendar(identifier: .gregorian)
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = TimeZone(secondsFromGMT: 0)
+            df.dateFormat = "yyyy-MM-dd"
+            selection.keyQuestionDate = df.string(from: Date())
+        } else {
+            selection.keyQuestionDate = nil
+        }
     }
 
     func selectKeyQuestionTimeWindow(_ value: String) {
@@ -124,20 +161,60 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    func continueFromFoodFeeling() {
-        guard !selection.foodFeelings.isEmpty else { return }
-        if fineTuneType == "none" {
-            selection.location = effectiveLocation
-            Task {
-                try? await Task.sleep(nanoseconds: 260_000_000)
-                await submitSurvey()
-            }
+    func selectCountry(_ country: String) {
+        selection.selectedCountry = country
+        selection.foodFeelings = []
+    }
+
+    func setCuisineMode(_ mode: CuisineMode) {
+        cuisineMode = mode
+        if mode == .vibe {
+            selection.selectedCountry = ""
+            selection.cuisineMode = "vibe"
         } else {
-            step = .location
+            selection.foodFeelings = []
+            selection.cuisineMode = "country"
         }
     }
 
-    var canContinueFromFoodFeeling: Bool { !selection.foodFeelings.isEmpty }
+    func continueFromFoodFeeling() {
+        let canContinue = cuisineMode == .vibe
+            ? !selection.foodFeelings.isEmpty
+            : !selection.selectedCountry.isEmpty
+        guard canContinue else { return }
+        selection.cuisineMode = cuisineMode == .country ? "country" : "vibe"
+        Task {
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            await submitSurvey()
+        }
+    }
+
+    func openFineTune() {
+        selection.cuisineMode = cuisineMode == .country ? "country" : "vibe"
+        step = .location
+    }
+
+    func proceedWithFineTune() {
+        selection.fineTuneApplied = true
+        selection.location = effectiveLocation
+        Task { await submitSurvey() }
+    }
+
+    func removeFineTune() {
+        selection.fineTuneApplied = false
+        selection.pricePoints = ["$$", "$$$"]
+        selection.partySize = 2
+        selection.openNow = false
+        selection.parking = []
+        selection.outdoorSeating = false
+        selection.petFriendly = false
+        selection.wheelchairAccess = false
+        step = .foodFeeling
+    }
+
+    var canContinueFromFoodFeeling: Bool {
+        cuisineMode == .vibe ? !selection.foodFeelings.isEmpty : !selection.selectedCountry.isEmpty
+    }
 
     // MARK: - Fine-tune
 
@@ -146,7 +223,8 @@ final class HomeViewModel: ObservableObject {
         case "Quick Bite":                     return "none"
         case "Date Night":                     return "price"
         case "Sit Down Meal", "Big Group", "Celebration": return "full"
-        case "Cafe", "Happy Hour":             return "opennow"
+        case "Cafe":                           return "none"
+        case "Happy Hour":                     return "opennow"
         default:                               return "opennow"
         }
     }
@@ -159,12 +237,19 @@ final class HomeViewModel: ObservableObject {
     var showPartySizeSection: Bool { fineTuneType == "full" }
 
     func continueFromKeyQuestion() {
-        if selection.keyQuestionAnswer == "Here to study or work" {
-            selection.foodFeelings = ["Fresh & crisp"]
-            selection.location = effectiveLocation
+        if selection.occasion == "Cafe" {
+            selection.foodFeelings = [cafeDefaultFeeling(for: selection.keyQuestionAnswer)]
             Task { await submitSurvey() }
         } else {
             step = .foodFeeling
+        }
+    }
+
+    private func cafeDefaultFeeling(for answer: String) -> String {
+        switch answer {
+        case "Here to study or work": return "Fresh & crisp"
+        case "Brunch & bites too":    return "Doughy & loaded"
+        default:                      return "Surprise me"
         }
     }
 
@@ -197,6 +282,18 @@ final class HomeViewModel: ObservableObject {
         selection.openNow.toggle()
     }
 
+    func toggleParking(_ option: String) {
+        if let idx = selection.parking.firstIndex(of: option) {
+            selection.parking.remove(at: idx)
+        } else {
+            selection.parking.append(option)
+        }
+    }
+
+    func toggleOutdoorSeating() { selection.outdoorSeating.toggle() }
+    func togglePetFriendly()    { selection.petFriendly.toggle() }
+    func toggleWheelchairAccess() { selection.wheelchairAccess.toggle() }
+
     // MARK: - Legacy
 
     func toggleVibe(_ key: String) {
@@ -220,6 +317,9 @@ final class HomeViewModel: ObservableObject {
         selection = VibeSelection()
         recommendations = []
         isEnriching = false
+        cuisineMode = .vibe
+        tikTokVideos = [:]
+        isFetchingTikTok = false
     }
 
     // MARK: - Survey Submit
@@ -261,6 +361,27 @@ final class HomeViewModel: ObservableObject {
             recommendations = enriched
             isEnriching = false
         }
+
+        // Phase 3: TikTok video fetch in background — concurrent per restaurant
+        let recs = result.recommendations
+        isFetchingTikTok = true
+        Task {
+            // Resolve city-level location once for all queries
+            let city = await cityForTikTok()
+            await withTaskGroup(of: (String, [TikTokVideo]).self) { group in
+                for rec in recs {
+                    group.addTask {
+                        let query = city.isEmpty ? rec.name : "\(rec.name) \(city)"
+                        let videos = await TikTokService.fetchVideos(query: query)
+                        return (rec.id, videos)
+                    }
+                }
+                for await (id, videos) in group {
+                    tikTokVideos[id] = videos
+                }
+            }
+            isFetchingTikTok = false
+        }
     }
 
     // MARK: - Map label
@@ -268,14 +389,55 @@ final class HomeViewModel: ObservableObject {
     var mapLocationLabel: String {
         let loc = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
         if !loc.isEmpty { return loc }
-        return detectedLocation.isEmpty ? "Los Angeles" : detectedLocation
+        return detectedLocation.isEmpty ? "Near pin" : detectedLocation
+    }
+
+    /// Returns a city-level string suitable for TikTok search queries.
+    /// Prefers reverse-geocoding coordinates to "City, State".
+    /// Falls back to extracting the city from the user-typed location string.
+    func cityForTikTok() async -> String {
+        // 1. Reverse-geocode coordinates if available — most reliable
+        if let lat = selection.latitude, let lng = selection.longitude {
+            let coord = CLLocation(latitude: lat, longitude: lng)
+            if let placemark = try? await CLGeocoder().reverseGeocodeLocation(coord).first {
+                let city  = placemark.locality ?? ""
+                let state = placemark.administrativeArea ?? ""
+                if !city.isEmpty {
+                    return state.isEmpty ? city : "\(city), \(state)"
+                }
+            }
+        }
+
+        // 2. User typed a location — take the last meaningful comma-separated segment
+        //    e.g. "Reynier Village, Los Angeles, CA" → "Los Angeles, CA"
+        let typed = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty {
+            let parts = typed.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if parts.count >= 2 {
+                // Drop the first part (neighborhood/street) and rejoin the rest
+                return parts.dropFirst().joined(separator: ", ")
+            }
+            return typed
+        }
+
+        // 3. detectedLocation (set by the map widget) — same strip logic
+        if !detectedLocation.isEmpty {
+            let parts = detectedLocation.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if parts.count >= 2 { return parts.dropFirst().joined(separator: ", ") }
+            return detectedLocation
+        }
+
+        return ""
     }
 
     var effectiveLocation: String {
         let loc = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
         if !loc.isEmpty { return loc }
         if !detectedLocation.isEmpty { return detectedLocation }
-        return "Los Angeles"
+        if let lat = selection.latitude, let lng = selection.longitude {
+            return String(format: "%.4f° N, %.4f° W", lat, abs(lng))
+        }
+        return "your area"
     }
 
     // MARK: - Progress

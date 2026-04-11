@@ -11,6 +11,8 @@ interface EnrichRequest {
   recommendations: Recommendation[];
   groundingPlaces: GroundingPlace[];
   location?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 serve(async (req: Request) => {
@@ -44,7 +46,10 @@ serve(async (req: Request) => {
       });
     }
 
-    const searchArea = body.location?.trim() || "Los Angeles, CA";
+    const searchArea = body.location?.trim()
+      || (body.latitude != null && body.longitude != null
+          ? `${body.latitude.toFixed(4)}, ${body.longitude.toFixed(4)}`
+          : "");
     const groundingPlaces: GroundingPlace[] = body.groundingPlaces ?? [];
 
     console.log("[enrich] Enriching", body.recommendations.length, "recommendations for", searchArea);

@@ -5,7 +5,8 @@
 
 import Foundation
 
-struct Recommendation: Codable {
+struct Recommendation: Codable, Identifiable {
+    var id: String { name + dish }
     let name: String
     let dish: String
     let image: String?
@@ -13,6 +14,13 @@ struct Recommendation: Codable {
     let mapsUrl: String
     let latitude: Double?
     let longitude: Double?
+    let rating: Double?
+    let reviewCount: Int?
+    let isOpen: Bool?
+    let photos: [String]?
+    let address: String?
+    let phone: String?
+    let website: String?
 }
 
 struct VibeResult: Codable {

@@ -36,19 +36,19 @@ struct BiluMapView: View {
 
     var body: some View {
         if isLoading {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(hex: "F1F5F9"))
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(AppTheme.sageLt)
                 .frame(height: 220)
                 .overlay(
                     HStack(spacing: 8) {
                         ProgressView()
-                            .tint(Color(hex: "8B5CF6"))
+                            .tint(AppTheme.sage)
                         Text("Loading map...")
                             .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: "94A3B8"))
+                            .foregroundStyle(AppTheme.muted)
                     }
                 )
-                .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+                .shadow(color: AppTheme.shadowColor, radius: 8, y: 3)
         } else if let region, !annotated.isEmpty {
             Map(position: $mapPosition) {
                 ForEach(annotated, id: \.index) { item in
@@ -60,9 +60,9 @@ struct BiluMapView: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(Color(hex: "8B5CF6"))
+                                    .fill(AppTheme.terracotta)
                                     .frame(width: 34, height: 34)
-                                    .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                                    .shadow(color: AppTheme.terracotta.opacity(0.4), radius: 4, y: 2)
                                 Text("\(item.index)")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundStyle(.white)
@@ -74,8 +74,9 @@ struct BiluMapView: View {
             .onAppear { mapPosition = .region(region) }
             .onChange(of: annotated.count) { _ in mapPosition = .region(region) }
             .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .black.opacity(0.07), radius: 10, y: 4)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: AppTheme.shadowColor, radius: 10, y: 4)
+            .onTapGesture { }
         }
     }
 }

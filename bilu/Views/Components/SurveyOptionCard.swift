@@ -3,7 +3,7 @@
 //  bilu
 //
 //  Shared template for vibe + hunger survey tiles: image, bottom color band,
-//  circular SF Symbol, and title/description (HungerCard spacing/fonts as standard).
+//  circular SF Symbol, and title/description.
 //
 
 import SwiftUI
@@ -33,17 +33,16 @@ struct SurveyOptionCard: View {
 
                     // Icon circle between image and panel
                     Circle()
-                        .fill(Color.white)
+                        .fill(AppTheme.white)
                         .frame(width: 44, height: 44)
-                        .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+                        .shadow(color: AppTheme.shadowColor, radius: 8, y: 4)
                         .overlay(
                             Image(systemName: systemImage)
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(Color(hex: "0F172A"))
+                                .foregroundStyle(AppTheme.onSurface)
                         )
                         .position(x: size.width / 2, y: size.height * 0.6)
 
-                    // Title + description (standard: HungerCard typography & position)
                     SurveyOptionCardBottomLabels(
                         title: title,
                         desc: desc,
@@ -53,7 +52,7 @@ struct SurveyOptionCard: View {
                     )
 
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 22)
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .fill(Color.black.opacity(0.06))
                     }
                 }
@@ -61,11 +60,12 @@ struct SurveyOptionCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .stroke(
-                            isSelected ? Color(hex: "8B5CF6") : Color.black.opacity(0.04),
-                            lineWidth: isSelected ? 2 : 1
+                            isSelected ? AppTheme.sage : Color.clear,
+                            lineWidth: isSelected ? 2.5 : 0
                         )
                 )
-                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+                .shadow(color: AppTheme.shadowColor, radius: 12, y: 6)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
             }
             .aspectRatio(0.9, contentMode: .fit)
         }
@@ -82,20 +82,20 @@ struct SurveyOptionCard: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 case .failure, .empty:
-                    Color(hex: "E5E7EB")
+                    AppTheme.sageLt
                 @unknown default:
-                    Color(hex: "E5E7EB")
+                    AppTheme.sageLt
                 }
             }
             .frame(width: size.width, height: size.height)
             .clipped()
         } else {
-            Color(hex: "E5E7EB")
+            AppTheme.sageLt
         }
     }
 }
 
-// MARK: - Bottom labels (single source of truth for fonts & spacing)
+// MARK: - Bottom labels
 
 private struct SurveyOptionCardBottomLabels: View {
     let title: String

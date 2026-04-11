@@ -1,5 +1,12 @@
 // Shared Places API helpers — used by both /recommendations and /enrich
 
+export interface PlaceReview {
+  authorName: string;
+  rating: number;
+  text: string;
+  relativeTimeDescription: string;
+}
+
 export interface Recommendation {
   name: string;
   dish: string;
@@ -8,13 +15,16 @@ export interface Recommendation {
   mapsUrl: string;
   latitude?: number;
   longitude?: number;
+  // Enriched fields
   rating?: number;
   reviewCount?: number;
-  isOpen?: boolean;
   photos?: string[];
+  reviews?: PlaceReview[];
   address?: string;
   phone?: string;
   website?: string;
+  isOpen?: boolean;
+  tips?: string[];
 }
 
 export interface GroundingPlace {
@@ -29,10 +39,11 @@ interface PlaceDetails {
   longitude: number | undefined;
   rating: number | undefined;
   reviewCount: number | undefined;
-  isOpen: boolean | undefined;
+  reviews: PlaceReview[];
   address: string | undefined;
   phone: string | undefined;
   website: string | undefined;
+  isOpen: boolean | undefined;
 }
 
 function logPlaces(...args: unknown[]) {
@@ -82,9 +93,9 @@ export async function resolvePlaceIdByTextSearch(
   placeName: string,
   apiKey: string,
   logTag: string,
-  searchArea = ""
+  searchArea = "Los Angeles, CA"
 ): Promise<string | null> {
-  const textQuery = searchArea ? `${placeName} ${searchArea}` : placeName;
+  const textQuery = `${placeName} ${searchArea}`;
   logPlaces(logTag, "textSearch: request", { textQuery });
 
   const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -129,16 +140,14 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
   const res = await fetch(url, {
     headers: {
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "photos,location,rating,userRatingCount,regularOpeningHours,formattedAddress,nationalPhoneNumber,websiteUri",
+      "X-Goog-FieldMask": "photos,location,rating,userRatingCount,reviews,formattedAddress,nationalPhoneNumber,websiteUri,currentOpeningHours",
     },
   });
-
-  const empty: PlaceDetails = { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, isOpen: undefined, address: undefined, phone: undefined, website: undefined };
 
   const bodyText = await res.text();
   if (!res.ok) {
     logPlacesWarn(logTag, "placeDetails: HTTP error", { status: res.status, placeId, bodySnippet: bodyText.slice(0, 500) });
-    return empty;
+    return { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, reviews: [], address: undefined, phone: undefined, website: undefined, isOpen: undefined };
   }
 
   let data: {
@@ -146,33 +155,67 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
     location?: { latitude?: number; longitude?: number };
     rating?: number;
     userRatingCount?: number;
-    regularOpeningHours?: { openNow?: boolean };
+    reviews?: Array<{ authorAttribution?: { displayName?: string }; rating?: number; text?: { text?: string }; relativePublishTimeDescription?: string }>;
     formattedAddress?: string;
     nationalPhoneNumber?: string;
     websiteUri?: string;
+    currentOpeningHours?: { openNow?: boolean };
   };
   try {
     data = JSON.parse(bodyText);
   } catch {
     logPlacesWarn(logTag, "placeDetails: invalid JSON", bodyText.slice(0, 300));
-    return empty;
+    return { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, reviews: [], address: undefined, phone: undefined, website: undefined, isOpen: undefined };
   }
 
-  const photoNames = (data?.photos ?? []).slice(0, 10).map((p) => p.name ?? "").filter(Boolean);
-  logPlaces(logTag, "placeDetails: photo count", photoNames.length);
+  // ── Raw field audit ────────────────────────────────────────────────────────
+  logPlaces(logTag, "placeDetails: RAW FIELDS →", {
+    hasPhotos:       !!(data?.photos?.length),
+    photosCount:     data?.photos?.length ?? 0,
+    rating:          data?.rating ?? "MISSING",
+    userRatingCount: data?.userRatingCount ?? "MISSING",
+    reviewsCount:    data?.reviews?.length ?? 0,
+    formattedAddress: data?.formattedAddress ?? "MISSING",
+    nationalPhone:   data?.nationalPhoneNumber ?? "MISSING",
+    websiteUri:      data?.websiteUri ? data.websiteUri.slice(0, 60) : "MISSING",
+    openNow:         data?.currentOpeningHours?.openNow ?? "MISSING",
+  });
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const photoNames = (data?.photos ?? [])
+    .slice(0, 10)
+    .map((p) => p.name)
+    .filter((n): n is string => !!n);
+
+  if (photoNames.length === 0) {
+    logPlacesWarn(logTag, "placeDetails: no photos", { photosCount: data?.photos?.length ?? 0 });
+  } else {
+    logPlaces(logTag, "placeDetails: found", photoNames.length, "photos");
+  }
 
   const latitude = data?.location?.latitude;
   const longitude = data?.location?.longitude;
-  const rating = data?.rating;
-  const reviewCount = data?.userRatingCount;
-  const isOpen = data?.regularOpeningHours?.openNow;
-  const address = data?.formattedAddress;
-  const phone = data?.nationalPhoneNumber;
-  const website = data?.websiteUri;
   logPlaces(logTag, "placeDetails: location", { latitude, longitude });
-  logPlaces(logTag, "placeDetails: rating/reviews/open", { rating, reviewCount, isOpen });
 
-  return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website };
+  const reviews: PlaceReview[] = (data?.reviews ?? []).slice(0, 5).map((r) => ({
+    authorName: r.authorAttribution?.displayName ?? "Anonymous",
+    rating: r.rating ?? 5,
+    text: r.text?.text ?? "",
+    relativeTimeDescription: r.relativePublishTimeDescription ?? "",
+  }));
+
+  return {
+    photoNames,
+    latitude,
+    longitude,
+    rating: data?.rating,
+    reviewCount: data?.userRatingCount,
+    reviews,
+    address: data?.formattedAddress,
+    phone: data?.nationalPhoneNumber,
+    website: data?.websiteUri,
+    isOpen: data?.currentOpeningHours?.openNow,
+  };
 }
 
 async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string): Promise<string | null> {
@@ -237,23 +280,46 @@ export async function enrichRecommendation(
     return { rec, error: msg };
   }
 
-  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website } = await fetchPlaceDetails(placeId, placesApiKey, logTag);
-  const recWithMeta = { ...rec, latitude, longitude, rating, reviewCount, isOpen, address, phone, website };
+  const details = await fetchPlaceDetails(placeId, placesApiKey, logTag);
 
-  if (photoNames.length === 0) {
+  const recWithMeta: Recommendation = {
+    ...rec,
+    latitude: details.latitude,
+    longitude: details.longitude,
+    rating: details.rating,
+    reviewCount: details.reviewCount,
+    reviews: details.reviews,
+    address: details.address,
+    phone: details.phone,
+    website: details.website,
+    isOpen: details.isOpen,
+  };
+
+  if (details.photoNames.length === 0) {
     const msg = `${logTag} ENRICHMENT_FAILED: Place Details returned no photo names (placeId=${placeId})`;
     logPlacesWarn(msg);
     return { rec: recWithMeta, error: msg };
   }
 
-  const photoUris = (await Promise.all(photoNames.map((n) => fetchPhotoUri(n, placesApiKey, logTag)))).filter((u): u is string => !!u);
+  // Resolve all photo URIs in parallel (up to 10)
+  const photoUris = await Promise.all(
+    details.photoNames.map((name) => fetchPhotoUri(name, placesApiKey, logTag))
+  );
+  const validPhotoUris = photoUris.filter((uri): uri is string => !!uri);
 
-  if (photoUris.length === 0) {
-    const msg = `${logTag} ENRICHMENT_FAILED: all photo media fetches failed (placeId=${placeId})`;
+  if (validPhotoUris.length === 0) {
+    const msg = `${logTag} ENRICHMENT_FAILED: all photo media URLs failed (placeId=${placeId})`;
     logPlacesWarn(msg);
     return { rec: recWithMeta, error: msg };
   }
 
-  logPlaces(logTag, "ENRICHMENT_OK", { photoCount: photoUris.length });
-  return { rec: { ...recWithMeta, image: photoUris[0], photos: photoUris }, error: null };
+  logPlaces(logTag, "ENRICHMENT_OK — photos:", validPhotoUris.length);
+  return {
+    rec: {
+      ...recWithMeta,
+      image: validPhotoUris[0],
+      photos: validPhotoUris,
+    },
+    error: null,
+  };
 }

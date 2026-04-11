@@ -18,19 +18,27 @@ interface RequestBody {
   location?: string;
   googleSearch?: boolean;
   thinkingLevel?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusMiles?: number;
 }
 
 // ─── Gemini call ──────────────────────────────────────────────────────────────
 
 async function callGemini(
   prompt: string,
-  geminiApiKey: string
+  geminiApiKey: string,
+  lat: number,
+  lng: number,
+  radiusMiles: number
 ): Promise<{ recommendations: Recommendation[]; groundingPlaces: GroundingPlace[] }> {
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
+  console.log(`[callGemini] latLng → { latitude: ${lat}, longitude: ${lng} }, radius: ${radiusMiles} mi`);
+
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
-    systemInstruction: "You are a local discovery assistant. You MUST strictly adhere to the user's distance constraints of 2 miles radius. If a result is outside the specified radius, you are forbidden from suggesting it, even if it is highly rated.",
+    systemInstruction: `You are a local discovery assistant. You MUST strictly adhere to the user's distance constraint of ${radiusMiles.toFixed(1)} miles radius. If a result is outside the specified radius, you are forbidden from suggesting it, even if it is highly rated.`,
     contents: prompt,
     config: {
       temperature: 0.1,
@@ -38,7 +46,7 @@ async function callGemini(
       tools: [{ googleMaps: {} }],
       toolConfig: {
         retrievalConfig: {
-          latLng: { latitude: 34.0224, longitude: -118.2851 },
+          latLng: { latitude: lat, longitude: lng },
         },
       },
     },
@@ -108,8 +116,27 @@ serve(async (req: Request) => {
       });
     }
 
-    const { recommendations, groundingPlaces } = await callGemini(body.prompt, geminiApiKey);
+    const lat = body.latitude ?? 34.0224;
+    const lng = body.longitude ?? -118.2851;
+    const radiusMiles = body.radiusMiles ?? 2.0;
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("[recommendations] INCOMING REQUEST");
+    console.log(`  lat:         ${lat}`);
+    console.log(`  lng:         ${lng}`);
+    console.log(`  radiusMiles: ${radiusMiles}`);
+    console.log(`  location:    ${body.location ?? "(not set)"}`);
+    console.log(`  occasion:    ${body.occasion ?? "(not set)"}`);
+    console.log(`  latLng from body? lat=${body.latitude !== undefined}, lng=${body.longitude !== undefined}, radius=${body.radiusMiles !== undefined}`);
+    console.log("[recommendations] SYSTEM INSTRUCTION:");
+    console.log(`  You are a local discovery assistant. You MUST strictly adhere to the user's distance constraint of ${radiusMiles.toFixed(1)} miles radius. If a result is outside the specified radius, you are forbidden from suggesting it, even if it is highly rated.`);
+    console.log("[recommendations] FULL PROMPT:");
+    console.log(body.prompt);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    const { recommendations, groundingPlaces } = await callGemini(body.prompt, geminiApiKey, lat, lng, radiusMiles);
     console.log("[recommendations] Gemini returned", recommendations.length, "recommendations");
+    recommendations.forEach((r, i) => console.log(`  ${i + 1}. ${r.name} — ${r.mapsUrl ?? "no url"}`));
 
     return new Response(JSON.stringify({ recommendations, groundingPlaces }), {
       status: 200,
