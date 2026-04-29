@@ -10,7 +10,9 @@
 import Foundation
 import Combine
 
-final class VideoFeedViewModel: ObservableObject {
+final class VideoFeedViewModel: ObservableObject, Identifiable {
+    let id = UUID()
+
     // currentIndex is published so VideoPageView re-renders its isActive check
     // All mutations must happen on the main queue (UIPageViewController delegates fire on main)
     @Published private(set) var currentIndex: Int
@@ -22,22 +24,25 @@ final class VideoFeedViewModel: ObservableObject {
 
     init(videos: [TikTokVideo], startIndex: Int = 0) {
         self.videos = videos
-        self.currentIndex = startIndex
+
+        // Clamp startIndex into a valid range so an upstream off-by-one can't crash us.
+        let clamped = videos.isEmpty ? 0 : max(0, min(startIndex, videos.count - 1))
+        self.currentIndex = clamped
 
         guard !videos.isEmpty else { return }
 
-        // Warm the start page and adjacent pages
-        warmPage(at: startIndex)
-        if startIndex + 1 < videos.count { warmPage(at: startIndex + 1) }
-        if startIndex - 1 >= 0           { warmPage(at: startIndex - 1) }
-
-        pool[startIndex]?.activate()
+        warmPage(at: clamped)
+        warmPage(at: clamped + 1)
+        warmPage(at: clamped - 1)
+        // Note: do not activate here — VideoFeedView calls activateCurrent() in
+        // .onAppear. This keeps the pool silently buffering when used purely as
+        // a pre-warmer (e.g. RestaurantDetailView before any tap).
     }
 
     // MARK: - Called when a swipe completes (UIPageViewController delegate, always on main)
 
     func didSwipeTo(index: Int) {
-        guard index != currentIndex else { return }
+        guard index != currentIndex, index >= 0, index < count else { return }
 
         pool[currentIndex]?.deactivate()
 
@@ -46,9 +51,7 @@ final class VideoFeedViewModel: ObservableObject {
 
         // Warm the next page in the swipe direction
         let nextInDirection = index > previous ? index + 1 : index - 1
-        if nextInDirection >= 0 && nextInDirection < count {
-            warmPage(at: nextInDirection)
-        }
+        warmPage(at: nextInDirection)
 
         pool[index]?.activate()
 
@@ -57,21 +60,47 @@ final class VideoFeedViewModel: ObservableObject {
         evictPage(at: toEvict)
     }
 
+    /// Re-aim the feed at a new index *before* presentation. Used to pivot a
+    /// pre-warmed model (e.g. RestaurantDetailView) to whichever video the user
+    /// actually tapped, while keeping any already-loaded players in the pool.
+    func setStartIndex(_ index: Int) {
+        guard !videos.isEmpty else { return }
+        let clamped = max(0, min(index, videos.count - 1))
+        guard clamped != currentIndex else { return }
+
+        pool[currentIndex]?.deactivate()
+        currentIndex = clamped
+
+        warmPage(at: clamped)
+        warmPage(at: clamped + 1)
+        warmPage(at: clamped - 1)
+
+        // Evict anything outside the [-1, +1] window
+        for key in pool.keys where key < clamped - 1 || key > clamped + 1 {
+            evictPage(at: key)
+        }
+    }
+
+    func activateCurrent() {
+        pool[currentIndex]?.activate()
+    }
+
+    func deactivateCurrent() {
+        pool[currentIndex]?.deactivate()
+    }
+
     // MARK: - Pool management
 
     @discardableResult
-    func warmPage(at index: Int) -> VideoPageModel {
+    func warmPage(at index: Int) -> VideoPageModel? {
+        guard index >= 0, index < videos.count else { return nil }
         if let existing = pool[index] { return existing }
-        guard index >= 0, index < videos.count else {
-            fatalError("Invalid page index \(index)")
-        }
         let model = VideoPageModel(index: index, video: videos[index])
         pool[index] = model
         return model
     }
 
     private func evictPage(at index: Int) {
-        guard index >= 0, index < count else { return }
         pool.removeValue(forKey: index)
     }
 }

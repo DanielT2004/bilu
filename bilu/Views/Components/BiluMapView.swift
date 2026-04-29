@@ -37,18 +37,18 @@ struct BiluMapView: View {
     var body: some View {
         if isLoading {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(AppTheme.sageLt)
+                .fill(AppTheme.surface)
                 .frame(height: 220)
                 .overlay(
                     HStack(spacing: 8) {
                         ProgressView()
-                            .tint(AppTheme.sage)
+                            .tint(AppTheme.muted)
                         Text("Loading map...")
                             .font(.system(size: 13))
                             .foregroundStyle(AppTheme.muted)
                     }
                 )
-                .shadow(color: AppTheme.shadowColor, radius: 8, y: 3)
+                .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
         } else if let region, !annotated.isEmpty {
             Map(position: $mapPosition) {
                 ForEach(annotated, id: \.index) { item in
@@ -75,7 +75,7 @@ struct BiluMapView: View {
             .onChange(of: annotated.count) { _ in mapPosition = .region(region) }
             .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: AppTheme.shadowColor, radius: 10, y: 4)
+            .shadow(color: Color.black.opacity(0.06), radius: 10, y: 4)
             .onTapGesture { }
         }
     }

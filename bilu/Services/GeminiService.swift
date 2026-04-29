@@ -4,31 +4,21 @@
 
 import Foundation
 
+enum SearchFailure: Equatable {
+    case noMatches       // server returned an empty result
+    case transportError  // network / HTTP / decode failure
+}
+
+struct VibeFetchOutcome {
+    let result: VibeResult
+    let failure: SearchFailure?
+}
+
 enum GeminiService {
-    private static let fallbackResult = VibeResult(
-        recommendations: [
-            Recommendation(
-                name: "The Local Spot",
-                dish: "Signature Dish",
-                image: nil,
-                explanation: "Because the API is taking a coffee break, but this place is always a vibe.",
-                mapsUrl: "https://www.google.com/maps/search/restaurants+near+me",
-                latitude: nil,
-                longitude: nil,
-                rating: nil,
-                reviewCount: nil,
-                isOpen: nil,
-                photos: nil,
-                address: nil,
-                phone: nil,
-                website: nil
-            )
-        ],
-        groundingPlaces: []
-    )
+    private static let emptyResult = VibeResult(recommendations: [], groundingPlaces: [], relaxed: nil)
 
     // Phase 1 — fast: Gemini recommendations only (no Places enrichment)
-    static func getVibeRecommendations(selection: VibeSelection) async -> VibeResult {
+    static func getVibeRecommendations(selection: VibeSelection) async -> VibeFetchOutcome {
         let prompt = PromptBuilder.getPrompt(selection: selection)
         var body: [String: Any] = [
             "occasion": selection.occasion,
@@ -37,15 +27,17 @@ enum GeminiService {
             "location": selection.location,
             "googleSearch": selection.googleSearch,
             "thinkingLevel": selection.thinkingLevel,
-            "prompt": prompt,
-            "radiusMiles": selection.radiusMiles
+            "prompt": prompt
         ]
-        if let lat = selection.latitude  { body["latitude"]  = lat }
-        if let lng = selection.longitude { body["longitude"] = lng }
+        if selection.useRadiusSearch {
+            body["radiusMiles"] = selection.radiusMiles
+            if let lat = selection.latitude  { body["latitude"]  = lat }
+            if let lng = selection.longitude { body["longitude"] = lng }
+        }
 
         do {
             guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
-                return fallbackResult
+                return VibeFetchOutcome(result: emptyResult, failure: .transportError)
             }
             var request = URLRequest(url: URL(string: "\(Config.apiBaseURL)/recommendations")!)
             request.httpMethod = "POST"
@@ -63,16 +55,18 @@ enum GeminiService {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 print("[GeminiService] recommendations HTTP \(code): \(body)")
                 #endif
-                return fallbackResult
+                return VibeFetchOutcome(result: emptyResult, failure: .transportError)
             }
             #if DEBUG
             if let raw = String(data: data, encoding: .utf8) {
                 print("[GeminiService] RAW RESPONSE (first 2000 chars):\n\(raw.prefix(2000))")
             }
             #endif
-            return try JSONDecoder().decode(VibeResult.self, from: data)
+            let decoded = try JSONDecoder().decode(VibeResult.self, from: data)
+            let failure: SearchFailure? = decoded.recommendations.isEmpty ? .noMatches : nil
+            return VibeFetchOutcome(result: decoded, failure: failure)
         } catch {
-            return fallbackResult
+            return VibeFetchOutcome(result: emptyResult, failure: .transportError)
         }
     }
 
@@ -119,6 +113,30 @@ enum GeminiService {
             return decoded.recommendations
         } catch {
             return recommendations
+        }
+    }
+
+    // Phase 3 — lazy: fetch gallery photos for a place on demand
+    static func fetchGalleryPhotos(placeId: String) async -> [String] {
+        guard let url = URL(string: "\(Config.apiBaseURL)/photos") else { return [] }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(Config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        guard let body = try? JSONSerialization.data(withJSONObject: ["placeId": placeId]) else { return [] }
+        request.httpBody = body
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return []
+            }
+            struct PhotosResponse: Decodable { let photos: [String] }
+            let decoded = try JSONDecoder().decode(PhotosResponse.self, from: data)
+            return decoded.photos
+        } catch {
+            return []
         }
     }
 }

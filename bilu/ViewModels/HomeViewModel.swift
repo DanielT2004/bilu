@@ -12,6 +12,7 @@ enum Step: String, CaseIterable {
     case occasion
     case keyQuestion
     case foodFeeling
+    case drinksSubFlow
     case location
     case loading
     case reveal
@@ -61,6 +62,22 @@ struct FoodFeelingOption: Equatable {
     let isSurprise: Bool
 }
 
+struct FoodSubOption: Equatable {
+    let key: String
+    let emoji: String
+    let label: String
+}
+
+struct FoodCategoryOption: Equatable {
+    let key: String
+    let emoji: String
+    let title: String
+    let subtitle: String
+    let isSurprise: Bool
+    let isFullWidth: Bool
+    let subOptions: [FoodSubOption]
+}
+
 enum CuisineMode {
     case vibe
     case country
@@ -71,12 +88,23 @@ final class HomeViewModel: ObservableObject {
     @Published var step: Step = .occasion
     @Published var selection: VibeSelection
     @Published var recommendations: [Recommendation] = []
+    @Published var lastSearchFailure: SearchFailure? = nil
+    @Published var lastSearchWasRelaxed: Bool = false
     @Published var isEnriching: Bool = false
     @Published var loadingPhase: String = "Scanning the streets\nfor your vibe..."
     @Published var detectedLocation: String = ""
     @Published var cuisineMode: CuisineMode = .vibe
+    @Published var serviceCategory: String = "eat"
+    @Published var selectedVibe: String = ""
+    @Published var selectedNoRushOccasion: String = "🍽 Best food"
+    @Published var drinksSubType: String = ""
     @Published var tikTokVideos: [String: [TikTokVideo]] = [:]
-    @Published var isFetchingTikTok: Bool = false
+
+    /// Tracks the active search so it can be cancelled when the user exits mid-search.
+    private var searchTask: Task<Void, Never>?
+
+    static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "No Rush", "Brunch", "Late Night"]
+    static let drinksOccasions:  Set<String> = ["Cafe", "Bakery", "Dessert", "Drinks"]
 
     static let countries: [(flag: String, name: String)] = [
         ("🇺🇸", "American"), ("🇮🇹", "Italian"), ("🇲🇽", "Mexican"),
@@ -99,6 +127,7 @@ final class HomeViewModel: ObservableObject {
         selection.keyQuestionTimeWindow = nil
         selection.keyQuestionDate = nil
         selection.foodFeelings = []
+        selection.selectedSubOptions = [:]
         selection.selectedCountry = ""
         selection.cuisineMode = "vibe"
         cuisineMode = .vibe
@@ -111,15 +140,41 @@ final class HomeViewModel: ObservableObject {
         selection.pricePoints = ["$$", "$$$"]
         selection.partySize = 2
         selection.openNow = false
-        step = .keyQuestion
+
+        if Self.drinksOccasions.contains(occasion) {
+            if occasion == "Bakery" {
+                selection.foodFeelings = ["Surprise me"]
+                searchTask = Task { await submitSurvey() }
+            } else {
+                step = .drinksSubFlow
+            }
+        } else if Self.newTimeOccasions.contains(occasion) {
+            if occasion == "No Rush" {
+                selectedNoRushOccasion = "🍽 Best food"
+                selection.selectedVibe = "🍽 Best food"
+            } else {
+                selectedVibe = defaultVibe(for: occasion)
+                selection.selectedVibe = selectedVibe
+            }
+            step = .foodFeeling
+        } else {
+            step = .keyQuestion
+        }
     }
 
     func goBack() {
         switch step {
-        case .keyQuestion: step = .occasion
-        case .foodFeeling: step = .keyQuestion
-        case .location: step = .foodFeeling
-        default: break
+        case .keyQuestion:    step = .occasion
+        case .drinksSubFlow:  step = .occasion
+        case .foodFeeling:
+            if Self.newTimeOccasions.contains(selection.occasion) {
+                step = .occasion
+            } else {
+                step = .keyQuestion
+            }
+        case .location:       step = .foodFeeling
+        case .loading, .reveal: reset()   // back/X both go home from results or mid-search
+        default:              break
         }
     }
 
@@ -150,15 +205,31 @@ final class HomeViewModel: ObservableObject {
 
     func selectFoodFeeling(_ key: String) {
         if key == "Surprise me" {
+            selection.selectedSubOptions = [:]
             selection.foodFeelings = selection.foodFeelings.contains("Surprise me") ? [] : ["Surprise me"]
         } else {
             selection.foodFeelings.removeAll { $0 == "Surprise me" }
+            selection.selectedSubOptions.removeValue(forKey: "Surprise me")
             if let idx = selection.foodFeelings.firstIndex(of: key) {
                 selection.foodFeelings.remove(at: idx)
+                selection.selectedSubOptions.removeValue(forKey: key)
             } else {
                 selection.foodFeelings.append(key)
             }
         }
+    }
+
+    func selectSubOption(_ subKey: String, forCategory categoryKey: String) {
+        if !selection.foodFeelings.contains(categoryKey) {
+            selection.foodFeelings.append(categoryKey)
+        }
+        var subs = selection.selectedSubOptions[categoryKey] ?? []
+        if let idx = subs.firstIndex(of: subKey) {
+            subs.remove(at: idx)
+        } else {
+            subs.append(subKey)
+        }
+        selection.selectedSubOptions[categoryKey] = subs.isEmpty ? nil : subs
     }
 
     func selectCountry(_ country: String) {
@@ -183,7 +254,7 @@ final class HomeViewModel: ObservableObject {
             : !selection.selectedCountry.isEmpty
         guard canContinue else { return }
         selection.cuisineMode = cuisineMode == .country ? "country" : "vibe"
-        Task {
+        searchTask = Task {
             try? await Task.sleep(nanoseconds: 260_000_000)
             await submitSurvey()
         }
@@ -197,7 +268,7 @@ final class HomeViewModel: ObservableObject {
     func proceedWithFineTune() {
         selection.fineTuneApplied = true
         selection.location = effectiveLocation
-        Task { await submitSurvey() }
+        searchTask = Task { await submitSurvey() }
     }
 
     func removeFineTune() {
@@ -220,12 +291,14 @@ final class HomeViewModel: ObservableObject {
 
     var fineTuneType: String {
         switch selection.occasion {
-        case "Quick Bite":                     return "none"
-        case "Date Night":                     return "price"
-        case "Sit Down Meal", "Big Group", "Celebration": return "full"
-        case "Cafe":                           return "none"
-        case "Happy Hour":                     return "opennow"
-        default:                               return "opennow"
+        case "Quick Bite":                                 return "none"
+        case "Date Night":                                 return "price"
+        case "Sit Down Meal", "Big Group", "Celebration":  return "full"
+        case "Cafe":                                       return "none"
+        case "Happy Hour":                                 return "opennow"
+        case "Casual", "Brunch", "Late Night":             return "opennow"
+        case "Sit Down", "No Rush":                        return "full"
+        default:                                           return "opennow"
         }
     }
 
@@ -239,7 +312,7 @@ final class HomeViewModel: ObservableObject {
     func continueFromKeyQuestion() {
         if selection.occasion == "Cafe" {
             selection.foodFeelings = [cafeDefaultFeeling(for: selection.keyQuestionAnswer)]
-            Task { await submitSurvey() }
+            searchTask = Task { await submitSurvey() }
         } else {
             step = .foodFeeling
         }
@@ -313,19 +386,28 @@ final class HomeViewModel: ObservableObject {
     }
 
     func reset() {
+        searchTask?.cancel()
+        searchTask = nil
         step = .occasion
         selection = VibeSelection()
         recommendations = []
+        lastSearchFailure = nil
+        lastSearchWasRelaxed = false
         isEnriching = false
         cuisineMode = .vibe
+        serviceCategory = "eat"
+        selectedVibe = ""
+        selectedNoRushOccasion = "🍽 Best food"
+        drinksSubType = ""
         tikTokVideos = [:]
-        isFetchingTikTok = false
     }
 
     // MARK: - Survey Submit
 
     func submitSurvey() async {
         step = .loading
+        lastSearchFailure = nil
+        lastSearchWasRelaxed = false
         let messages = [
             "Scanning the streets\nfor your vibe...",
             "Reading the TikTok\nbuzz near you...",
@@ -343,18 +425,32 @@ final class HomeViewModel: ObservableObject {
             }
         }
 
+        // handleOccasion resets selection.location on each occasion tap — restore from
+        // the geocoded city name before building the prompt.
+        if selection.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !detectedLocation.isEmpty {
+            selection.location = detectedLocation
+        }
+
         // Phase 1: Gemini results — show cards immediately
-        let result = await GeminiService.getVibeRecommendations(selection: selection)
-        recommendations = result.recommendations
+        let outcome = await GeminiService.getVibeRecommendations(selection: selection)
+        // If the user exited mid-search (reset/back), don't transition to results.
+        guard step == .loading else { return }
+        recommendations = outcome.result.recommendations
+        lastSearchFailure = outcome.failure
+        lastSearchWasRelaxed = outcome.result.relaxed ?? false
         step = .reveal
 
+        // No grounding metadata on transport errors — skip enrichment.
+        guard outcome.failure != .transportError else { return }
+
         // Phase 2: Places enrichment in background — updates images + map pins
-        let groundingPlaces = result.groundingPlaces ?? []
+        let groundingPlaces = outcome.result.groundingPlaces ?? []
         let location = effectiveLocation
         isEnriching = true
         Task {
             let enriched = await GeminiService.enrichRecommendations(
-                result.recommendations,
+                outcome.result.recommendations,
                 groundingPlaces: groundingPlaces,
                 location: location
             )
@@ -362,26 +458,15 @@ final class HomeViewModel: ObservableObject {
             isEnriching = false
         }
 
-        // Phase 3: TikTok video fetch in background — concurrent per restaurant
-        let recs = result.recommendations
-        isFetchingTikTok = true
-        Task {
-            // Resolve city-level location once for all queries
-            let city = await cityForTikTok()
-            await withTaskGroup(of: (String, [TikTokVideo]).self) { group in
-                for rec in recs {
-                    group.addTask {
-                        let query = city.isEmpty ? rec.name : "\(rec.name) \(city)"
-                        let videos = await TikTokService.fetchVideos(query: query)
-                        return (rec.id, videos)
-                    }
-                }
-                for await (id, videos) in group {
-                    tikTokVideos[id] = videos
-                }
-            }
-            isFetchingTikTok = false
-        }
+    }
+
+    func fetchTikTokVideos(for rec: Recommendation) async -> [TikTokVideo] {
+        if let cached = tikTokVideos[rec.id], !cached.isEmpty { return cached }
+        let city = await cityForTikTok()
+        let query = city.isEmpty ? rec.name : "\(rec.name) \(city)"
+        let videos = await TikTokService.fetchVideos(query: query)
+        tikTokVideos[rec.id] = videos
+        return videos
     }
 
     // MARK: - Map label
@@ -444,11 +529,15 @@ final class HomeViewModel: ObservableObject {
 
     var progressStepIndex: Int? {
         switch step {
-        case .occasion:                return nil
-        case .keyQuestion:             return 1
-        case .foodFeeling:             return 2
-        case .location:                return 3
-        case .loading, .reveal:        return nil
+        case .occasion:              return nil
+        case .keyQuestion:           return 1
+        case .drinksSubFlow:         return nil
+        case .foodFeeling:
+            // New time-based occasions skip keyQuestion — don't show a misleading step count
+            if Self.newTimeOccasions.contains(selection.occasion) { return nil }
+            return 2
+        case .location:              return 3
+        case .loading, .reveal:      return nil
         }
     }
 
@@ -458,6 +547,180 @@ final class HomeViewModel: ObservableObject {
         (.foodFeeling, "FOOD FEEL"),
         (.location, "DETAILS")
     ]
+
+    // MARK: - Vibe (new time-based flow)
+
+    func defaultVibe(for occasion: String) -> String {
+        switch occasion {
+        case "Casual", "Late Night": return "🔥 Trending"
+        case "Sit Down", "Brunch":   return "⭐ Best rated"
+        default:                     return "🔥 Trending"
+        }
+    }
+
+    func vibeOptions(for occasion: String) -> [String] {
+        switch occasion {
+        case "Casual":     return ["🔥 Trending", "⭐ Best rated", "🌟 Hidden gem"]
+        case "Sit Down":   return ["🔥 Trending", "⭐ Best rated", "📸 Aesthetic", "🌟 Hidden gem"]
+        case "Brunch":     return ["🔥 Trending", "⭐ Best rated", "📸 Aesthetic"]
+        case "Late Night": return ["🔥 Trending", "⭐ Best rated", "🌟 Hidden gem"]
+        default:           return ["🔥 Trending", "⭐ Best rated", "🌟 Hidden gem"]
+        }
+    }
+
+    func selectVibe(_ vibe: String) {
+        selectedVibe = vibe
+        selection.selectedVibe = vibe
+    }
+
+    func selectNoRushOccasion(_ val: String) {
+        selectedNoRushOccasion = val
+        selection.selectedVibe = val
+    }
+
+    func selectDrinksSubType(_ subType: String) {
+        drinksSubType = subType
+        selection.keyQuestionAnswer = subType
+        selection.foodFeelings = ["Surprise me"]
+        searchTask = Task { await submitSurvey() }
+    }
+
+    var drinksSubFlowOptions: [(emoji: String, title: String, sub: String)] {
+        switch selection.occasion {
+        case "Cafe":
+            return [("☕", "Great coffee",     "Specialty, matcha, quality first"),
+                    ("💻", "Work or study",    "Wifi, quiet, long stay ok"),
+                    ("💬", "Catching up",      "Relaxed, conversational"),
+                    ("🥐", "Coffee & food",    "Want a proper bite too")]
+        case "Dessert":
+            return [("🍦", "Ice cream",         "Scoops, gelato, soft serve"),
+                    ("🍪", "Cookies & baked",   "Fresh, warm, out the oven"),
+                    ("🎂", "Cake & fancy",       "Patisserie, plated dessert"),
+                    ("🧋", "Boba & sweet drinks","Drinks that count as dessert")]
+        case "Drinks":
+            return [("🍹", "Cocktail bar",  "Craft, aesthetic, worth posting"),
+                    ("🍷", "Wine bar",       "Natural wine, grazing, chill"),
+                    ("🌇", "Rooftop",        "Views, outdoor, elevated"),
+                    ("🍺", "Low key bar",    "Cheap, no pretense, chill")]
+        default:
+            return []
+        }
+    }
+
+    // MARK: - Food Categories (new time-based flow)
+
+    private func makeCat(_ key: String, emoji: String, title: String, subtitle: String) -> FoodCategoryOption {
+        FoodCategoryOption(key: key, emoji: emoji, title: title, subtitle: subtitle,
+                           isSurprise: false, isFullWidth: false, subOptions: foodSubOptions(for: key))
+    }
+
+    private func foodSubOptions(for key: String) -> [FoodSubOption] {
+        switch key {
+        case "Handheld":
+            return [FoodSubOption(key: "Burger",    emoji: "🍔", label: "Burger"),
+                    FoodSubOption(key: "Taco",      emoji: "🌮", label: "Taco"),
+                    FoodSubOption(key: "Shawarma",  emoji: "🥙", label: "Shawarma"),
+                    FoodSubOption(key: "Sandwich",  emoji: "🥪", label: "Sandwich")]
+        case "Asian noodles & broth":
+            return [FoodSubOption(key: "Ramen",  emoji: "🍜", label: "Ramen"),
+                    FoodSubOption(key: "Pho",    emoji: "🍲", label: "Pho"),
+                    FoodSubOption(key: "Udon",   emoji: "🥢", label: "Udon"),
+                    FoodSubOption(key: "Laksa",  emoji: "🫕", label: "Laksa")]
+        case "Italian & pizza":
+            return [FoodSubOption(key: "Pizza",   emoji: "🍕", label: "Pizza"),
+                    FoodSubOption(key: "Pasta",   emoji: "🍝", label: "Pasta"),
+                    FoodSubOption(key: "Risotto", emoji: "🧆", label: "Risotto"),
+                    FoodSubOption(key: "Italian", emoji: "🫙", label: "Italian")]
+        case "Meaty":
+            return [FoodSubOption(key: "Steak",      emoji: "🥩", label: "Steak"),
+                    FoodSubOption(key: "BBQ",        emoji: "🍖", label: "BBQ"),
+                    FoodSubOption(key: "Korean BBQ", emoji: "🥘", label: "Korean BBQ"),
+                    FoodSubOption(key: "Kebab",      emoji: "🍢", label: "Kebab")]
+        case "Bowls & stews":
+            return [FoodSubOption(key: "Curry",     emoji: "🫕", label: "Curry"),
+                    FoodSubOption(key: "Ethiopian", emoji: "🍛", label: "Ethiopian"),
+                    FoodSubOption(key: "Tagine",    emoji: "🍲", label: "Tagine"),
+                    FoodSubOption(key: "Bibimbap",  emoji: "🥗", label: "Bibimbap")]
+        case "Fresh & light":
+            return [FoodSubOption(key: "Sushi",      emoji: "🍣", label: "Sushi"),
+                    FoodSubOption(key: "Poke",       emoji: "🥗", label: "Poke"),
+                    FoodSubOption(key: "Ceviche",    emoji: "🍋", label: "Ceviche"),
+                    FoodSubOption(key: "Vietnamese", emoji: "🌿", label: "Vietnamese")]
+        case "Eggy & savory":
+            return [FoodSubOption(key: "Eggs benny", emoji: "🍳", label: "Eggs benny"),
+                    FoodSubOption(key: "Shakshuka",  emoji: "🥚", label: "Shakshuka"),
+                    FoodSubOption(key: "Omelette",   emoji: "🧀", label: "Omelette"),
+                    FoodSubOption(key: "Avo toast",  emoji: "🥑", label: "Avo toast")]
+        case "Doughy & warm":
+            return [FoodSubOption(key: "Pancakes",     emoji: "🥞", label: "Pancakes"),
+                    FoodSubOption(key: "French toast", emoji: "🍞", label: "French toast"),
+                    FoodSubOption(key: "Waffles",      emoji: "🧇", label: "Waffles"),
+                    FoodSubOption(key: "Brioche",      emoji: "🥖", label: "Brioche")]
+        case "Sweet & flaky":
+            return [FoodSubOption(key: "Croissant", emoji: "🥐", label: "Croissant"),
+                    FoodSubOption(key: "Pastry",    emoji: "🎂", label: "Pastry"),
+                    FoodSubOption(key: "Danish",    emoji: "🥧", label: "Danish"),
+                    FoodSubOption(key: "Donut",     emoji: "🍩", label: "Donut")]
+        default:
+            return []
+        }
+    }
+
+    var foodCategoriesForOccasion: [FoodCategoryOption] {
+        let surprise = FoodCategoryOption(key: "Surprise me", emoji: "✨", title: "Surprise me",
+                                          subtitle: "Best near me, any style", isSurprise: true,
+                                          isFullWidth: true, subOptions: [])
+
+        switch selection.occasion {
+        case "Casual":
+            return [
+                makeCat("Handheld",              emoji: "🌮", title: "Handheld",              subtitle: "Burgers, tacos, wraps"),
+                makeCat("Asian noodles & broth", emoji: "🍜", title: "Asian noodles & broth", subtitle: "Ramen, pho, udon"),
+                makeCat("Italian & pizza",       emoji: "🍕", title: "Italian & pizza",       subtitle: "Pasta, pizza, risotto"),
+                makeCat("Meaty",                 emoji: "🥩", title: "Meaty",                 subtitle: "BBQ, grills, fried chicken"),
+                makeCat("Bowls & stews",         emoji: "🍲", title: "Bowls & stews",         subtitle: "Curry, grain bowls, tagine"),
+                makeCat("Fresh & light",         emoji: "🥗", title: "Fresh & light",         subtitle: "Sushi, poke, salads"),
+                surprise
+            ]
+        case "Sit Down":
+            return [
+                makeCat("Italian & pizza",       emoji: "🍕", title: "Italian & pizza",       subtitle: "Pasta, pizza, risotto"),
+                makeCat("Meaty",                 emoji: "🥩", title: "Meaty",                 subtitle: "Steakhouse, BBQ, chops"),
+                makeCat("Bowls & stews",         emoji: "🍲", title: "Bowls & stews",         subtitle: "Curry, Ethiopian, tagine"),
+                makeCat("Asian noodles & broth", emoji: "🍜", title: "Asian noodles & broth", subtitle: "Ramen, izakaya, Korean"),
+                makeCat("Fresh & light",         emoji: "🥗", title: "Fresh & light",         subtitle: "Sushi, Mediterranean, salads"),
+                makeCat("Handheld",              emoji: "🌮", title: "Handheld",              subtitle: "Tacos, burgers, sandwiches"),
+                surprise
+            ]
+        case "No Rush":
+            return [
+                makeCat("Meaty",           emoji: "🥩", title: "Meaty",           subtitle: "Steak, omakase, BBQ"),
+                makeCat("Italian & pizza", emoji: "🍕", title: "Italian & pizza", subtitle: "Pasta, pizza, trattoria"),
+                makeCat("Bowls & stews",   emoji: "🍲", title: "Bowls & stews",   subtitle: "Slow-cooked, braised, saucy"),
+                makeCat("Fresh & light",   emoji: "🥗", title: "Fresh & light",   subtitle: "Sushi, seafood, French"),
+                makeCat("Handheld",        emoji: "🌮", title: "Handheld",        subtitle: "Upscale tacos, tartine"),
+                surprise
+            ]
+        case "Brunch":
+            return [
+                makeCat("Eggy & savory", emoji: "🍳", title: "Eggy & savory", subtitle: "Eggs benny, shakshuka, omelette"),
+                makeCat("Doughy & warm", emoji: "🥞", title: "Doughy & warm", subtitle: "Pancakes, french toast, waffles"),
+                makeCat("Sweet & flaky", emoji: "🥐", title: "Sweet & flaky", subtitle: "Croissant, pastry, danish"),
+                makeCat("Fresh & light", emoji: "🥗", title: "Fresh & light", subtitle: "Avocado toast, açaí, granola"),
+                surprise
+            ]
+        case "Late Night":
+            return [
+                makeCat("Handheld",              emoji: "🌮", title: "Handheld",              subtitle: "Tacos, sliders, street food"),
+                makeCat("Asian noodles & broth", emoji: "🍜", title: "Asian noodles & broth", subtitle: "Ramen, pho, late-night noodles"),
+                makeCat("Italian & pizza",       emoji: "🍕", title: "Italian & pizza",       subtitle: "Late-night pizza, pasta"),
+                makeCat("Meaty",                 emoji: "🥩", title: "Meaty",                 subtitle: "Fried chicken, BBQ, grills"),
+                surprise
+            ]
+        default:
+            return []
+        }
+    }
 
     // MARK: - Key Questions
 

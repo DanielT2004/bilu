@@ -4,9 +4,9 @@ This document is the authoritative design contract for the **bilu** app. Every A
 
 ---
 
-## Design System: The Tactile Archive
+## Design System: The Dopamine Engine
 
-The creative north star is **"app-as-a-sanctuary"** — boutique, editorial, human-made. It should feel like a deep breath. If it feels like a generic dashboard, add more whitespace and remove a line.
+The creative north star is **"app-as-a-dopamine-inducing discovery engine"** — high-energy, modern, food-forward. Every screen should feel alive, vibrant, and magnetic. If it feels calm and muted, add more red and remove a line.
 
 ---
 
@@ -16,23 +16,25 @@ All colors live in `bilu/Helpers/AppTheme.swift`. **Never introduce raw hex stri
 
 | Token | Hex | Role |
 |---|---|---|
-| `AppTheme.surface` | `#fbf9f4` | Page / screen background |
+| `AppTheme.surface` | `#FFF6ED` | Page / screen background |
 | `AppTheme.white` | `#ffffff` | Card faces, elevated surfaces |
-| `AppTheme.sage` | `#516237` | Primary — core actions, brand |
-| `AppTheme.sageLt` | `#e8f0e0` | Icon tray backgrounds, chips |
-| `AppTheme.sageMd` | `#c8d4b8` | Progress bar mid, decorative |
-| `AppTheme.terracotta` | `#9f402d` | Secondary CTA — use sparingly |
+| `AppTheme.sage` | `#FF3B30` | Primary — core actions, brand (Spicy Red) |
+| `AppTheme.sageLt` | `#FFDAD6` | Icon tray backgrounds, chips (light red tint) |
+| `AppTheme.sageMd` | `#FFB4AB` | Progress bar mid, decorative (medium red tint) |
+| `AppTheme.terracotta` | `#FF9500` | Secondary CTA — Mango Orange, use sparingly |
 | `AppTheme.onSurface` | `#1b1c19` | All primary text |
-| `AppTheme.muted` | `#7a8a6a` | Secondary / helper text |
-| `AppTheme.subtle` | `#a0aa90` | Tertiary / placeholder text |
-| `AppTheme.shadowColor` | `#516237` @ 8% | Ambient card shadow |
-| `AppTheme.ghostBorder` | `#516237` @ 15% | Input field edges only |
+| `AppTheme.muted` | `#635a51` | Secondary / helper text |
+| `AppTheme.subtle` | `#8B8070` | Tertiary / placeholder text |
+| `AppTheme.shadowColor` | `#FF3B30` @ 8% | Ambient card shadow (red-tinted) |
+| `AppTheme.ghostBorder` | `#FF3B30` @ 15% | Input field edges only |
 
 ### Forbidden colors
 - `#8B5CF6` purple — never. Replace with `AppTheme.terracotta`.
 - `#0F172A` / `#1C1C1E` near-black — use `AppTheme.onSurface`.
 - `#64748B` slate gray — use `AppTheme.muted`.
 - Pure `Color.black` / `Color.gray` for shadows — use `AppTheme.shadowColor`.
+- `#516237` sage green — replaced by `AppTheme.sage` (Spicy Red).
+- `#9f402d` old terracotta — replaced by `AppTheme.terracotta` (Mango Orange).
 
 ---
 
@@ -185,6 +187,31 @@ ForEach(Array(items.enumerated()), id: \.offset) { index, item in
 ### Loading / Pulse
 Spinning rings use `.linear(duration: N).repeatForever(autoreverses: false)`. Orbit items use counter-rotation for visual interest. Do not replace this pattern without design review.
 
+### Gesture-Driven Dismissal
+Full-screen overlays and sheets must respond to a downward drag — not just a tap on an X button. This is the standard set by iOS Photos, TikTok, and Instagram. Use this pattern on: video feed, restaurant detail sheet, any full-screen overlay.
+
+```swift
+@GestureState private var dragOffset: CGFloat = 0
+@Environment(\.dismiss) private var dismiss
+
+var body: some View {
+    content
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture()
+                .updating($dragOffset) { value, state, _ in
+                    if value.translation.height > 0 { state = value.translation.height }
+                }
+                .onEnded { value in
+                    if value.translation.height > 120 {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        dismiss()
+                    }
+                }
+        )
+}
+```
+
 ### Navigation Bar Glass
 The bottom tab bar and sticky headers use `.ultraThinMaterial` for the frosted-glass effect — never a solid white/cream background with a hairline border.
 
@@ -221,6 +248,10 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 - Use `.continuous` curve style on `RoundedRectangle` for a softer feel
 - Stagger list reveals with `.delay()` for a curated, editorial feel
 - Add `.shadow(color: AppTheme.shadowColor, radius: 16, y: 6)` to floating cards
+- Add haptic feedback to every state-changing tap
+- Implement swipe-to-dismiss on all sheet presentations and full-screen overlays
+- Ask "what gesture would feel natural here?" before adding a UI button
+- Use `DragGesture` + `@GestureState` for fluid, physics-feeling dismiss patterns
 
 ### Don't
 - Use purple (`#8B5CF6`) anywhere
@@ -230,10 +261,100 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 - Use `NavigationStack` push transitions when a sheet would work
 - Summarize changes at the end of responses (user can read the diff)
 - Add features, error handling, or abstractions beyond what was asked
+- Make dismissal button-only — pair every X button with a swipe-down gesture
+- Add haptics to purely visual or decorative interactions
+- Put API calls or data logic inside View `body` or `onAppear` — route through ViewModel
 
 ---
 
 ## 10. File Conventions
+
+---
+
+## 11. Interaction Philosophy — Touch First
+
+bilu is a tactile app. Every screen should feel alive under a thumb. The design bar is iOS Photos, TikTok, and Instagram — apps where gestures are the primary language, not buttons.
+
+### The Gesture-First Principle
+Before adding any button, ask: **"How would a user naturally do this with their thumb?"**
+
+- A video player → swipeable down to dismiss, not just X-button closeable
+- A restaurant detail sheet → draggable down to close
+- A card result → swipeable to save/skip
+- A settings panel → edge-swipeable back
+
+If there's a natural gesture, implement the gesture *first*. The button is a fallback affordance, not the primary interaction.
+
+### Gesture Catalog
+
+| Gesture | When to use |
+|---|---|
+| Swipe down | Dismiss any full-screen overlay or sheet |
+| Swipe left / right | Navigate between pages, dismiss cards |
+| Long press | Reveal contextual actions on cards |
+| Pinch | Expand/collapse maps or image galleries |
+| Drag | Move, reorder, or adjust spatial elements |
+
+### Reference Apps
+When in doubt, ask: "How does TikTok/Instagram/iOS Photos handle this?" Then match that interaction density. Never settle for a modal alert when a swipe would do.
+
+---
+
+## 12. Haptic Feedback — Make It Feel Real
+
+Haptics are the tactile layer of the design. Every state-changing interaction should have a corresponding physical pulse. The app must feel like it responds to every touch.
+
+### Haptic Catalog
+
+```swift
+// Selection / toggle on (card tap, option select, toggle)
+UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+// Primary action confirmed (Submit, Take Me There, New Vibe)
+UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+// Success / milestone (results revealed, booking confirmed)
+UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+// Error / destructive warning
+UINotificationFeedbackGenerator().notificationOccurred(.error)
+
+// Drag threshold crossed (swipe-to-dismiss snap point)
+UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+
+// Soft interaction (scroll snap, subtle nudge)
+UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+```
+
+### Rules
+- Every tap that **changes state** → `.light` impact
+- Primary CTAs ("Submit", "Take Me There") → `.medium` impact  
+- Results reveal → `.success` notification
+- Drag crosses a dismiss threshold → `.rigid` impact
+- **Never** add haptics to scroll, passive animation, or purely decorative transitions
+- Wrap generators in a helper or call inline — do not create persistent `UIImpactFeedbackGenerator` instances as stored properties
+
+---
+
+## 13. Code Quality Principles
+
+### Architecture
+- **ViewModels own logic, Views own layout** — no API calls, data transforms, or business logic inside `View` structs
+- **State flows down, actions flow up** — use `@Binding` and closures to keep child views stateless
+- **One source of truth** — if `HomeViewModel` owns `step`, no View may hold a parallel `@State var currentStep`
+
+### Naming
+- Prefer readable over terse: `isLoadingResults` not `isFetching`, `selectedOccasion` not `occ`
+- Boolean states use `is` / `has` / `should` prefixes: `isExpanded`, `hasLoaded`, `shouldShowMap`
+
+### Safety
+- **No force unwraps** (`!`) on user-facing data paths — use `guard let` or `if let`
+- Avoid `try!` outside test code
+
+### Cleanliness
+- Remove unused variables, commented-out code blocks, and `TODO` stubs before considering a feature done
+- Don't leave debug `print()` statements in committed code
+- Don't add `// MARK:` sections unless a file exceeds ~200 lines and genuinely benefits from navigation
 
 | What | Where |
 |---|---|

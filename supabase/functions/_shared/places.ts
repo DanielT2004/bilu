@@ -15,6 +15,8 @@ export interface Recommendation {
   address?: string;
   phone?: string;
   website?: string;
+  placeId?: string;
+  photoRefs?: string[];
 }
 
 export interface GroundingPlace {
@@ -42,6 +44,68 @@ function logPlaces(...args: unknown[]) {
 function logPlacesWarn(...args: unknown[]) {
   console.warn("[places]", ...args);
 }
+
+// ── Supabase cache helpers ────────────────────────────────────────────────────
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const CACHE_TABLE_URL = `${SUPABASE_URL}/rest/v1/places_cache`;
+const CACHE_TTL_DAYS = 30;
+
+interface CacheRow {
+  place_id: string;
+  photo_refs: string[];
+  rating: number | null;
+  review_count: number | null;
+  is_open: boolean | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  cached_at: string;
+}
+
+async function getCachedPlace(placeId: string): Promise<CacheRow | null> {
+  try {
+    const res = await fetch(
+      `${CACHE_TABLE_URL}?place_id=eq.${encodeURIComponent(placeId)}&limit=1`,
+      {
+        headers: {
+          "apikey": SUPABASE_SERVICE_ROLE_KEY,
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      }
+    );
+    if (!res.ok) return null;
+    const rows: CacheRow[] = await res.json();
+    if (!rows.length) return null;
+    const cachedAt = new Date(rows[0].cached_at).getTime();
+    if (Date.now() - cachedAt > CACHE_TTL_DAYS * 86400000) return null;
+    return rows[0];
+  } catch {
+    return null;
+  }
+}
+
+async function upsertCachedPlace(row: Omit<CacheRow, "cached_at">): Promise<void> {
+  try {
+    await fetch(CACHE_TABLE_URL, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({ ...row, cached_at: new Date().toISOString() }),
+    });
+  } catch {
+    // Cache write failure is non-fatal — continue without caching
+  }
+}
+
+// ── Places API helpers ────────────────────────────────────────────────────────
 
 export function parsePlaceIdFromMapsUrl(mapsUrl: string, logTag: string): string | null {
   if (!mapsUrl) return null;
@@ -158,7 +222,7 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
     return empty;
   }
 
-  const photoNames = (data?.photos ?? []).slice(0, 10).map((p) => p.name ?? "").filter(Boolean);
+  const photoNames = (data?.photos ?? []).slice(0, 5).map((p) => p.name ?? "").filter(Boolean);
   logPlaces(logTag, "placeDetails: photo count", photoNames.length);
 
   const latitude = data?.location?.latitude;
@@ -175,9 +239,9 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
   return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website };
 }
 
-async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string): Promise<string | null> {
+export async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string, maxWidthPx = 800): Promise<string | null> {
   const resource = photoName.endsWith("/media") ? photoName : `${photoName}/media`;
-  const mediaUrl = `https://places.googleapis.com/v1/${resource}?maxWidthPx=800&skipHttpRedirect=true`;
+  const mediaUrl = `https://places.googleapis.com/v1/${resource}?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true`;
   logPlaces(logTag, "photoMedia: GET (truncated)", mediaUrl.slice(0, 180));
 
   const res = await fetch(mediaUrl, { headers: { "X-Goog-Api-Key": apiKey } });
@@ -220,6 +284,7 @@ export async function enrichRecommendation(
     searchArea,
   });
 
+  // ── 1. Resolve place ID ───────────────────────────────────────────────────
   let placeId = parsePlaceIdFromMapsUrl(rec.mapsUrl, logTag);
 
   if (!placeId) {
@@ -237,23 +302,126 @@ export async function enrichRecommendation(
     return { rec, error: msg };
   }
 
-  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website } = await fetchPlaceDetails(placeId, placesApiKey, logTag);
-  const recWithMeta = { ...rec, latitude, longitude, rating, reviewCount, isOpen, address, phone, website };
+  // ── 2. Check cache ────────────────────────────────────────────────────────
+  const cached = await getCachedPlace(placeId);
+
+  if (cached) {
+    logPlaces(logTag, "CACHE HIT", placeId);
+
+    if (!cached.photo_refs.length) {
+      logPlacesWarn(logTag, "CACHE HIT but no photo_refs — returning metadata only");
+      return {
+        rec: {
+          ...rec,
+          placeId,
+          latitude: cached.latitude ?? undefined,
+          longitude: cached.longitude ?? undefined,
+          rating: cached.rating ?? undefined,
+          reviewCount: cached.review_count ?? undefined,
+          isOpen: cached.is_open ?? undefined,
+          address: cached.address ?? undefined,
+          phone: cached.phone ?? undefined,
+          website: cached.website ?? undefined,
+        },
+        error: null,
+      };
+    }
+
+    // Resolve only the hero ref fresh at 400px — skip fetchPlaceDetails entirely
+    const heroUri = await fetchPhotoUri(cached.photo_refs[0], placesApiKey, logTag, 400);
+
+    return {
+      rec: {
+        ...rec,
+        placeId,
+        latitude: cached.latitude ?? undefined,
+        longitude: cached.longitude ?? undefined,
+        rating: cached.rating ?? undefined,
+        reviewCount: cached.review_count ?? undefined,
+        isOpen: cached.is_open ?? undefined,
+        address: cached.address ?? undefined,
+        phone: cached.phone ?? undefined,
+        website: cached.website ?? undefined,
+        image: heroUri ?? rec.image,
+        photos: heroUri ? [heroUri] : undefined,
+        photoRefs: cached.photo_refs.slice(1),
+      },
+      error: null,
+    };
+  }
+
+  // ── 3. Cache miss — fetch from Google Places ──────────────────────────────
+  logPlaces(logTag, "CACHE MISS — fetching from Places API", placeId);
+
+  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website } =
+    await fetchPlaceDetails(placeId, placesApiKey, logTag);
+
+  const recWithMeta = {
+    ...rec,
+    placeId,
+    latitude,
+    longitude,
+    rating,
+    reviewCount,
+    isOpen,
+    address,
+    phone,
+    website,
+  };
 
   if (photoNames.length === 0) {
     const msg = `${logTag} ENRICHMENT_FAILED: Place Details returned no photo names (placeId=${placeId})`;
     logPlacesWarn(msg);
+    // Still write metadata to cache even without photos
+    await upsertCachedPlace({
+      place_id: placeId,
+      photo_refs: [],
+      rating: rating ?? null,
+      review_count: reviewCount ?? null,
+      is_open: isOpen ?? null,
+      address: address ?? null,
+      phone: phone ?? null,
+      website: website ?? null,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
+    });
     return { rec: recWithMeta, error: msg };
   }
 
-  const photoUris = (await Promise.all(photoNames.map((n) => fetchPhotoUri(n, placesApiKey, logTag)))).filter((u): u is string => !!u);
+  // Resolve only the hero photo at 400px during enrichment
+  const heroUri = await fetchPhotoUri(photoNames[0], placesApiKey, logTag, 400);
 
-  if (photoUris.length === 0) {
-    const msg = `${logTag} ENRICHMENT_FAILED: all photo media fetches failed (placeId=${placeId})`;
+  if (!heroUri) {
+    const msg = `${logTag} ENRICHMENT_FAILED: hero photo fetch failed (placeId=${placeId})`;
     logPlacesWarn(msg);
     return { rec: recWithMeta, error: msg };
   }
 
-  logPlaces(logTag, "ENRICHMENT_OK", { photoCount: photoUris.length });
-  return { rec: { ...recWithMeta, image: photoUris[0], photos: photoUris }, error: null };
+  const remainingRefs = photoNames.slice(1);
+
+  // Write to cache — store refs only, never URIs
+  await upsertCachedPlace({
+    place_id: placeId,
+    photo_refs: photoNames,
+    rating: rating ?? null,
+    review_count: reviewCount ?? null,
+    is_open: isOpen ?? null,
+    address: address ?? null,
+    phone: phone ?? null,
+    website: website ?? null,
+    latitude: latitude ?? null,
+    longitude: longitude ?? null,
+  });
+
+  logPlaces(logTag, "ENRICHMENT_OK", { heroUri: heroUri.slice(0, 80), remainingRefs: remainingRefs.length });
+
+  return {
+    rec: {
+      ...recWithMeta,
+      image: heroUri,
+      photos: [heroUri],
+      photoRefs: remainingRefs,
+    },
+    error: null,
+  };
 }

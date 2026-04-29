@@ -8,16 +8,16 @@
 
 import SwiftUI
 import AVFoundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - VideoFeedView
 
 struct VideoFeedView: View {
-    @StateObject private var viewModel: VideoFeedViewModel
+    @ObservedObject var viewModel: VideoFeedViewModel
     @Environment(\.dismiss) private var dismiss
-
-    init(videos: [TikTokVideo], startIndex: Int = 0) {
-        _viewModel = StateObject(wrappedValue: VideoFeedViewModel(videos: videos, startIndex: startIndex))
-    }
+    @GestureState private var dragOffset: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -26,6 +26,7 @@ struct VideoFeedView: View {
 
             // Dismiss button — top-left frosted circle
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
@@ -39,10 +40,29 @@ struct VideoFeedView: View {
             }
         }
         .background(Color.black)
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture()
+                .updating($dragOffset) { value, state, _ in
+                    if value.translation.height > 0 {
+                        state = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 120 {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        dismiss()
+                    }
+                }
+        )
         .onAppear {
             // Ensure audio plays through speaker even when ringer is off
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try? AVAudioSession.sharedInstance().setActive(true)
+            viewModel.activateCurrent()
+        }
+        .onDisappear {
+            viewModel.deactivateCurrent()
         }
     }
 }
@@ -65,8 +85,9 @@ struct PageViewController: UIViewControllerRepresentable {
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
 
-        let startVC = context.coordinator.makePageVC(for: viewModel.currentIndex)
-        pvc.setViewControllers([startVC], direction: .forward, animated: false)
+        if let startVC = context.coordinator.makePageVC(for: viewModel.currentIndex) {
+            pvc.setViewControllers([startVC], direction: .forward, animated: false)
+        }
         return pvc
     }
 
@@ -81,8 +102,8 @@ struct PageViewController: UIViewControllerRepresentable {
             self.viewModel = viewModel
         }
 
-        func makePageVC(for index: Int) -> UIHostingController<VideoPageView> {
-            let pageModel = viewModel.warmPage(at: index)
+        func makePageVC(for index: Int) -> UIHostingController<VideoPageView>? {
+            guard let pageModel = viewModel.warmPage(at: index) else { return nil }
             let pageView = VideoPageView(feedViewModel: viewModel, pageModel: pageModel, index: index)
             let vc = UIHostingController(rootView: pageView)
             vc.view.backgroundColor = .black

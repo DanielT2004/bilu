@@ -10,6 +10,18 @@ struct TikTokAuthor: Codable {
     let avatar: String  // author.avatar_thumb.url_list[0]
 }
 
+struct TikTokAnchor: Codable {
+    let keyword: String
+    let categoryName: String?
+    let poiClassName: String?
+    let lat: Double?
+    let lng: Double?
+}
+
+struct TikTokDebugInfo: Codable {
+    let anchors: [TikTokAnchor]
+}
+
 struct TikTokVideo: Codable, Identifiable {
     let videoId: String         // aweme_id
     let shareUrl: String        // constructed as https://www.tiktok.com/@user/video/<aweme_id>
@@ -20,6 +32,8 @@ struct TikTokVideo: Codable, Identifiable {
     let diggCount: Int          // statistics.digg_count
     let commentCount: Int       // statistics.comment_count
     let viewCount: Int          // statistics.play_count
+    let transcriptUrl: String?  // video.cla_info.caption_infos[].url (prefer lang=eng)
+    let debug: TikTokDebugInfo?
 
     var id: String { videoId }
 }

@@ -20,19 +20,19 @@ enum PromptBuilder {
     // Returns which survey steps were actually shown for this occasion.
 
     private static func showsCuisine(for occasion: String) -> Bool {
-        occasion != "Cafe"
+        !HomeViewModel.drinksOccasions.contains(occasion)
     }
 
     private static func showsPrice(for occasion: String) -> Bool {
         switch occasion {
-        case "Date Night", "Sit Down Meal", "Big Group", "Celebration": return true
+        case "Date Night", "Sit Down Meal", "Big Group", "Celebration", "Sit Down", "No Rush": return true
         default: return false
         }
     }
 
     private static func showsPartySize(for occasion: String) -> Bool {
         switch occasion {
-        case "Sit Down Meal", "Big Group", "Celebration": return true
+        case "Sit Down Meal", "Big Group", "Celebration", "Sit Down", "No Rush": return true
         default: return false
         }
     }
@@ -41,11 +41,14 @@ enum PromptBuilder {
 
     static func getPrompt(selection: VibeSelection) -> String {
         let location = effectiveLocation(for: selection)
-        let coordLine: String = {
-            if let lat = selection.latitude, let lng = selection.longitude {
-                return " (\(String(format: "%.4f", lat))° N, \(String(format: "%.4f", abs(lng)))° W)"
+        let openingLine: String = {
+            if selection.useRadiusSearch,
+               let lat = selection.latitude,
+               let lng = selection.longitude {
+                let coordLine = " (\(String(format: "%.4f", lat))° N, \(String(format: "%.4f", abs(lng)))° W)"
+                return "Find 5 exceptional spots for \(selection.occasion) near \(location)\(coordLine), within \(String(format: "%.1f", selection.radiusMiles)) miles."
             }
-            return ""
+            return "Find 5 exceptional spots for \(selection.occasion) in the greater \(location) area."
         }()
 
         // --- Mission lines (replaces both USER CONTEXT and Discovery Logic) ---
@@ -66,21 +69,39 @@ enum PromptBuilder {
         if let tw = selection.keyQuestionTimeWindow { missionLines.append("Time preference: \(tw).") }
         if let dt = selection.keyQuestionDate       { missionLines.append("Date: \(dt).") }
 
-        // Cuisine / food feeling — only if that step was shown
+        // Cuisine / food feeling first — "5 smash burger spots that are viral" beats
+        // "5 viral places that serve smash burgers". Food type anchors the search.
         if showsCuisine(for: selection.occasion) {
             if selection.cuisineMode == "country", !selection.selectedCountry.isEmpty,
                let cp = PromptConstants.countryPrompts[selection.selectedCountry] {
                 missionLines.append(cp)
             } else {
                 for feeling in selection.foodFeelings {
-                    if let fp = PromptConstants.foodFeelingPrompts[feeling] {
-                        missionLines.append(fp)
+                    let subs = selection.selectedSubOptions[feeling] ?? []
+                    if subs.isEmpty {
+                        // No sub-option drill-down: use category-level prompt.
+                        if let fp = PromptConstants.foodFeelingPrompts[feeling] {
+                            missionLines.append(fp)
+                        }
+                    } else {
+                        // Use each selected sub-option's specific prompt.
+                        for sub in subs {
+                            if let fp = PromptConstants.foodFeelingPrompts[sub] {
+                                missionLines.append(fp)
+                            }
+                        }
                     }
                 }
             }
         }
 
-        let mission = missionLines.joined(separator: " ")
+        // Vibe filter comes after food type — it modifies how to rank, not what to find
+        if !selection.selectedVibe.isEmpty,
+           let vp = PromptConstants.vibePrompts[selection.selectedVibe] {
+            missionLines.append(vp)
+        }
+
+        let mission = missionLines.joined(separator: "\n")
 
         // --- Constraints — only included when user explicitly applied fine-tune ---
         var constraints: [String] = []
@@ -118,30 +139,33 @@ enum PromptBuilder {
         let constraintBlock = constraints.isEmpty ? "" :
             "\n\nConstraints:\n" + constraints.map { "- \($0)" }.joined(separator: "\n")
 
-        // --- Recognition / chain filter ---
-        // Extra chain guidance for paths where quality is the explicit priority
+        // --- Recognition / chain preference ---
+        // Strong preference, never a hard reject — model must always return results, never refuse.
         let chainNote: String
-        if selection.keyQuestionAnswer == "Best quality nearby" || selection.keyQuestionAnswer == "Something new & trendy" {
-            chainNote = " Reject corporate fast-casual chains that expanded via franchise rollout (e.g. Dave's Hot Chicken, Raising Cane's). Allow chef-driven groups of 2–8 locations that grew organically from a cult original with editorial recognition."
+        if selection.keyQuestionAnswer == "Best quality nearby"
+            || selection.keyQuestionAnswer == "Something new & trendy"
+            || selection.selectedVibe == "⭐ Best rated"
+            || selection.selectedVibe == "🔥 Trending" {
+            chainNote = " Avoid corporate fast-casual franchise rollouts (e.g. Dave's Hot Chicken, Raising Cane's) when better options exist; chef-driven groups with a handful of locations that grew organically from a cult original are welcome."
         } else {
             chainNote = ""
         }
 
         let recognitionBlock = """
 
-        // Prioritize independent or small-local-group spots with strong local reputation — high review count, editorial coverage (Eater, Infatuation, Beli, Michelin Bib Gourmand, James Beard), or cult following. Deprioritize national chains.\(chainNote)
+        Strongly prefer independent spots and small local groups with editorial recognition (Eater, Infatuation, Beli, Michelin Bib Gourmand, James Beard) or cult following. Include a chain only if no quality independents fit — never refuse the request.\(chainNote)
         """
 
         // --- Task ---
         let taskBlock = """
 
-        Find 5 results. For each, write an 'explanation' that names the vibe and why it matches what the user is after.
-
-        Return as JSON: { "recommendations": [{ "name": "", "dish": "", "explanation": "", "mapsUrl": "" }] }
+        Return up to 5 results as JSON: { "recommendations": [{ "name": "", "dish": "", "explanation": "", "mapsUrl": "" }] }
+        Fewer than 5 is fine. If nothing fits, return { "recommendations": [] }. Always respond with JSON only — never refuse, never apologize, never write prose.
+        Each explanation should name the vibe and why the spot fits.
         """
 
         return """
-        Find 5 exceptional spots for \(selection.occasion) near \(location)\(coordLine), within \(String(format: "%.1f", selection.radiusMiles)) miles.
+        \(openingLine)
 
         \(mission)\(constraintBlock)\(recognitionBlock)\(taskBlock)
         """.trimmingCharacters(in: .whitespacesAndNewlines)

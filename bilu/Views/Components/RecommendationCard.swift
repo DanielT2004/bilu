@@ -13,54 +13,11 @@ private func mockMatchScore(for name: String) -> Int {
     return seeds[idx]
 }
 
-// MARK: - Clip bubble
-
-private struct ClipBubble: View {
-    let thumbnailUrl: String
-
-    var body: some View {
-        ZStack {
-            // Gradient ring border
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: [AppTheme.sage, AppTheme.terracotta, AppTheme.sageLt],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2
-                )
-
-            // Thumbnail image
-            AsyncImage(url: URL(string: thumbnailUrl)) { phase in
-                if let img = phase.image {
-                    img.resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .clipShape(Circle())
-                        .padding(3)
-                } else {
-                    Circle()
-                        .fill(AppTheme.sageLt)
-                        .padding(3)
-                }
-            }
-
-            // Play icon overlay
-            Image(systemName: "play.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white.opacity(0.9))
-        }
-        .frame(width: 44, height: 44)
-        .shadow(color: AppTheme.shadowColor, radius: 6, x: 0, y: 2)
-    }
-}
-
 // MARK: - Recommendation card
 
 struct RecommendationCard: View {
     @Environment(\.openURL) private var openURL
     let rec: Recommendation
-    var tikTokVideos: [TikTokVideo] = []
     @State private var imageError = false
 
     private let fallbackImage = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80"
@@ -70,7 +27,7 @@ struct RecommendationCard: View {
             // ── Photo + overlays ──────────────────────────────────────────
             ZStack(alignment: .bottom) {
                 // Base color so ZStack always has defined size
-                AppTheme.sageLt
+                AppTheme.surface
 
                 AsyncImage(url: URL(string: imageError ? fallbackImage : (rec.image ?? ""))) { phase in
                     switch phase {
@@ -81,7 +38,7 @@ struct RecommendationCard: View {
                             .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                             .clipped()
                     case .failure:
-                        AppTheme.sageLt
+                        AppTheme.surface
                             .overlay(
                                 Image(systemName: "photo")
                                     .font(.largeTitle)
@@ -89,9 +46,9 @@ struct RecommendationCard: View {
                             )
                             .task { imageError = true }
                     case .empty:
-                        AppTheme.sageLt
+                        AppTheme.surface
                     @unknown default:
-                        AppTheme.sageLt
+                        AppTheme.surface
                     }
                 }
                 .onChange(of: rec.image) { _ in imageError = false }
@@ -102,22 +59,6 @@ struct RecommendationCard: View {
                     startPoint: .center,
                     endPoint: .bottom
                 )
-
-                // TikTok bubbles — bottom left
-                let clips = Array(tikTokVideos.prefix(3))
-                if !clips.isEmpty {
-                    HStack(spacing: 0) {
-                        HStack(spacing: -14) {
-                            ForEach(Array(clips.enumerated()), id: \.offset) { idx, video in
-                                ClipBubble(thumbnailUrl: video.thumbnailUrl)
-                                    .zIndex(Double(clips.count - idx))
-                            }
-                        }
-                        .padding(.leading, 16)
-                        .padding(.bottom, 14)
-                        Spacer()
-                    }
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: 320)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -143,14 +84,14 @@ struct RecommendationCard: View {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 10))
-                                .foregroundStyle(AppTheme.sage)
+                                .foregroundStyle(AppTheme.terracotta)
                             Text(String(format: "%.1f", rating))
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(AppTheme.onSurface)
                         }
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
-                        .background(AppTheme.sageLt)
+                        .background(AppTheme.surface)
                         .clipShape(Capsule())
                     }
                 }
@@ -183,7 +124,7 @@ struct RecommendationCard: View {
         .frame(maxWidth: .infinity)
         .background(AppTheme.white)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
+        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
     }
 
     // MARK: - Match badge

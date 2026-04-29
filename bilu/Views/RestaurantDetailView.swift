@@ -9,9 +9,12 @@ import MapKit
 // MARK: - Tab enum
 
 private enum DetailTab: Int, CaseIterable {
-    case overview, insights, media, reviews
+    case overview, media, insights, reviews
     var label: String {
-        ["Overview", "Insights", "Media", "Reviews"][rawValue]
+        ["Overview", "Media", "Insights", "Reviews"][rawValue]
+    }
+    var icon: String {
+        ["square.grid.2x2", "play.rectangle.fill", "sparkles", "quote.bubble"][rawValue]
     }
 }
 
@@ -21,14 +24,20 @@ struct RestaurantDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     let rec: Recommendation
-    var tikTokVideos: [TikTokVideo] = []
+    let fetchTikToks: () async -> [TikTokVideo]
 
+    @State private var tikTokVideos: [TikTokVideo] = []
+    @State private var isFetchingTikTok = false
     @State private var currentPhoto = 0
     @State private var selectedTab: DetailTab = .overview
     @State private var ivenBeenHere = false
     @State private var swipeForward = true
-    @State private var playerStartIndex: Int = 0
-    @State private var showingVideoPlayer = false
+    @State private var feedViewModel: VideoFeedViewModel? = nil
+    @State private var prewarmedFeedViewModel: VideoFeedViewModel? = nil
+    @State private var showingAllPhotos = false
+    @State private var galleryPhotos: [String] = []
+    @State private var isFetchingAllPhotos = false
+    @GestureState private var dragOffset: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -42,8 +51,45 @@ struct RestaurantDetailView: View {
             topBar
         }
         .background(AppTheme.surface.ignoresSafeArea())
-        .fullScreenCover(isPresented: $showingVideoPlayer) {
-            VideoFeedView(videos: tikTokVideos, startIndex: playerStartIndex)
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture()
+                .updating($dragOffset) { value, state, _ in
+                    if value.translation.height > 0 {
+                        state = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 120 {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        dismiss()
+                    }
+                }
+        )
+        .fullScreenCover(item: $feedViewModel) { vm in
+            VideoFeedView(viewModel: vm)
+        }
+        .sheet(isPresented: $showingAllPhotos) {
+            AllPhotosView(heroPhoto: rec.image, galleryPhotos: galleryPhotos, name: rec.name)
+        }
+        .task {
+            guard let placeId = rec.placeId, galleryPhotos.isEmpty else { return }
+            isFetchingAllPhotos = true
+            let fetched = await GeminiService.fetchGalleryPhotos(placeId: placeId)
+            galleryPhotos = fetched
+            isFetchingAllPhotos = false
+        }
+        .task {
+            guard tikTokVideos.isEmpty else { return }
+            isFetchingTikTok = true
+            let fetched = await fetchTikToks()
+            tikTokVideos = fetched
+            isFetchingTikTok = false
+            // Pre-warm the player pool so the first tap on a video reveals an
+            // already-buffered AVPlayer (3-player sliding window starts at 0).
+            if !fetched.isEmpty {
+                prewarmedFeedViewModel = VideoFeedViewModel(videos: fetched, startIndex: 0)
+            }
         }
     }
 
@@ -51,10 +97,10 @@ struct RestaurantDetailView: View {
 
     private var topBar: some View {
         HStack {
-            Button(action: { dismiss() }) {
+            Button(action: { UIImpactFeedbackGenerator(style: .light).impactOccurred(); dismiss() }) {
                 Image(systemName: "arrow.left")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.onSurface)
                     .padding(10)
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
@@ -78,7 +124,7 @@ struct RestaurantDetailView: View {
     private func topBarIcon(_ name: String) -> some View {
         Image(systemName: name)
             .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(AppTheme.sage)
+            .foregroundStyle(AppTheme.onSurface)
             .padding(10)
             .background(.ultraThinMaterial)
             .clipShape(Circle())
@@ -87,14 +133,16 @@ struct RestaurantDetailView: View {
     // MARK: - Photo data
 
     private var allPhotos: [String] {
-        if let photos = rec.photos, !photos.isEmpty { return photos }
-        if let img = rec.image { return [img] }
-        return []
+        var base: [String] = []
+        if let img = rec.image { base = [img] }
+        else if let photos = rec.photos, !photos.isEmpty { base = photos }
+        return base + galleryPhotos
     }
 
     private var communityPhotos: [String] {
-        guard let photos = rec.photos, photos.count > 1 else { return [] }
-        return Array(photos.dropFirst())
+        let all = allPhotos
+        guard all.count > 1 else { return [] }
+        return Array(all.dropFirst())
     }
 
     // MARK: - Photo gallery (hero) — clean bottom, no fade
@@ -110,7 +158,7 @@ struct RestaurantDetailView: View {
     private var galleryImages: some View {
         Group {
             if allPhotos.isEmpty {
-                AppTheme.sageLt
+                AppTheme.surface
             } else {
                 TabView(selection: $currentPhoto) {
                     ForEach(Array(allPhotos.enumerated()), id: \.offset) { idx, url in
@@ -118,7 +166,7 @@ struct RestaurantDetailView: View {
                             if let img = phase.image {
                                 img.resizable().aspectRatio(contentMode: .fill)
                             } else {
-                                AppTheme.sageLt
+                                AppTheme.surface
                             }
                         }
                         .tag(idx)
@@ -141,7 +189,7 @@ struct RestaurantDetailView: View {
                     .background(Color(white: 0, opacity: 0.45))
                     .clipShape(Capsule())
                     .padding(.trailing, 16)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 56)
             }
         }
     }
@@ -157,17 +205,17 @@ struct RestaurantDetailView: View {
                     .font(.system(size: 10, weight: .medium))
                     .tracking(0.8)
                     .textCase(.uppercase)
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.muted)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(AppTheme.sageLt)
+                    .background(AppTheme.surface)
                     .clipShape(Capsule())
 
                 Text(rec.name)
                     .font(.custom("Georgia", size: 30))
                     .fontWeight(.bold)
                     .italic()
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.onSurface)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let address = rec.address {
@@ -209,7 +257,7 @@ struct RestaurantDetailView: View {
                 style: .continuous
             )
         )
-        .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: -6)
+        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: -6)
         .padding(.top, -28)
     }
 
@@ -228,7 +276,7 @@ struct RestaurantDetailView: View {
                     HStack(spacing: 4) {
                         Text(open ? "Open now" : "Closed")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(open ? AppTheme.sage : AppTheme.destructive)
+                            .foregroundStyle(open ? AppTheme.openGreen : AppTheme.destructive)
                     }
                 } else {
                     Text("—")
@@ -288,6 +336,7 @@ struct RestaurantDetailView: View {
         HStack(spacing: 12) {
             // "I've been here" pill button
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                     ivenBeenHere.toggle()
                 }
@@ -323,41 +372,41 @@ struct RestaurantDetailView: View {
     // MARK: - Tab bar
 
     private var tabBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(DetailTab.allCases, id: \.rawValue) { tab in
-                    Button {
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                            selectedTab = tab
-                        }
-                    } label: {
-                        VStack(spacing: 8) {
-                            Text(tab.label)
-                                .font(.system(size: 11, weight: .medium))
-                                .tracking(0.8)
-                                .textCase(.uppercase)
-                                .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
-                                .animation(.easeInOut(duration: 0.2), value: selectedTab)
-
-                            // Active underline
-                            Rectangle()
-                                .fill(selectedTab == tab ? AppTheme.sage : Color.clear)
-                                .frame(height: 2)
-                                .animation(.spring(response: 0.38, dampingFraction: 0.86), value: selectedTab)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
+        HStack(spacing: 0) {
+            ForEach(DetailTab.allCases, id: \.rawValue) { tab in
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                        selectedTab = tab
                     }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 24)
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .light))
+                            .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
+                            .animation(.easeInOut(duration: 0.2), value: selectedTab)
 
-            // Full-width hairline — only visible on inactive areas via contrast
-            Rectangle()
-                .fill(AppTheme.sageLt)
-                .frame(height: 1)
+                        Text(tab.label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .tracking(0.6)
+                            .textCase(.uppercase)
+                            .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
+                            .animation(.easeInOut(duration: 0.2), value: selectedTab)
+
+                        // Active underline
+                        Rectangle()
+                            .fill(selectedTab == tab ? AppTheme.sage : Color.clear)
+                            .frame(height: 3)
+                            .clipShape(Capsule())
+                            .animation(.spring(response: 0.38, dampingFraction: 0.86), value: selectedTab)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(.horizontal, 24)
     }
 
     // MARK: - Tab content (swipeable)
@@ -366,8 +415,8 @@ struct RestaurantDetailView: View {
         Group {
             switch selectedTab {
             case .overview:  overviewTab
-            case .insights:  insightsTab
             case .media:     mediaTab
+            case .insights:  insightsTab
             case .reviews:   reviewsTab
             }
         }
@@ -404,8 +453,8 @@ struct RestaurantDetailView: View {
         VStack(alignment: .leading, spacing: 28) {
             actionButtonsRow
             vibeCheckCard
-            if !communityPhotos.isEmpty {
-                communityMomentsSection
+            if !tikTokVideos.isEmpty {
+                tikTokThumbnailsSection
             }
             proTipsSection
             visitSection
@@ -494,7 +543,7 @@ struct RestaurantDetailView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
-                Circle().fill(AppTheme.sage).frame(width: 7, height: 7)
+                Circle().fill(AppTheme.terracotta).frame(width: 7, height: 7)
                 Text("AI VIBE CHECK")
                     .font(.system(size: 9, weight: .bold))
                     .tracking(1.5)
@@ -503,55 +552,69 @@ struct RestaurantDetailView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .background(AppTheme.sageLt.opacity(0.5))
+        .background(AppTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     // MARK: - Community Moments
 
-    private var communityMomentsSection: some View {
+    private var tikTokThumbnailsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("More Photos")
+                Text("Clips")
                     .font(.custom("Georgia", size: 18))
                     .foregroundStyle(AppTheme.onSurface)
                 Spacer()
-                Text("View All")
-                    .font(.system(size: 10, weight: .medium))
-                    .tracking(0.8)
-                    .textCase(.uppercase)
-                    .foregroundStyle(AppTheme.sage)
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                        selectedTab = .media
+                    }
+                } label: {
+                    Text("View All")
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(AppTheme.sage)
+                }
+                .buttonStyle(.plain)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(communityPhotos.enumerated()), id: \.offset) { _, url in
-                        communityThumb(url: url)
+                    ForEach(Array(tikTokVideos.enumerated()), id: \.offset) { idx, video in
+                        tikTokThumb(video: video, index: idx)
                     }
                 }
             }
         }
     }
 
-    private func communityThumb(url: String) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            AsyncImage(url: URL(string: url)) { phase in
-                if let img = phase.image {
-                    img.resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    AppTheme.sageLt
+    private func tikTokThumb(video: TikTokVideo, index: Int) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            presentVideoFeed(at: index)
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                AsyncImage(url: URL(string: video.thumbnailUrl)) { phase in
+                    if let img = phase.image {
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        AppTheme.surface
+                    }
                 }
+                .frame(width: 130, height: 200)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                Image(systemName: "play.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white)
+                    .padding(6)
+                    .background(Color(white: 0, opacity: 0.4))
+                    .clipShape(Circle())
+                    .padding(10)
             }
-            .frame(width: 130, height: 200)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            Image(systemName: "play.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.white)
-                .padding(6)
-                .background(Color(white: 0, opacity: 0.4))
-                .clipShape(Circle())
-                .padding(10)
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Pro Tips
@@ -596,7 +659,7 @@ struct RestaurantDetailView: View {
                         .font(.system(size: 10, weight: .bold))
                         .tracking(1.2)
                         .textCase(.uppercase)
-                        .foregroundStyle(AppTheme.sage)
+                        .foregroundStyle(AppTheme.muted)
                     if let address = rec.address {
                         Button(action: openMaps) {
                             Text(address)
@@ -610,7 +673,7 @@ struct RestaurantDetailView: View {
                     if let open = rec.isOpen {
                         Text(open ? "Open now" : "Currently closed")
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(open ? AppTheme.sage : AppTheme.destructive)
+                            .foregroundStyle(open ? AppTheme.openGreen : AppTheme.destructive)
                     }
                     if let phone = rec.phone {
                         Button(action: { dialPhone(phone) }) {
@@ -618,7 +681,7 @@ struct RestaurantDetailView: View {
                                 Image(systemName: "phone.fill").font(.system(size: 13))
                                 Text(phone).font(.system(size: 14))
                             }
-                            .foregroundStyle(AppTheme.sage)
+                            .foregroundStyle(AppTheme.muted)
                         }
                         .buttonStyle(.plain)
                     }
@@ -653,7 +716,7 @@ struct RestaurantDetailView: View {
                 .disabled(true)
                 .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 180)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .shadow(color: AppTheme.shadowColor, radius: 10, y: 4)
+                .shadow(color: Color.black.opacity(0.06), radius: 10, y: 4)
             }
         }
     }
@@ -683,9 +746,19 @@ struct RestaurantDetailView: View {
                 // Other Posts list
                 if tikTokVideos.count > 1 {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Other Posts")
-                            .font(.custom("Georgia", size: 22))
-                            .foregroundStyle(AppTheme.onSurface)
+                        HStack(spacing: 8) {
+                            Text("More Clips")
+                                .font(.custom("Georgia", size: 22))
+                                .foregroundStyle(AppTheme.onSurface)
+                            Text("TikTok")
+                                .font(.system(size: 10, weight: .bold))
+                                .tracking(0.5)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(AppTheme.sage)
+                                .clipShape(Capsule())
+                        }
 
                         let others = Array(tikTokVideos.dropFirst().enumerated())
                         ForEach(others, id: \.offset) { idx, video in
@@ -709,8 +782,8 @@ struct RestaurantDetailView: View {
     // Featured 9:16 hero card
     private func featuredVideoCard(_ video: TikTokVideo, index: Int) -> some View {
         Button {
-            playerStartIndex = index
-            showingVideoPlayer = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            presentVideoFeed(at: index)
         } label: {
             ZStack(alignment: .bottom) {
                 // Thumbnail — fixed frame, fills and clips to card bounds
@@ -718,7 +791,7 @@ struct RestaurantDetailView: View {
                     if let img = phase.image {
                         img.resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        AppTheme.sageLt
+                        AppTheme.surface
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -742,6 +815,28 @@ struct RestaurantDetailView: View {
                     Spacer()
                 }
 
+                // VIDEOS badge — top leading
+                VStack {
+                    HStack {
+                        HStack(spacing: 5) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("VIDEOS")
+                                .font(.system(size: 10, weight: .bold))
+                                .tracking(1.0)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(AppTheme.sage)
+                        .clipShape(Capsule())
+                        .padding(16)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+
                 // Centered play button
                 Image(systemName: "play.fill")
                     .font(.system(size: 22, weight: .semibold))
@@ -759,7 +854,7 @@ struct RestaurantDetailView: View {
                                 img.resizable().aspectRatio(contentMode: .fill)
                                     .clipShape(Circle())
                             } else {
-                                Circle().fill(AppTheme.sageLt)
+                                Circle().fill(AppTheme.surface)
                             }
                         }
                         .frame(width: 28, height: 28)
@@ -792,7 +887,7 @@ struct RestaurantDetailView: View {
             .frame(height: 460)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
+            .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }
@@ -817,11 +912,19 @@ struct RestaurantDetailView: View {
         return "\(n)"
     }
 
+    private func presentVideoFeed(at index: Int) {
+        guard !tikTokVideos.isEmpty, index >= 0, index < tikTokVideos.count else { return }
+        let vm = prewarmedFeedViewModel ?? VideoFeedViewModel(videos: tikTokVideos, startIndex: index)
+        vm.setStartIndex(index)
+        prewarmedFeedViewModel = vm
+        feedViewModel = vm
+    }
+
     // Other Posts row card
     private func otherPostRow(_ video: TikTokVideo, playerIndex: Int) -> some View {
         Button {
-            playerStartIndex = playerIndex
-            showingVideoPlayer = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            presentVideoFeed(at: playerIndex)
         } label: {
             HStack(spacing: 14) {
                 // Thumbnail
@@ -830,7 +933,7 @@ struct RestaurantDetailView: View {
                         if let img = phase.image {
                             img.resizable().aspectRatio(contentMode: .fill)
                         } else {
-                            AppTheme.sageLt
+                            AppTheme.surface
                         }
                     }
                     .frame(width: 96, height: 128)
@@ -859,15 +962,15 @@ struct RestaurantDetailView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "location.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(AppTheme.sage)
+                            .foregroundStyle(AppTheme.muted)
                         Text(rec.address.map { shortAddress($0) } ?? rec.name)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.sage)
+                            .foregroundStyle(AppTheme.muted)
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(AppTheme.sageLt)
+                    .background(AppTheme.surface)
                     .clipShape(Capsule())
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -877,7 +980,7 @@ struct RestaurantDetailView: View {
             .padding(14)
             .background(AppTheme.white)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
+            .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }
@@ -927,5 +1030,70 @@ struct RestaurantDetailView: View {
     private func openMaps() {
         guard let url = URL(string: rec.mapsUrl) else { return }
         openURL(url)
+    }
+}
+
+// MARK: - All Photos View
+
+struct AllPhotosView: View {
+    @Environment(\.dismiss) private var dismiss
+    let heroPhoto: String?
+    let galleryPhotos: [String]
+    let name: String
+    @GestureState private var dragOffset: CGFloat = 0
+
+    private var allPhotos: [String] {
+        var result: [String] = []
+        if let hero = heroPhoto { result.append(hero) }
+        result.append(contentsOf: galleryPhotos)
+        return result
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)],
+                    spacing: 3
+                ) {
+                    ForEach(Array(allPhotos.enumerated()), id: \.offset) { _, url in
+                        AsyncImage(url: URL(string: url)) { phase in
+                            if let img = phase.image {
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                AppTheme.surface
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(1, contentMode: .fit)
+                        .clipped()
+                    }
+                }
+            }
+            .navigationTitle(name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        dismiss()
+                    }
+                    .foregroundStyle(AppTheme.onSurface)
+                }
+            }
+        }
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture()
+                .updating($dragOffset) { value, state, _ in
+                    if value.translation.height > 0 { state = value.translation.height }
+                }
+                .onEnded { value in
+                    if value.translation.height > 120 {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        dismiss()
+                    }
+                }
+        )
     }
 }

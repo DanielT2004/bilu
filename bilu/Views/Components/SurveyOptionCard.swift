@@ -35,7 +35,7 @@ struct SurveyOptionCard: View {
                     Circle()
                         .fill(AppTheme.white)
                         .frame(width: 44, height: 44)
-                        .shadow(color: AppTheme.shadowColor, radius: 8, y: 4)
+                        .shadow(color: Color.black.opacity(0.06), radius: 8, y: 4)
                         .overlay(
                             Image(systemName: systemImage)
                                 .font(.system(size: 20, weight: .semibold))
@@ -64,7 +64,7 @@ struct SurveyOptionCard: View {
                             lineWidth: isSelected ? 2.5 : 0
                         )
                 )
-                .shadow(color: AppTheme.shadowColor, radius: 12, y: 6)
+                .shadow(color: Color.black.opacity(0.06), radius: 12, y: 6)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
             }
             .aspectRatio(0.9, contentMode: .fit)
@@ -82,15 +82,15 @@ struct SurveyOptionCard: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 case .failure, .empty:
-                    AppTheme.sageLt
+                    AppTheme.surface
                 @unknown default:
-                    AppTheme.sageLt
+                    AppTheme.surface
                 }
             }
             .frame(width: size.width, height: size.height)
             .clipped()
         } else {
-            AppTheme.sageLt
+            AppTheme.surface
         }
     }
 }

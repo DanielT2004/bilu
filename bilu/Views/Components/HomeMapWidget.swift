@@ -9,11 +9,11 @@ import CoreLocation
 
 // MARK: - Appearance helper
 
-/// Sage in light mode, terracotta in dark mode — mirrors the map's own muted dark style.
+/// Spicy Red in light mode, Mango Orange in dark mode — mirrors the map's own muted dark style.
 private func mapAccent(dark: Bool, alpha: CGFloat) -> UIColor {
     dark
-        ? UIColor(red: 159/255, green: 64/255,  blue: 45/255,  alpha: alpha)  // #9f402d terracotta
-        : UIColor(red: 61/255,  green: 90/255,  blue: 46/255,  alpha: alpha)  // #3d5a2e sage
+        ? UIColor(red: 255/255, green: 149/255, blue: 0/255,   alpha: alpha)  // #FF9500 mango orange
+        : UIColor(red: 255/255, green: 59/255,  blue: 48/255,  alpha: alpha)  // #FF3B30 spicy red
 }
 
 // MARK: - Annotation classes
@@ -85,7 +85,7 @@ private final class ArcHandleView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        isUserInteractionEnabled = true
+        isUserInteractionEnabled = false  // purely visual; all gestures are on mapView
         backgroundColor = .clear
         // Circle underneath arc
         circleLayer.fillColor = UIColor.clear.cgColor
@@ -180,6 +180,7 @@ private struct InteractiveMapView: UIViewRepresentable {
     @Binding var radiusMiles: Double
     @Binding var center: CLLocationCoordinate2D
     let isExpanded: Bool
+    let showRadius: Bool
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
     let onMapTapped: () -> Void
@@ -244,17 +245,27 @@ private struct InteractiveMapView: UIViewRepresentable {
         mapView.addSubview(arcView)
         context.coordinator.arcHandleView = arcView
 
+        // Arc radius pan — on mapView (not arcView) so it doesn't conflict with annotation hit-testing.
+        // gestureRecognizerShouldBegin limits this gesture to arc-zone touches only.
         let arcPan = UIPanGestureRecognizer(target: context.coordinator,
                                              action: #selector(Coordinator.handleRadiusPan(_:)))
-        arcView.addGestureRecognizer(arcPan)
+        arcPan.delegate = context.coordinator
+        mapView.addGestureRecognizer(arcPan)
+        context.coordinator.arcPanGesture = arcPan
+
+        // collapseTap must wait for both pan gestures to fail — prevents the map from
+        // collapsing mid-drag when the user is moving the pin or resizing the radius.
+        tap.require(toFail: mapPan)
+        tap.require(toFail: arcPan)
 
         return mapView
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
         let coord = context.coordinator
-        mapView.isUserInteractionEnabled = isExpanded
-        coord.collapseTap?.isEnabled = isExpanded
+        coord.parent = self   // keep coordinator in sync — gesture handlers read parent.isExpanded etc.
+        mapView.isUserInteractionEnabled = true   // always on — tap must reach UIKit to expand
+        coord.collapseTap?.isEnabled = true        // always on — fires expand when collapsed, collapse when expanded
         coord.mapPanGesture?.isEnabled = isExpanded
 
         // Zoom transition on expand/collapse
@@ -268,7 +279,7 @@ private struct InteractiveMapView: UIViewRepresentable {
             coord.wasExpanded = isExpanded
         }
 
-        guard isExpanded else {
+        guard isExpanded, showRadius else {
             coord.arcHandleView?.isHidden = true
             return
         }
@@ -293,6 +304,7 @@ private struct InteractiveMapView: UIViewRepresentable {
         var arcHandleView: ArcHandleView?
         var collapseTap: UITapGestureRecognizer?
         var mapPanGesture: UIPanGestureRecognizer?
+        var arcPanGesture: UIPanGestureRecognizer?
         var wasExpanded = false
         var currentCenter = CLLocationCoordinate2D(latitude: 34.0224, longitude: -118.2851)
 
@@ -324,16 +336,24 @@ private struct InteractiveMapView: UIViewRepresentable {
         // MARK: UIGestureRecognizerDelegate
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard gestureRecognizer === mapPanGesture, let mapView = mapView else { return false }
+            guard let mapView = mapView else { return false }
             let pt = gestureRecognizer.location(in: mapView)
-            let touchCoord = mapView.convert(pt, toCoordinateFrom: mapView)
-            let distMeters = CLLocation(latitude: currentCenter.latitude, longitude: currentCenter.longitude)
-                .distance(from: CLLocation(latitude: touchCoord.latitude, longitude: touchCoord.longitude))
-            guard distMeters <= parent.radiusMiles * 1609.34 else { return false }
-            // Don't steal from the arc radius handle
-            if let arc = arcHandleView {
+
+            // Compute whether the touch is in the arc handle zone (only matters when arc is visible).
+            let inArcZone: Bool
+            if parent.showRadius, let arc = arcHandleView {
                 let (centerPt, radiusPx) = arc.screenMetrics(in: mapView)
-                if arc.isInArcZone(pt, centerPt: centerPt, radiusPx: radiusPx) { return false }
+                inArcZone = arc.isInArcZone(pt, centerPt: centerPt, radiusPx: radiusPx)
+            } else {
+                inArcZone = false
+            }
+
+            if gestureRecognizer === mapPanGesture {
+                guard parent.isExpanded else { return false }
+                return !inArcZone   // yield to arc gesture when user grabs the handle
+            }
+            if gestureRecognizer === arcPanGesture {
+                return parent.isExpanded && parent.showRadius && inArcZone
             }
             return true
         }
@@ -344,7 +364,7 @@ private struct InteractiveMapView: UIViewRepresentable {
 
         /// Center pan via the annotation view
         @objc func handleCenterPan(_ gesture: UIPanGestureRecognizer) {
-            guard let mapView = mapView else { return }
+            guard parent.isExpanded, let mapView = mapView else { return }
             let pt = gesture.location(in: mapView)
             let newCoord = mapView.convert(pt, toCoordinateFrom: mapView)
 
@@ -376,7 +396,7 @@ private struct InteractiveMapView: UIViewRepresentable {
 
         /// Center pan via tap-anywhere-in-circle (map-level gesture)
         @objc func handleMapPan(_ gesture: UIPanGestureRecognizer) {
-            guard let mapView = mapView else { return }
+            guard parent.isExpanded, let mapView = mapView else { return }
             let pt = gesture.location(in: mapView)
             let newCoord = mapView.convert(pt, toCoordinateFrom: mapView)
 
@@ -408,7 +428,7 @@ private struct InteractiveMapView: UIViewRepresentable {
 
         /// Drag the arc handle to resize the radius
         @objc func handleRadiusPan(_ gesture: UIPanGestureRecognizer) {
-            guard let mapView = mapView else { return }
+            guard parent.showRadius, let mapView = mapView else { return }
             let pt = gesture.location(in: mapView)
             let touchCoord = mapView.convert(pt, toCoordinateFrom: mapView)
             let dist = CLLocation(latitude: currentCenter.latitude, longitude: currentCenter.longitude)
@@ -487,10 +507,16 @@ struct HomeMapWidget: View {
     @Binding var isExpanded: Bool
     var onRadiusChanged: (Double, CLLocationCoordinate2D) -> Void = { _, _ in }
     var onLocationResolved: (String) -> Void = { _ in }
+    var onRadiusModeChanged: (Bool) -> Void = { _ in }
 
     @State private var mapCenter = CLLocationCoordinate2D(latitude: 34.0224, longitude: -118.2851)
     @State private var radiusMiles = 2.0
+    @State private var useRadius = false
     @State private var collapseTask: DispatchWorkItem? = nil
+    /// Broad city/area label (e.g. "Los Angeles") — shown in city-wide mode.
+    @State private var cityLabel = ""
+    /// Specific neighborhood label (e.g. "University Park") — shown in radius mode.
+    @State private var specificLabel = ""
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -498,27 +524,28 @@ struct HomeMapWidget: View {
                 radiusMiles: $radiusMiles,
                 center: $mapCenter,
                 isExpanded: isExpanded,
+                showRadius: useRadius,
                 onDragBegan: { collapseTask?.cancel() },
                 onDragEnded: { scheduleAutoCollapse() },
                 onMapTapped: { handleMapTap() },
                 onCenterChanged: { newCenter in
                     mapCenter = newCenter
-                    onRadiusChanged(radiusMiles, newCenter)
+                    if useRadius { onRadiusChanged(radiusMiles, newCenter) }
                     reverseGeocode(newCenter)
                 }
             )
+            .allowsHitTesting(isExpanded)
 
-            // Radius label — top center, shown only when expanded
-            if isExpanded {
+            // Radius label — top center, shown only when expanded and radius mode is on
+            if isExpanded && useRadius {
                 VStack(spacing: 0) {
                     Text(String(format: "%.1f mi", radiusMiles))
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(hex: "3d5a2e"))
+                        .foregroundColor(AppTheme.sage)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Color.white.opacity(0.92))
                         .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Color(hex: "3d5a2e").opacity(0.2), lineWidth: 0.5))
                         .padding(.top, 10)
                     Spacer()
                 }
@@ -526,48 +553,78 @@ struct HomeMapWidget: View {
                 .transition(.opacity)
             }
 
-            // Location bar — always visible at bottom
-            HStack {
-                HStack(spacing: 7) {
-                    Circle().fill(Color(hex: "3d5a2e")).frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(locationLabel)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(Color(hex: "1e2d14"))
-                            .animation(.easeInOut(duration: 0.3), value: locationLabel)
-                        Text(isExpanded
-                             ? String(format: "Searching within %.1f mi", radiusMiles)
-                             : "Near you")
-                            .font(.system(size: 10, weight: .light))
-                            .foregroundColor(Color(hex: "7a8a6a"))
+            // Bottom controls — toggle row + location bar
+            VStack(spacing: 0) {
+                // Toggle row — only visible when expanded
+                if isExpanded {
+                    HStack {
+                        Text("SEARCH WITHIN A SPECIFIC RADIUS")
+                            .font(.system(size: 10, weight: .medium))
+                            .tracking(1.0)
+                            .foregroundColor(AppTheme.muted)
+                        Spacer()
+                        Toggle("", isOn: $useRadius)
+                            .labelsHidden()
+                            .tint(AppTheme.sage)
+                            .onChange(of: useRadius) { _, newVal in
+                                onRadiusModeChanged(newVal)
+                                let label = newVal ? specificLabel : cityLabel
+                                if !label.isEmpty { onLocationResolved(label) }
+                                if newVal { onRadiusChanged(radiusMiles, mapCenter) }
+                                // Reset the auto-collapse timer so the user has a full
+                                // 3 seconds to start interacting after toggling.
+                                scheduleAutoCollapse()
+                            }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(AppTheme.surface.opacity(0.96))
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                // Location bar — always visible
+                HStack {
+                    HStack(spacing: 7) {
+                        Circle().fill(AppTheme.sage).frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(useRadius ? specificLabel : cityLabel)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(AppTheme.onSurface)
+                                .animation(.easeInOut(duration: 0.3), value: useRadius)
+                            Text(useRadius
+                                 ? String(format: "Within %.1f mi", radiusMiles)
+                                 : "City-wide search")
+                                .font(.system(size: 10, weight: .light))
+                                .foregroundColor(AppTheme.muted)
+                                .animation(.easeInOut(duration: 0.2), value: useRadius)
+                        }
+                    }
+                    Spacer()
+                    Button { expand() } label: {
+                        Text("Change")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(AppTheme.sage)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(AppTheme.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
-                Spacer()
-                Button { expand() } label: {
-                    Text("Change")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Color(hex: "3d5a2e"))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color(hex: "e8f0e0"))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(AppTheme.surface.opacity(0.96))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Color(hex: "f0ede6").opacity(0.94))
         }
-        .frame(height: isExpanded ? 290 : 88)
+        .frame(height: isExpanded ? 290 : 180)
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color(hex: "3d5a2e").opacity(0.1), lineWidth: 0.5))
+        .contentShape(RoundedRectangle(cornerRadius: 18))
+        .onTapGesture { if !isExpanded { handleMapTap() } }
         .padding(.horizontal, 16)
         .animation(.easeInOut(duration: 0.35), value: isExpanded)
-        .onTapGesture { handleMapTap() }
         .onChange(of: radiusMiles) { _, newVal in
-            onRadiusChanged(newVal, mapCenter)
+            if useRadius { onRadiusChanged(newVal, mapCenter) }
         }
         .onAppear {
-            onRadiusChanged(radiusMiles, mapCenter)
             reverseGeocode(mapCenter)
         }
     }
@@ -576,13 +633,20 @@ struct HomeMapWidget: View {
         CLGeocoder().reverseGeocodeLocation(
             CLLocation(latitude: coord.latitude, longitude: coord.longitude)
         ) { placemarks, error in
-            let label: String
+            let city: String
+            let specific: String
             if let p = placemarks?.first, error == nil {
-                label = p.subLocality ?? p.locality ?? p.administrativeArea ?? Self.coordString(coord)
+                city     = p.locality ?? p.administrativeArea ?? Self.coordString(coord)
+                specific = p.subLocality ?? p.locality ?? p.administrativeArea ?? Self.coordString(coord)
             } else {
-                label = Self.coordString(coord)
+                city     = Self.coordString(coord)
+                specific = Self.coordString(coord)
             }
-            DispatchQueue.main.async { self.onLocationResolved(label) }
+            DispatchQueue.main.async {
+                self.cityLabel    = city
+                self.specificLabel = specific
+                self.onLocationResolved(self.useRadius ? specific : city)
+            }
         }
     }
 

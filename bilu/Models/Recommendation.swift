@@ -21,11 +21,14 @@ struct Recommendation: Codable, Identifiable {
     let address: String?
     let phone: String?
     let website: String?
+    let placeId: String?
+    let photoRefs: [String]?
 }
 
 struct VibeResult: Codable {
     let recommendations: [Recommendation]
     let groundingPlaces: [GroundingPlace]?
+    let relaxed: Bool?
 }
 
 struct GroundingPlace: Codable {

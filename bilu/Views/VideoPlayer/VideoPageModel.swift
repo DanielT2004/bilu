@@ -29,8 +29,8 @@ final class VideoPageModel: ObservableObject {
         guard let url = URL(string: video.videoUrl) else { return }
 
         let item = AVPlayerItem(url: url)
-        // Buffer 5 seconds ahead — fills silently while user watches current video
-        item.preferredForwardBufferDuration = 5.0
+        // Short buffer target — start playback within ~1.5s instead of 5s
+        item.preferredForwardBufferDuration = 1.5
         player.replaceCurrentItem(with: item)
         player.isMuted = true  // Silent until activated
 

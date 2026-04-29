@@ -29,6 +29,7 @@ struct VideoPageView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     guard isActive else { return }
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     pageModel.togglePlayPause()
                 }
 

@@ -15,8 +15,11 @@ struct VibeSelection: Codable {
     /// Stored as YYYY-MM-DD.
     var keyQuestionDate: String?
 
-    /// v3 "Food feeling" selection (multi-select).
+    /// v3 "Food feeling" selection (multi-select categories).
     var foodFeelings: [String]
+    /// Per-category sub-option selections (e.g. ["Handheld": ["Burger", "Taco"]]).
+    /// Empty dict means no sub-options chosen in any category.
+    var selectedSubOptions: [String: [String]]
 
     /// Legacy fields (kept for backend compatibility).
     var vibe: [String]
@@ -32,15 +35,22 @@ struct VibeSelection: Codable {
     var openNow: Bool
 
     /// Map widget — search radius and center coordinates.
-    /// Defaults to USC area; updated live as the user drags the radius ring.
+    /// The pin always displays at mapCenter; lat/lng are only fed to the prompt
+    /// when useRadiusSearch is true (user opted in via the map toggle).
     var radiusMiles: Double
     var latitude: Double?
     var longitude: Double?
+    /// When false (default), search is city-wide — no coordinates or radius in the prompt.
+    /// When true, lat/lng and radiusMiles are included.
+    var useRadiusSearch: Bool
 
     /// Cuisine selection mode: "vibe" uses foodFeelings, "country" uses selectedCountry.
     var cuisineMode: String
     /// User-selected country cuisine (only used when cuisineMode == "country").
     var selectedCountry: String
+
+    /// Vibe filter selected on the new food feeling step (e.g. "🔥 Trending", "⭐ Best rated").
+    var selectedVibe: String
 
     /// Whether the user explicitly opened and applied fine-tune settings.
     /// When false, price/partySize/openNow are omitted from the prompt entirely.
@@ -59,6 +69,7 @@ struct VibeSelection: Codable {
         keyQuestionTimeWindow: String? = nil,
         keyQuestionDate: String? = nil,
         foodFeelings: [String] = [],
+        selectedSubOptions: [String: [String]] = [:],
         vibe: [String] = [],
         hunger: [String] = [],
         location: String = "",
@@ -68,10 +79,12 @@ struct VibeSelection: Codable {
         partySize: Int = 2,
         openNow: Bool = false,
         radiusMiles: Double = 2.0,
-        latitude: Double? = 34.0224,
-        longitude: Double? = -118.2851,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        useRadiusSearch: Bool = false,
         cuisineMode: String = "vibe",
         selectedCountry: String = "",
+        selectedVibe: String = "",
         fineTuneApplied: Bool = false,
         parking: [String] = [],
         outdoorSeating: Bool = false,
@@ -83,6 +96,7 @@ struct VibeSelection: Codable {
         self.keyQuestionTimeWindow = keyQuestionTimeWindow
         self.keyQuestionDate = keyQuestionDate
         self.foodFeelings = foodFeelings
+        self.selectedSubOptions = selectedSubOptions
         self.vibe = vibe
         self.hunger = hunger
         self.location = location
@@ -94,12 +108,45 @@ struct VibeSelection: Codable {
         self.radiusMiles = radiusMiles
         self.latitude = latitude
         self.longitude = longitude
+        self.useRadiusSearch = useRadiusSearch
         self.cuisineMode = cuisineMode
         self.selectedCountry = selectedCountry
+        self.selectedVibe = selectedVibe
         self.fineTuneApplied = fineTuneApplied
         self.parking = parking
         self.outdoorSeating = outdoorSeating
         self.petFriendly = petFriendly
         self.wheelchairAccess = wheelchairAccess
+    }
+
+    // Custom decoder so older persisted JSON (without selectedSubOptions) still decodes cleanly.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        occasion              = try c.decode(String.self, forKey: .occasion)
+        keyQuestionAnswer     = try c.decode(String.self, forKey: .keyQuestionAnswer)
+        keyQuestionTimeWindow = try? c.decode(String.self, forKey: .keyQuestionTimeWindow)
+        keyQuestionDate       = try? c.decode(String.self, forKey: .keyQuestionDate)
+        foodFeelings          = (try? c.decode([String].self, forKey: .foodFeelings)) ?? []
+        selectedSubOptions    = (try? c.decode([String: [String]].self, forKey: .selectedSubOptions)) ?? [:]
+        vibe                  = (try? c.decode([String].self, forKey: .vibe)) ?? []
+        hunger                = (try? c.decode([String].self, forKey: .hunger)) ?? []
+        location              = (try? c.decode(String.self, forKey: .location)) ?? ""
+        googleSearch          = (try? c.decode(Bool.self, forKey: .googleSearch)) ?? false
+        thinkingLevel         = (try? c.decode(String.self, forKey: .thinkingLevel)) ?? "LOW"
+        pricePoints           = (try? c.decode([String].self, forKey: .pricePoints)) ?? ["$$", "$$$"]
+        partySize             = (try? c.decode(Int.self, forKey: .partySize)) ?? 2
+        openNow               = (try? c.decode(Bool.self, forKey: .openNow)) ?? false
+        radiusMiles           = (try? c.decode(Double.self, forKey: .radiusMiles)) ?? 2.0
+        latitude              = try? c.decode(Double.self, forKey: .latitude)
+        longitude             = try? c.decode(Double.self, forKey: .longitude)
+        useRadiusSearch       = (try? c.decode(Bool.self, forKey: .useRadiusSearch)) ?? false
+        cuisineMode           = (try? c.decode(String.self, forKey: .cuisineMode)) ?? "vibe"
+        selectedCountry       = (try? c.decode(String.self, forKey: .selectedCountry)) ?? ""
+        selectedVibe          = (try? c.decode(String.self, forKey: .selectedVibe)) ?? ""
+        fineTuneApplied       = (try? c.decode(Bool.self, forKey: .fineTuneApplied)) ?? false
+        parking               = (try? c.decode([String].self, forKey: .parking)) ?? []
+        outdoorSeating        = (try? c.decode(Bool.self, forKey: .outdoorSeating)) ?? false
+        petFriendly           = (try? c.decode(Bool.self, forKey: .petFriendly)) ?? false
+        wheelchairAccess      = (try? c.decode(Bool.self, forKey: .wheelchairAccess)) ?? false
     }
 }

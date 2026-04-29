@@ -16,21 +16,22 @@ import Foundation
 
 enum TikTokService {
 
-    static func fetchVideos(query: String, maxResults: Int = 10) async -> [TikTokVideo] {
-        let urlString = "https://api.apify.com/v2/acts/scraptik~tiktok-api/run-sync-get-dataset-items?token=\(Config.apifyApiKey)"
-        guard let url = URL(string: urlString) else { return [] }
+    /// ScrapTik sortType values:
+    /// 0 = relevance, 1 = most liked, 2 = most recent
+    static func fetchVideos(query: String, maxResults: Int = 10, sortType: Int = 0) async -> [TikTokVideo] {
+        guard let url = URL(string: "\(Config.apiBaseURL)/tiktok-search") else { return [] }
 
         let body: [String: Any] = [
-            "searchPosts_count": maxResults,
-            "searchPosts_keyword": query,
-            "searchPosts_sortType": 0,
-            "searchSounds_useFilters": false
+            "query": query,
+            "maxResults": maxResults,
+            "sortType": sortType
         ]
         guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return [] }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(Config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 60
         request.httpBody = httpBody
 
@@ -107,15 +108,24 @@ enum TikTokService {
             avatarUrl = ""
         }
 
-        // Video play URL — play_addr.url_list[0]
-        let videoUrl: String
-        if let playAddr = videoDict["play_addr"] as? [String: Any],
-           let urlList = playAddr["url_list"] as? [String],
-           let first = urlList.first {
-            videoUrl = first
-        } else {
-            return nil  // No playable URL → skip
-        }
+        // Prefer lowest-bitrate stream for fast playback start.
+        // Fall back to top-level play_addr if bit_rate is missing.
+        let videoUrl: String = {
+            if let bitRates = videoDict["bit_rate"] as? [[String: Any]],
+               let lowest = bitRates.last,
+               let playAddr = lowest["play_addr"] as? [String: Any],
+               let urlList = playAddr["url_list"] as? [String],
+               let first = urlList.first {
+                return first
+            }
+            if let playAddr = videoDict["play_addr"] as? [String: Any],
+               let urlList = playAddr["url_list"] as? [String],
+               let first = urlList.first {
+                return first
+            }
+            return ""
+        }()
+        guard !videoUrl.isEmpty else { return nil }
 
         // Thumbnail — use cover.url_list[0], fall back to dynamic_cover
         let thumbnailUrl: String
@@ -142,6 +152,9 @@ enum TikTokService {
             ? "https://www.tiktok.com/video/\(awemeId)"
             : "https://www.tiktok.com/@\(uniqueId)/video/\(awemeId)"
 
+        let anchors = parseAnchors(aweme: aweme)
+        let transcriptUrl = parseTranscriptUrl(video: videoDict)
+
         return TikTokVideo(
             videoId:      awemeId,
             shareUrl:     shareUrl,
@@ -151,7 +164,52 @@ enum TikTokService {
             desc:         desc,
             diggCount:    diggCount,
             commentCount: commentCount,
-            viewCount:    viewCount
+            viewCount:    viewCount,
+            transcriptUrl: transcriptUrl,
+            debug:        TikTokDebugInfo(anchors: anchors)
         )
+    }
+
+    private static func parseAnchors(aweme: [String: Any]) -> [TikTokAnchor] {
+        guard let anchorList = aweme["anchors"] as? [[String: Any]] else { return [] }
+        var out: [TikTokAnchor] = []
+        for a in anchorList {
+            let keyword = a["keyword"] as? String ?? ""
+            var categoryName: String? = nil
+            var poiClassName: String? = nil
+            var lat: Double? = nil
+            var lng: Double? = nil
+            // `extra` is a JSON-encoded string, not an object — parse it
+            if let extraStr = a["extra"] as? String,
+               let extraData = extraStr.data(using: .utf8),
+               let extra = (try? JSONSerialization.jsonObject(with: extraData)) as? [String: Any] {
+                categoryName = extra["category_name"] as? String
+                poiClassName = extra["poi_class_name"] as? String
+                if let loc = extra["location"] as? [String: Any] {
+                    if let latStr = loc["lat"] as? String { lat = Double(latStr) }
+                    if let lngStr = loc["lng"] as? String { lng = Double(lngStr) }
+                }
+            }
+            out.append(TikTokAnchor(keyword: keyword, categoryName: categoryName, poiClassName: poiClassName, lat: lat, lng: lng))
+        }
+        return out
+    }
+
+    private static func parseTranscriptUrl(video: [String: Any]) -> String? {
+        guard let claInfo = video["cla_info"] as? [String: Any],
+              let captionInfos = claInfo["caption_infos"] as? [[String: Any]],
+              !captionInfos.isEmpty else { return nil }
+
+        // Prefer English
+        let english = captionInfos.first { c in
+            if let code = c["language_code"] as? String, code.hasPrefix("en") { return true }
+            if let lang = c["lang"] as? String, lang.hasPrefix("en") { return true }
+            return false
+        }
+        let chosen = english ?? captionInfos.first
+
+        if let url = chosen?["url"] as? String, !url.isEmpty { return url }
+        if let urlList = chosen?["url_list"] as? [String], let first = urlList.first { return first }
+        return nil
     }
 }
