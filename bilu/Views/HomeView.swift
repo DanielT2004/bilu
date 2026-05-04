@@ -824,20 +824,10 @@ struct HomeView: View {
     private func rowOfCards(_ row: CardRow) -> some View {
         let leftExpanded  = expandedCategoryKey == row.left.key
         let rightExpanded = row.right.map { expandedCategoryKey == $0.key } ?? false
+        let activeCat: FoodCategoryOption? = leftExpanded ? row.left
+            : (rightExpanded ? row.right : nil)
 
-        if leftExpanded || rightExpanded {
-            HStack(spacing: 10) {
-                if leftExpanded {
-                    foodCategoryCard(row.left)
-                    if let right = row.right {
-                        compactDimmedCard(right)
-                    }
-                } else if let right = row.right, rightExpanded {
-                    compactDimmedCard(row.left)
-                    foodCategoryCard(right)
-                }
-            }
-        } else {
+        VStack(spacing: 10) {
             HStack(spacing: 10) {
                 foodCategoryCard(row.left)
                 if let right = row.right {
@@ -845,6 +835,20 @@ struct HomeView: View {
                 } else {
                     Spacer()
                 }
+            }
+            if let cat = activeCat, !cat.subOptions.isEmpty {
+                SwipeFoodPanel(
+                    category: cat,
+                    selectedKeys: viewModel.selection.selectedSubOptions[cat.key] ?? [],
+                    onToggle: { sub in
+                        viewModel.selectSubOption(sub.key, forCategory: cat.key)
+                    },
+                    onClose: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                            expandedCategoryKey = nil
+                        }
+                    }
+                )
             }
         }
     }

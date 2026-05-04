@@ -8,10 +8,36 @@
 
 /* Begin PBXBuildFile section */
 		EB1D7EC92F8384330090AFCE /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EB1D7EC82F8384330090AFCE /* MapKit.framework */; };
+		EB7740F52FA8474A00655567 /* biluShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB7740EB2FA8474800655567 /* biluShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		EB7740F32FA8474A00655567 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EBCC8DC22F64BD4F00E9EF5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EB7740EA2FA8474800655567;
+			remoteInfo = biluShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EB7740FA2FA8474A00655567 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				EB7740F52FA8474A00655567 /* biluShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		EB1D7EC82F8384330090AFCE /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.4.sdk/System/Library/Frameworks/MapKit.framework; sourceTree = DEVELOPER_DIR; };
+		EB7740EB2FA8474800655567 /* biluShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = biluShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = bilu.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -23,9 +49,24 @@
 			);
 			target = EBCC8DC92F64BD4F00E9EF5D /* bilu */;
 		};
+		EB7740F92FA8474A00655567 /* Exceptions for "biluShare" folder in "biluShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EB7740EA2FA8474800655567 /* biluShare */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		EB7740EC2FA8474900655567 /* biluShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EB7740F92FA8474A00655567 /* Exceptions for "biluShare" folder in "biluShare" target */,
+			);
+			path = biluShare;
+			sourceTree = "<group>";
+		};
 		EBCC8DCC2F64BD4F00E9EF5D /* bilu */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -37,6 +78,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		EB7740E82FA8474800655567 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EBCC8DC72F64BD4F00E9EF5D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -60,6 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				EBCC8DCC2F64BD4F00E9EF5D /* bilu */,
+				EB7740EC2FA8474900655567 /* biluShare */,
 				EB1D7EC72F8384330090AFCE /* Frameworks */,
 				EBCC8DCB2F64BD4F00E9EF5D /* Products */,
 			);
@@ -69,6 +118,7 @@
 			isa = PBXGroup;
 			children = (
 				EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */,
+				EB7740EB2FA8474800655567 /* biluShare.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +126,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		EB7740EA2FA8474800655567 /* biluShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB7740F62FA8474A00655567 /* Build configuration list for PBXNativeTarget "biluShare" */;
+			buildPhases = (
+				EB7740E72FA8474800655567 /* Sources */,
+				EB7740E82FA8474800655567 /* Frameworks */,
+				EB7740E92FA8474800655567 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				EB7740EC2FA8474900655567 /* biluShare */,
+			);
+			name = biluShare;
+			packageProductDependencies = (
+			);
+			productName = biluShare;
+			productReference = EB7740EB2FA8474800655567 /* biluShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		EBCC8DC92F64BD4F00E9EF5D /* bilu */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = EBCC8DD52F64BD5200E9EF5D /* Build configuration list for PBXNativeTarget "bilu" */;
@@ -83,10 +155,12 @@
 				EBCC8DC62F64BD4F00E9EF5D /* Sources */,
 				EBCC8DC72F64BD4F00E9EF5D /* Frameworks */,
 				EBCC8DC82F64BD4F00E9EF5D /* Resources */,
+				EB7740FA2FA8474A00655567 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EB7740F42FA8474A00655567 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				EBCC8DCC2F64BD4F00E9EF5D /* bilu */,
@@ -105,9 +179,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2630;
+				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					EB7740EA2FA8474800655567 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 					EBCC8DC92F64BD4F00E9EF5D = {
 						CreatedOnToolsVersion = 26.3;
 					};
@@ -128,11 +205,19 @@
 			projectRoot = "";
 			targets = (
 				EBCC8DC92F64BD4F00E9EF5D /* bilu */,
+				EB7740EA2FA8474800655567 /* biluShare */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		EB7740E92FA8474800655567 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EBCC8DC82F64BD4F00E9EF5D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -143,6 +228,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		EB7740E72FA8474800655567 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EBCC8DC62F64BD4F00E9EF5D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -152,7 +244,76 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		EB7740F42FA8474A00655567 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EB7740EA2FA8474800655567 /* biluShare */;
+			targetProxy = EB7740F32FA8474A00655567 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		EB7740F72FA8474A00655567 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KU9BC4R2Z;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = biluShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = biluShare;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DanielTadesse.bilu.biluShare;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EB7740F82FA8474A00655567 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2KU9BC4R2Z;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = biluShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = biluShare;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.DanielTadesse.bilu.biluShare;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		EBCC8DD32F64BD5200E9EF5D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -366,6 +527,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		EB7740F62FA8474A00655567 /* Build configuration list for PBXNativeTarget "biluShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB7740F72FA8474A00655567 /* Debug */,
+				EB7740F82FA8474A00655567 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		EBCC8DC52F64BD4F00E9EF5D /* Build configuration list for PBXProject "bilu" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

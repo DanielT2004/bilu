@@ -25,7 +25,7 @@ export interface GroundingPlace {
   uri: string;
 }
 
-interface PlaceDetails {
+export interface PlaceDetails {
   photoNames: string[];
   latitude: number | undefined;
   longitude: number | undefined;
@@ -35,6 +35,8 @@ interface PlaceDetails {
   address: string | undefined;
   phone: string | undefined;
   website: string | undefined;
+  neighborhood: string | undefined;
+  displayName: string | undefined;
 }
 
 function logPlaces(...args: unknown[]) {
@@ -52,7 +54,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const CACHE_TABLE_URL = `${SUPABASE_URL}/rest/v1/places_cache`;
 const CACHE_TTL_DAYS = 30;
 
-interface CacheRow {
+export interface CacheRow {
   place_id: string;
   photo_refs: string[];
   rating: number | null;
@@ -63,10 +65,11 @@ interface CacheRow {
   website: string | null;
   latitude: number | null;
   longitude: number | null;
+  neighborhood: string | null;
   cached_at: string;
 }
 
-async function getCachedPlace(placeId: string): Promise<CacheRow | null> {
+export async function getCachedPlace(placeId: string): Promise<CacheRow | null> {
   try {
     const res = await fetch(
       `${CACHE_TABLE_URL}?place_id=eq.${encodeURIComponent(placeId)}&limit=1`,
@@ -88,7 +91,7 @@ async function getCachedPlace(placeId: string): Promise<CacheRow | null> {
   }
 }
 
-async function upsertCachedPlace(row: Omit<CacheRow, "cached_at">): Promise<void> {
+export async function upsertCachedPlace(row: Omit<CacheRow, "cached_at">): Promise<void> {
   try {
     await fetch(CACHE_TABLE_URL, {
       method: "POST",
@@ -103,6 +106,91 @@ async function upsertCachedPlace(row: Omit<CacheRow, "cached_at">): Promise<void
   } catch {
     // Cache write failure is non-fatal — continue without caching
   }
+}
+
+// ── Name → placeId cache (skip Places textSearch on repeats) ──────────────────
+
+const NAME_CACHE_TABLE_URL = `${SUPABASE_URL}/rest/v1/place_name_cache`;
+
+export async function getCachedPlaceIdByName(nameKey: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${NAME_CACHE_TABLE_URL}?name_key=eq.${encodeURIComponent(nameKey)}&limit=1`,
+      {
+        headers: {
+          "apikey": SUPABASE_SERVICE_ROLE_KEY,
+          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      }
+    );
+    if (!res.ok) return null;
+    const rows: Array<{ name_key: string; place_id: string; cached_at: string }> = await res.json();
+    if (!rows.length) return null;
+    const cachedAt = new Date(rows[0].cached_at).getTime();
+    if (Date.now() - cachedAt > CACHE_TTL_DAYS * 86400000) return null;
+    return rows[0].place_id;
+  } catch {
+    return null;
+  }
+}
+
+export async function upsertPlaceNameCache(nameKey: string, placeId: string): Promise<void> {
+  try {
+    await fetch(NAME_CACHE_TABLE_URL, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({ name_key: nameKey, place_id: placeId, cached_at: new Date().toISOString() }),
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+// ── Geocode a city query to (lat, lng) for use as locationBias ────────────────
+
+export async function geocodeCityToCoord(
+  city: string,
+  apiKey: string,
+  logTag: string
+): Promise<{ lat: number; lng: number } | null> {
+  logPlaces(logTag, "geocodeCity: request", { city });
+
+  const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "places.location",
+    },
+    body: JSON.stringify({ textQuery: city, includedType: "locality" }),
+  });
+
+  const bodyText = await res.text();
+  if (!res.ok) {
+    logPlacesWarn(logTag, "geocodeCity: HTTP error", { status: res.status, bodySnippet: bodyText.slice(0, 300) });
+    return null;
+  }
+
+  let data: { places?: Array<{ location?: { latitude?: number; longitude?: number } }> };
+  try {
+    data = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+
+  const loc = data?.places?.[0]?.location;
+  if (loc?.latitude === undefined || loc?.longitude === undefined) {
+    logPlacesWarn(logTag, "geocodeCity: no location returned for", city);
+    return null;
+  }
+
+  logPlaces(logTag, "geocodeCity: resolved", { city, lat: loc.latitude, lng: loc.longitude });
+  return { lat: loc.latitude, lng: loc.longitude };
 }
 
 // ── Places API helpers ────────────────────────────────────────────────────────
@@ -142,14 +230,33 @@ export function findPlaceIdFromGrounding(recName: string, groundingPlaces: Groun
   return match?.placeId ?? null;
 }
 
+export interface LocationBias {
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+}
+
 export async function resolvePlaceIdByTextSearch(
   placeName: string,
   apiKey: string,
   logTag: string,
-  searchArea = ""
+  searchArea = "",
+  locationBias?: LocationBias,
+  includedType?: string
 ): Promise<string | null> {
   const textQuery = searchArea ? `${placeName} ${searchArea}` : placeName;
-  logPlaces(logTag, "textSearch: request", { textQuery });
+  const requestBody: Record<string, unknown> = { textQuery };
+  if (locationBias) {
+    requestBody.locationBias = {
+      circle: {
+        center: { latitude: locationBias.lat, longitude: locationBias.lng },
+        radius: locationBias.radiusMeters,
+      },
+    };
+  }
+  if (includedType) requestBody.includedType = includedType;
+
+  logPlaces(logTag, "textSearch: request", { textQuery, hasBias: !!locationBias, includedType: includedType ?? "(none)" });
 
   const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
@@ -158,7 +265,7 @@ export async function resolvePlaceIdByTextSearch(
       "X-Goog-Api-Key": apiKey,
       "X-Goog-FieldMask": "places.id",
     },
-    body: JSON.stringify({ textQuery }),
+    body: JSON.stringify(requestBody),
   });
 
   const bodyText = await res.text();
@@ -186,18 +293,18 @@ export async function resolvePlaceIdByTextSearch(
   return placeId;
 }
 
-async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string): Promise<PlaceDetails> {
+export async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string): Promise<PlaceDetails> {
   const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
   logPlaces(logTag, "placeDetails: GET", url);
 
   const res = await fetch(url, {
     headers: {
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "photos,location,rating,userRatingCount,regularOpeningHours,formattedAddress,nationalPhoneNumber,websiteUri",
+      "X-Goog-FieldMask": "displayName,photos,location,rating,userRatingCount,regularOpeningHours,formattedAddress,nationalPhoneNumber,websiteUri,addressComponents",
     },
   });
 
-  const empty: PlaceDetails = { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, isOpen: undefined, address: undefined, phone: undefined, website: undefined };
+  const empty: PlaceDetails = { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, isOpen: undefined, address: undefined, phone: undefined, website: undefined, neighborhood: undefined, displayName: undefined };
 
   const bodyText = await res.text();
   if (!res.ok) {
@@ -206,6 +313,7 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
   }
 
   let data: {
+    displayName?: { text?: string };
     photos?: Array<{ name?: string }>;
     location?: { latitude?: number; longitude?: number };
     rating?: number;
@@ -214,6 +322,7 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
     formattedAddress?: string;
     nationalPhoneNumber?: string;
     websiteUri?: string;
+    addressComponents?: Array<{ longText?: string; shortText?: string; types?: string[] }>;
   };
   try {
     data = JSON.parse(bodyText);
@@ -233,10 +342,23 @@ async function fetchPlaceDetails(placeId: string, apiKey: string, logTag: string
   const address = data?.formattedAddress;
   const phone = data?.nationalPhoneNumber;
   const website = data?.websiteUri;
+  const displayName = data?.displayName?.text;
+
+  // Neighborhood: prefer sublocality_level_1 / sublocality, fall back to "neighborhood" type.
+  let neighborhood: string | undefined;
+  for (const c of data?.addressComponents ?? []) {
+    const types = c.types ?? [];
+    if (types.includes("sublocality_level_1") || types.includes("sublocality") || types.includes("neighborhood")) {
+      neighborhood = c.longText ?? c.shortText;
+      break;
+    }
+  }
+
   logPlaces(logTag, "placeDetails: location", { latitude, longitude });
   logPlaces(logTag, "placeDetails: rating/reviews/open", { rating, reviewCount, isOpen });
+  logPlaces(logTag, "placeDetails: neighborhood", neighborhood ?? "(none)");
 
-  return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website };
+  return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood, displayName };
 }
 
 export async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string, maxWidthPx = 800): Promise<string | null> {
@@ -353,7 +475,7 @@ export async function enrichRecommendation(
   // ── 3. Cache miss — fetch from Google Places ──────────────────────────────
   logPlaces(logTag, "CACHE MISS — fetching from Places API", placeId);
 
-  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website } =
+  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood } =
     await fetchPlaceDetails(placeId, placesApiKey, logTag);
 
   const recWithMeta = {
@@ -384,6 +506,7 @@ export async function enrichRecommendation(
       website: website ?? null,
       latitude: latitude ?? null,
       longitude: longitude ?? null,
+      neighborhood: neighborhood ?? null,
     });
     return { rec: recWithMeta, error: msg };
   }
@@ -411,6 +534,7 @@ export async function enrichRecommendation(
     website: website ?? null,
     latitude: latitude ?? null,
     longitude: longitude ?? null,
+    neighborhood: neighborhood ?? null,
   });
 
   logPlaces(logTag, "ENRICHMENT_OK", { heroUri: heroUri.slice(0, 80), remainingRefs: remainingRefs.length });

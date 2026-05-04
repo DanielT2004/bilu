@@ -14,6 +14,11 @@ struct SearchLocation: Identifiable, Codable, Equatable {
     let rank: Int
     let totalViews: Int
     let videoIds: [String]
+    let videoCount: Int
+    let rating: Double?
+    let isOpen: Bool?
+    let neighborhood: String?
+    let score: Double
 
     var id: String { placeId }
 

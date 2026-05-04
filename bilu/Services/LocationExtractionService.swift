@@ -8,6 +8,22 @@ import Foundation
 struct LocationExtractionResult {
     let locations: [SearchLocation]
     let unresolvedVideoIds: [String]
+    /// Server returned 400 missing_city — the query had no recognizable city.
+    let missingCity: Bool
+    /// City suggestions returned by the server (only meaningful when missingCity == true).
+    let suggestedCities: [String]?
+
+    init(
+        locations: [SearchLocation],
+        unresolvedVideoIds: [String],
+        missingCity: Bool = false,
+        suggestedCities: [String]? = nil
+    ) {
+        self.locations = locations
+        self.unresolvedVideoIds = unresolvedVideoIds
+        self.missingCity = missingCity
+        self.suggestedCities = suggestedCities
+    }
 }
 
 enum LocationExtractionService {
@@ -71,10 +87,32 @@ enum LocationExtractionService {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+
+            // Server signals "missing city" via HTTP 400 + { error: "missing_city", suggestedCities: [...] }
+            if code == 400 {
+                struct MissingCityPayload: Decodable {
+                    let error: String?
+                    let message: String?
+                    let suggestedCities: [String]?
+                }
+                if let payload = try? JSONDecoder().decode(MissingCityPayload.self, from: data),
+                   payload.error == "missing_city" {
+                    #if DEBUG
+                    print("[LocationExtractionService] Server rejected: missing_city")
+                    #endif
+                    return LocationExtractionResult(
+                        locations: [],
+                        unresolvedVideoIds: videos.map { $0.videoId },
+                        missingCity: true,
+                        suggestedCities: payload.suggestedCities
+                    )
+                }
+            }
+
+            guard (200...299).contains(code) else {
                 #if DEBUG
                 let bodyText = String(data: data, encoding: .utf8) ?? ""
-                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 print("[LocationExtractionService] HTTP \(code): \(bodyText.prefix(400))")
                 #endif
                 return LocationExtractionResult(locations: [], unresolvedVideoIds: videos.map { $0.videoId })
@@ -83,10 +121,11 @@ enum LocationExtractionService {
             struct Payload: Decodable {
                 let locations: [SearchLocation]
                 let unresolved: [String]
+                let queryCity: String?
             }
             let decoded = try JSONDecoder().decode(Payload.self, from: data)
             #if DEBUG
-            print("[LocationExtractionService] \(decoded.locations.count) locations, \(decoded.unresolved.count) unresolved")
+            print("[LocationExtractionService] \(decoded.locations.count) locations, \(decoded.unresolved.count) unresolved, queryCity=\(decoded.queryCity ?? "nil")")
             #endif
             return LocationExtractionResult(
                 locations: decoded.locations,

@@ -1,9 +1,28 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { GoogleGenAI } from "npm:@google/genai@1.46.0";
-import { resolvePlaceIdByTextSearch } from "../_shared/places.ts";
+import {
+  resolvePlaceIdByTextSearch,
+  geocodeCityToCoord,
+  getCachedPlaceIdByName,
+  upsertPlaceNameCache,
+  getCachedPlace,
+  upsertCachedPlace,
+  fetchPlaceDetails,
+  type LocationBias,
+} from "../_shared/places.ts";
 
 /** Lightweight Gemini model for location extraction — see https://ai.google.dev/gemini-api/docs */
 const GEMINI_MODEL = "gemini-2.5-flash-lite";
+
+/** Top N venues actually returned to the client. */
+const TOP_N = 12;
+/** Buffer geocoded above TOP_N to absorb dedupe collapses + geocode failures. */
+const GEOCODE_LIMIT = TOP_N + 5;
+/** Radius around the queryCity used as locationBias on every venue textSearch. */
+const CITY_BIAS_RADIUS_METERS = 40_000;
+/** Max places a single video can contribute IF those places aren't corroborated by other videos.
+ *  Corroborated places (mentioned in ≥2 videos) bypass this cap — overlap is our strongest quality signal. */
+const PER_VIDEO_SOLO_CAP = 4;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,14 +53,22 @@ interface RequestBody {
   longitude?: number;
 }
 
+type Confidence = "high" | "medium" | "low";
+
 interface PlaceHit {
   name: string;
-  city: string | null;
+  area: string | null;
+  confidence: Confidence;
 }
 
-interface ExtractedLocation {
+interface ExtractedVideo {
   videoId: string;
   places: PlaceHit[];
+}
+
+interface GeminiResponse {
+  queryCity: string | null;
+  videos: ExtractedVideo[];
 }
 
 interface LocationOutput {
@@ -53,6 +80,11 @@ interface LocationOutput {
   rank: number;
   totalViews: number;
   videoIds: string[];
+  videoCount: number;
+  rating: number | null;
+  isOpen: boolean | null;
+  neighborhood: string | null;
+  score: number;
 }
 
 // ── Transcript fetching + parsing ─────────────────────────────────────────────
@@ -74,9 +106,7 @@ async function fetchTranscript(url: string): Promise<string> {
       if (!trimmed) continue;
       if (trimmed === "WEBVTT" || trimmed.startsWith("WEBVTT")) continue;
       if (trimmed.includes("-->")) continue;
-      // Numeric cue identifiers (lines that are just a number)
       if (/^\d+$/.test(trimmed)) continue;
-      // Timestamp-only lines that may slip through
       if (/^\d{2}:\d{2}:\d{2}/.test(trimmed)) continue;
       textLines.push(trimmed);
     }
@@ -88,26 +118,49 @@ async function fetchTranscript(url: string): Promise<string> {
   }
 }
 
-// ── Gemini: batched caption + transcript → places[] ──────────────────────────
+// ── Gemini: caption + transcript → { queryCity, videos: [{ videoId, places }] } ─
 
-async function extractPlacesFromDescriptions(
+async function extractPlacesAndCity(
   videos: VideoInput[],
   transcripts: string[],
   searchQuery: string,
   geminiApiKey: string
-): Promise<ExtractedLocation[]> {
+): Promise<GeminiResponse> {
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
-  const systemInstruction = `You extract restaurant, cafe, or venue names from TikTok video captions and voiceover transcripts.
+  const systemInstruction = `You extract a city and venue names from a user's TikTok food search.
 
-For each video return { videoId, places: [{ name, city }, ...] }:
-  - TRANSCRIPT is the creator's spoken voiceover (auto-generated captions). When present, it is the PRIMARY source of venue names — captions are secondary context.
-  - For roundup / "top N" / list-style videos, extract EVERY named venue the creator describes visiting. A single video can yield 5-10 places.
-  - For single-venue videos, return a one-element array.
-  - Only extract venues the creator actually VISITED. If it's a recipe, copycat, DIY, homemade, cooking tutorial, "how to make", "at home", etc. — return [].
-  - If the search query contains a city, only extract venues located in that city. If the transcript/caption clearly places the venue in a different city, skip it.
-  - When unsure, prefer empty places array over guessing. A smaller, accurate result is better than a scattered one.
-  - Set city on each place based on transcript/caption/query context; null if not determinable.`;
+OUTPUT
+{
+  "queryCity": string | null,
+  "videos": [{ "videoId": string, "places": [{ "name": string, "area": string|null, "confidence": "high"|"medium"|"low" }] }]
+}
+
+queryCity:
+  - Extract the city or metro area the USER is searching in from their query string.
+  - Normalize to canonical metro names: "LA"→"Los Angeles", "NYC"/"NY"→"New York", "SF"→"San Francisco", "DC"→"Washington", "K-Town"/"Koreatown"→"Los Angeles".
+  - For neighborhoods, return the parent metro (e.g. "Brooklyn"→"New York", "Santa Monica"→"Los Angeles").
+  - If the query has no city/location word, return null.
+
+places (per video):
+  - TRANSCRIPT (the creator's spoken voiceover) is the PRIMARY source of venue names. Captions are secondary context.
+  - For roundup / "top N" / list-style videos, extract EVERY named venue the creator describes visiting.
+  - Only extract venues the creator actually VISITED. Skip recipes, copycats, DIY, "how to make at home" — return empty places array for those.
+  - DO NOT include city/neighborhood in the venue name (we'll add city ourselves at geocode time). Just the venue name as the creator says it.
+
+area (per place):
+  - Set ONLY if the CAPTION (NOT the transcript) explicitly states a neighborhood/sub-area for this venue.
+  - Strong signals: pin emoji "📍 Place, Neighborhood"; "@Place in Neighborhood"; "located in X"; "Place — Neighborhood, City"; clear neighborhood hashtags adjacent to the venue mention (e.g. "#weho #ggiata" → "West Hollywood").
+  - DO NOT extract area from the TRANSCRIPT field — auto-generated captions misspell neighborhoods (e.g. "K-Town" mistranscribed as "Katy Town"). Transcripts are NOT a trustworthy source of neighborhood names.
+  - When in doubt, set area to null. A null area is always safe; a wrong area sends users to the wrong place.
+  - Use the canonical neighborhood name when possible (e.g. "WeHo" → "West Hollywood", "DTLA" → "Downtown Los Angeles", "K-Town" → "Koreatown").
+
+confidence:
+  - "high": creator explicitly visited and recommended this venue (e.g. "I love X", "this is the best Y at Z")
+  - "medium": named in a list with positive context but not a clear recommendation
+  - "low": briefly listed, mentioned in passing, unclear whether visited
+
+Quality bar: When in doubt, return fewer places. A smaller, accurate list is better than a scattered one.`;
 
   const payload = videos.map((v, i) => ({
     videoId: v.videoId,
@@ -117,7 +170,7 @@ For each video return { videoId, places: [{ name, city }, ...] }:
 
   const prompt = `User search query: "${searchQuery}"
 
-Extract named restaurants / cafes / venues from each video below. Return one result per video using its exact videoId, with a places array (empty if nothing extractable).
+Extract queryCity from the search query above, and the list of named venues from each video below.
 
 ${JSON.stringify(payload, null, 2)}`;
 
@@ -135,8 +188,10 @@ ${JSON.stringify(payload, null, 2)}`;
     console.log(`           transcript: ${transcriptPreview}`);
   }
 
-  const emptyFallback = (): ExtractedLocation[] =>
-    videos.map((v) => ({ videoId: v.videoId, places: [] }));
+  const emptyFallback = (): GeminiResponse => ({
+    queryCity: null,
+    videos: videos.map((v) => ({ videoId: v.videoId, places: [] })),
+  });
 
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
@@ -146,26 +201,44 @@ ${JSON.stringify(payload, null, 2)}`;
       temperature: 0.1,
       responseMimeType: "application/json",
       responseSchema: {
-        type: "array" as const,
-        items: {
-          type: "object" as const,
-          properties: {
-            videoId: { type: "string" as const, description: "The videoId from the input" },
-            places: {
-              type: "array" as const,
-              description: "Every named venue the creator describes visiting. Empty array if none.",
-              items: {
-                type: "object" as const,
-                properties: {
-                  name: { type: "string" as const, description: "Venue name as spoken/written" },
-                  city: { type: "string" as const, description: "City or neighborhood", nullable: true },
+        type: "object" as const,
+        properties: {
+          queryCity: {
+            type: "string" as const,
+            description: "Canonical metro extracted from the user's query, or null if absent.",
+            nullable: true,
+          },
+          videos: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                videoId: { type: "string" as const },
+                places: {
+                  type: "array" as const,
+                  items: {
+                    type: "object" as const,
+                    properties: {
+                      name: { type: "string" as const, description: "Venue name only — no city/neighborhood appended." },
+                      area: {
+                        type: "string" as const,
+                        description: "Neighborhood/area, ONLY when explicitly typed in the caption. Null otherwise.",
+                        nullable: true,
+                      },
+                      confidence: {
+                        type: "string" as const,
+                        enum: ["high", "medium", "low"],
+                      },
+                    },
+                    required: ["name", "area", "confidence"],
+                  },
                 },
-                required: ["name", "city"],
               },
+              required: ["videoId", "places"],
             },
           },
-          required: ["videoId", "places"],
         },
+        required: ["queryCity", "videos"],
       },
     },
   });
@@ -182,14 +255,14 @@ ${JSON.stringify(payload, null, 2)}`;
 
   const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try {
-    const parsed = JSON.parse(cleaned) as ExtractedLocation[];
-    if (!Array.isArray(parsed)) throw new Error("Response is not an array");
-    console.log("[tiktok-locations] Parsed results:");
-    for (const p of parsed) {
-      const summary = p.places?.length
-        ? p.places.map((pl) => `${pl.name} (${pl.city ?? "?"})`).join("; ")
+    const parsed = JSON.parse(cleaned) as GeminiResponse;
+    if (!parsed || !Array.isArray(parsed.videos)) throw new Error("Response missing 'videos' array");
+    console.log(`[tiktok-locations] queryCity: ${parsed.queryCity ?? "null"}`);
+    for (const v of parsed.videos) {
+      const summary = v.places?.length
+        ? v.places.map((p) => `${p.name}${p.area ? ` (${p.area})` : ""}[${p.confidence}]`).join("; ")
         : "[]";
-      console.log(`  [${p.videoId?.slice(0, 10)}] places: ${summary}`);
+      console.log(`  [${v.videoId?.slice(0, 10)}] places: ${summary}`);
     }
     return parsed;
   } catch (e) {
@@ -198,7 +271,7 @@ ${JSON.stringify(payload, null, 2)}`;
   }
 }
 
-// ── Google Places: geocode place name to { placeId, lat, lng, address } ──────
+// ── geocode + cache ───────────────────────────────────────────────────────────
 
 interface GeocodedPlace {
   placeId: string;
@@ -206,114 +279,235 @@ interface GeocodedPlace {
   address: string;
   lat: number;
   lng: number;
+  rating: number | null;
+  isOpen: boolean | null;
+  neighborhood: string | null;
 }
 
+/**
+ * Resolve a venue name to a fully enriched place via two-layer cache:
+ *   1. (name|city) → placeId  via place_name_cache  (skip textSearch on hit)
+ *   2. placeId → metadata     via places_cache       (skip Place Details on hit)
+ *
+ * Steady state for popular venues: zero Places API calls.
+ */
 async function geocodePlace(
   placeName: string,
-  city: string | null,
-  placesApiKey: string,
-  bias: { latitude?: number; longitude?: number }
+  area: string | null,
+  queryCity: string,
+  cityBias: LocationBias,
+  placesApiKey: string
 ): Promise<GeocodedPlace | null> {
-  const searchArea = city ?? "";
-  const placeId = await resolvePlaceIdByTextSearch(placeName, placesApiKey, "tiktok-locations", searchArea);
-  if (!placeId) return null;
+  // Cache key includes area so a query WITH neighborhood doesn't reuse a stale placeId
+  // resolved without one (which is how we got Fairplex for "Fairgrounds LA").
+  const nameKey = `${placeName}|${area ?? ""}|${queryCity}`.toLowerCase().trim();
 
-  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
-  const res = await fetch(url, {
-    headers: {
-      "X-Goog-Api-Key": placesApiKey,
-      "X-Goog-FieldMask": "displayName,location,formattedAddress",
-    },
-  });
-
-  if (!res.ok) return null;
-
-  let data: {
-    displayName?: { text?: string };
-    location?: { latitude?: number; longitude?: number };
-    formattedAddress?: string;
-  };
-  try {
-    data = await res.json();
-  } catch {
-    return null;
+  // 1. Resolve placeId — name cache or textSearch
+  let placeId = await getCachedPlaceIdByName(nameKey);
+  if (placeId) {
+    console.log(`[cache] hit name_key="${nameKey}" → ${placeId}`);
+  } else {
+    const searchArea = area ? `${area} ${queryCity}` : queryCity;
+    placeId = await resolvePlaceIdByTextSearch(
+      placeName,
+      placesApiKey,
+      "tiktok-locations",
+      searchArea,
+      cityBias
+    );
+    if (!placeId) return null;
+    await upsertPlaceNameCache(nameKey, placeId);
   }
 
-  const lat = data.location?.latitude;
-  const lng = data.location?.longitude;
-  if (lat === undefined || lng === undefined) return null;
+  // 2. Resolve metadata — places_cache or Place Details
+  const cached = await getCachedPlace(placeId);
+  if (cached) {
+    console.log(`[cache] hit place_id=${placeId}`);
+    if (cached.latitude == null || cached.longitude == null) return null;
+    return {
+      placeId,
+      placeName: placeName, // displayName not stored in places_cache; use input. Future: store displayName.
+      address: cached.address ?? "",
+      lat: cached.latitude,
+      lng: cached.longitude,
+      rating: cached.rating,
+      isOpen: cached.is_open,
+      neighborhood: cached.neighborhood,
+    };
+  }
+
+  // Cache miss: fetch full details, persist, return
+  const details = await fetchPlaceDetails(placeId, placesApiKey, "tiktok-locations");
+  if (details.latitude === undefined || details.longitude === undefined) return null;
+
+  await upsertCachedPlace({
+    place_id: placeId,
+    photo_refs: details.photoNames,
+    rating: details.rating ?? null,
+    review_count: details.reviewCount ?? null,
+    is_open: details.isOpen ?? null,
+    address: details.address ?? null,
+    phone: details.phone ?? null,
+    website: details.website ?? null,
+    latitude: details.latitude,
+    longitude: details.longitude,
+    neighborhood: details.neighborhood ?? null,
+  });
 
   return {
     placeId,
-    placeName: data.displayName?.text ?? placeName,
-    address: data.formattedAddress ?? "",
-    lat,
-    lng,
+    placeName: details.displayName ?? placeName,
+    address: details.address ?? "",
+    lat: details.latitude,
+    lng: details.longitude,
+    rating: details.rating ?? null,
+    isOpen: details.isOpen ?? null,
+    neighborhood: details.neighborhood ?? null,
   };
 }
 
-// ── Dedupe + rank ────────────────────────────────────────────────────────────
+// ── Tally + rank ──────────────────────────────────────────────────────────────
 
-function dedupeAndRank(
-  videos: VideoInput[],
-  extracted: ExtractedLocation[],
-  geocoded: Map<string, GeocodedPlace>
-): { locations: LocationOutput[]; unresolved: string[] } {
-  const byPlaceId = new Map<string, { place: GeocodedPlace; videoIds: Set<string>; totalViews: number }>();
-  const unresolved: string[] = [];
+/** Per-name aggregate before geocoding. Same name across videos → same entry. */
+interface NameTally {
+  name: string;             // canonical version (first-seen casing)
+  areaVotes: Map<string, { count: number; bestConfidence: Confidence }>;
+  area: string | null;      // resolved after voting in finalize step
+  totalViews: number;
+  videoIds: Set<string>;    // distinct videos that mentioned this name
+  preScore: number;         // log(views+1) × (1 + 0.3 × videoCount)
+  bestConfidence: Confidence; // highest confidence seen across all mentions — tiebreaker when capping solos
+}
+
+function confidenceRank(c: Confidence): number {
+  return c === "high" ? 3 : c === "medium" ? 2 : 1;
+}
+
+function resolveArea(votes: Map<string, { count: number; bestConfidence: Confidence }>): string | null {
+  if (votes.size === 0) return null;
+  let bestKey: string | null = null;
+  let bestCount = 0;
+  let bestConf: Confidence = "low";
+  for (const [key, v] of votes) {
+    if (
+      v.count > bestCount ||
+      (v.count === bestCount && confidenceRank(v.bestConfidence) > confidenceRank(bestConf))
+    ) {
+      bestKey = key;
+      bestCount = v.count;
+      bestConf = v.bestConfidence;
+    }
+  }
+  return bestKey;
+}
+
+function buildNameTallies(videos: VideoInput[], extracted: ExtractedVideo[]): NameTally[] {
+  const byName = new Map<string, NameTally>();
 
   for (const v of videos) {
     const ext = extracted.find((e) => e.videoId === v.videoId);
-    const placesOnVideo = ext?.places ?? [];
-    const geosForVideo: GeocodedPlace[] = [];
+    if (!ext) continue;
 
-    for (const p of placesOnVideo) {
-      if (!p.name?.trim()) continue;
-      const key = `${p.name}|${p.city ?? ""}`.toLowerCase();
-      const geo = geocoded.get(key);
-      if (geo) geosForVideo.push(geo);
-    }
+    // Don't double-count the same name within one video.
+    const seenInVideo = new Set<string>();
+    for (const p of ext.places) {
+      if (p.confidence === "low") continue;
+      const trimmed = p.name?.trim();
+      if (!trimmed) continue;
 
-    if (geosForVideo.length === 0) {
-      unresolved.push(v.videoId);
-      continue;
-    }
+      const key = trimmed.toLowerCase();
+      if (seenInVideo.has(key)) continue;
+      seenInVideo.add(key);
 
-    // A roundup video contributes its views to every place it surfaces.
-    // Use Set to avoid double-counting views if Gemini lists the same venue twice.
-    const seenPlaceIds = new Set<string>();
-    for (const geo of geosForVideo) {
-      if (seenPlaceIds.has(geo.placeId)) continue;
-      seenPlaceIds.add(geo.placeId);
+      let tally = byName.get(key);
+      if (!tally) {
+        tally = {
+          name: trimmed,
+          areaVotes: new Map(),
+          area: null,
+          totalViews: 0,
+          videoIds: new Set(),
+          preScore: 0,
+          bestConfidence: "low", // placeholder; overwritten below since "low" is filtered
+        };
+        byName.set(key, tally);
+      }
+      tally.videoIds.add(v.videoId);
+      tally.totalViews += v.viewCount;
+      if (confidenceRank(p.confidence) > confidenceRank(tally.bestConfidence)) {
+        tally.bestConfidence = p.confidence;
+      }
 
-      const existing = byPlaceId.get(geo.placeId);
-      if (existing) {
-        existing.videoIds.add(v.videoId);
-        existing.totalViews += v.viewCount;
-      } else {
-        byPlaceId.set(geo.placeId, {
-          place: geo,
-          videoIds: new Set([v.videoId]),
-          totalViews: v.viewCount,
-        });
+      if (p.area && p.area.trim()) {
+        const areaKey = p.area.trim();
+        const existing = tally.areaVotes.get(areaKey);
+        if (existing) {
+          existing.count += 1;
+          if (confidenceRank(p.confidence) > confidenceRank(existing.bestConfidence)) {
+            existing.bestConfidence = p.confidence;
+          }
+        } else {
+          tally.areaVotes.set(areaKey, { count: 1, bestConfidence: p.confidence });
+        }
       }
     }
   }
 
-  const locations: LocationOutput[] = Array.from(byPlaceId.values())
-    .sort((a, b) => b.totalViews - a.totalViews)
-    .map((entry, i) => ({
-      placeId: entry.place.placeId,
-      placeName: entry.place.placeName,
-      address: entry.place.address,
-      lat: entry.place.lat,
-      lng: entry.place.lng,
-      rank: i,
-      totalViews: entry.totalViews,
-      videoIds: Array.from(entry.videoIds),
-    }));
+  // Resolve area + compute pre-score (no rating yet).
+  for (const t of byName.values()) {
+    t.area = resolveArea(t.areaVotes);
+    t.preScore = Math.log(t.totalViews + 1) * (1 + 0.3 * t.videoIds.size);
+  }
 
-  return { locations, unresolved };
+  return Array.from(byName.values()).sort((a, b) => b.preScore - a.preScore);
+}
+
+/**
+ * Per-video diversity cap. Each video can contribute at most PER_VIDEO_SOLO_CAP
+ * places that are exclusive to it (videoIds.size === 1). Places mentioned in
+ * ≥2 videos are corroborated and bypass the cap entirely — that overlap is the
+ * strongest quality signal we have, and we never want to throw it away.
+ *
+ * Within a video's solos, all share the same totalViews and videoCount, so
+ * preScore is identical; bestConfidence is the meaningful tiebreaker.
+ */
+function applyPerVideoSoloCap(tallies: NameTally[]): NameTally[] {
+  const corroborated: NameTally[] = [];
+  const soloByVideo = new Map<string, NameTally[]>();
+
+  for (const t of tallies) {
+    if (t.videoIds.size >= 2) {
+      corroborated.push(t);
+    } else {
+      const videoId = t.videoIds.values().next().value as string;
+      const arr = soloByVideo.get(videoId);
+      if (arr) arr.push(t);
+      else soloByVideo.set(videoId, [t]);
+    }
+  }
+
+  const keptSolos: NameTally[] = [];
+  for (const [videoId, solos] of soloByVideo) {
+    solos.sort((a, b) => {
+      const cmp = confidenceRank(b.bestConfidence) - confidenceRank(a.bestConfidence);
+      return cmp !== 0 ? cmp : b.preScore - a.preScore;
+    });
+    const kept = Math.min(solos.length, PER_VIDEO_SOLO_CAP);
+    if (solos.length > PER_VIDEO_SOLO_CAP) {
+      console.log(
+        `[tiktok-locations] cap: video=${videoId.slice(0, 12)} solos=${solos.length} kept=${kept} dropped=${solos.length - kept}`
+      );
+    }
+    keptSolos.push(...solos.slice(0, kept));
+  }
+
+  return [...corroborated, ...keptSolos].sort((a, b) => b.preScore - a.preScore);
+}
+
+/** Final composite score with rating mixed in. */
+function computeFullScore(preScore: number, rating: number | null): number {
+  const ratingMultiplier = rating != null ? Math.max(0.5, rating / 4.0) : 1.0;
+  return preScore * ratingMultiplier;
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -322,7 +516,6 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
-
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
@@ -355,28 +548,7 @@ serve(async (req: Request) => {
     console.log(`  searchQuery: "${body.searchQuery}"`);
     console.log(`  coords:     ${body.latitude ?? "?"}, ${body.longitude ?? "?"}`);
 
-    // Per-video signals log: caption, anchors, transcript availability
-    console.log("[tiktok-locations] ── PER-VIDEO SIGNALS ──");
-    for (const v of body.videos) {
-      const id = v.videoId.slice(0, 10);
-      const descPreview = v.desc.slice(0, 70).replace(/\n/g, " ");
-      const anchors = v.anchors ?? [];
-      const anchorSummary = anchors.length === 0
-        ? "none"
-        : anchors.map((a) => {
-            const cat = a.poiClassName ?? a.categoryName ?? "?";
-            const coord = a.lat !== undefined && a.lng !== undefined
-              ? ` @${a.lat.toFixed(3)},${a.lng.toFixed(3)}`
-              : "";
-            return `"${a.keyword}"[${cat}]${coord}`;
-          }).join(", ");
-      const transcriptStr = v.transcriptUrl ? "available" : "missing";
-      console.log(`  [${id}] desc="${descPreview}"`);
-      console.log(`           anchors: ${anchorSummary} | transcript: ${transcriptStr}`);
-    }
-    console.log("[tiktok-locations] ── END SIGNALS ──");
-
-    // 1. Fetch transcripts in parallel (missing / failed → "")
+    // 1. Fetch transcripts in parallel
     const transcriptStart = Date.now();
     const transcripts = await Promise.all(
       body.videos.map((v) => (v.transcriptUrl ? fetchTranscript(v.transcriptUrl) : Promise.resolve("")))
@@ -385,50 +557,125 @@ serve(async (req: Request) => {
     const withTranscript = transcripts.filter((t) => t.length > 0).length;
     console.log(`[tiktok-locations] Fetched transcripts: ${withTranscript}/${body.videos.length} in ${transcriptMs}ms`);
 
-    // 2. Extract places from caption + transcript (single Gemini batch call)
-    const extracted = await extractPlacesFromDescriptions(
-      body.videos,
-      transcripts,
-      body.searchQuery ?? "",
-      geminiApiKey
-    );
-    const totalPlaces = extracted.reduce((sum, e) => sum + (e.places?.length ?? 0), 0);
-    const videosWithAtLeastOne = extracted.filter((e) => (e.places?.length ?? 0) > 0).length;
-    console.log(`[tiktok-locations] Gemini resolved ${totalPlaces} places across ${videosWithAtLeastOne}/${body.videos.length} videos`);
+    // 2. Single Gemini call: queryCity + per-video places with confidence
+    const gemini = await extractPlacesAndCity(body.videos, transcripts, body.searchQuery ?? "", geminiApiKey);
 
-    // 3. Geocode unique (name, city) pairs in parallel
-    const uniqueKeys = new Map<string, { name: string; city: string | null }>();
-    for (const e of extracted) {
-      for (const p of e.places ?? []) {
-        if (!p.name?.trim()) continue;
-        const key = `${p.name}|${p.city ?? ""}`.toLowerCase();
-        if (!uniqueKeys.has(key)) uniqueKeys.set(key, { name: p.name, city: p.city });
+    // 3. CITY GUARD — reject if no city in query
+    if (!gemini.queryCity || !gemini.queryCity.trim()) {
+      console.log("[tiktok-locations] queryCity missing — returning 400 missing_city");
+      return new Response(
+        JSON.stringify({
+          error: "missing_city",
+          message: "Please include a city in your search.",
+          suggestedCities: ["Los Angeles", "New York", "San Francisco", "Chicago"],
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const queryCity = gemini.queryCity.trim();
+
+    // 4. Geocode the query city once → use as locationBias for every venue lookup
+    const cityCoord = await geocodeCityToCoord(queryCity, placesApiKey, "tiktok-locations");
+    if (!cityCoord) {
+      console.warn(`[tiktok-locations] Could not geocode queryCity="${queryCity}", proceeding without bias`);
+    }
+    const cityBias: LocationBias = {
+      lat: cityCoord?.lat ?? 0,
+      lng: cityCoord?.lng ?? 0,
+      radiusMeters: CITY_BIAS_RADIUS_METERS,
+    };
+
+    // 5. Tally per-name aggregates (drops low-confidence), apply per-video solo cap, pre-score, take top GEOCODE_LIMIT
+    const tallies = buildNameTallies(body.videos, gemini.videos);
+    const totalRaw = tallies.length;
+    const capped = applyPerVideoSoloCap(tallies);
+    const toGeocode = capped.slice(0, GEOCODE_LIMIT);
+    console.log(`[tiktok-locations] Tally: ${totalRaw} unique names; after per-video cap: ${capped.length}; geocoding top ${toGeocode.length}`);
+    for (const t of toGeocode) {
+      const voteSummary = t.areaVotes.size === 0
+        ? ""
+        : ` votes={${Array.from(t.areaVotes.entries()).map(([k, v]) => `${k}:${v.count}`).join(",")}}`;
+      console.log(`  → "${t.name}"${t.area ? ` (${t.area})` : ""}${voteSummary} preScore=${t.preScore.toFixed(2)} views=${t.totalViews} videos=${t.videoIds.size}`);
+    }
+
+    // 6. Geocode in parallel through the two-layer cache
+    const geocodeStart = Date.now();
+    const geocoded = await Promise.all(
+      toGeocode.map(async (t) => {
+        const geo = cityCoord
+          ? await geocodePlace(t.name, t.area, queryCity, cityBias, placesApiKey)
+          : null;
+        return { tally: t, geo };
+      })
+    );
+    const geocodeMs = Date.now() - geocodeStart;
+    const resolvedCount = geocoded.filter((g) => g.geo).length;
+    console.log(`[tiktok-locations] Geocoded ${resolvedCount}/${toGeocode.length} in ${geocodeMs}ms`);
+
+    // 7. Dedupe by placeId, sum across name variants that resolved to the same place
+    const byPlaceId = new Map<string, {
+      place: GeocodedPlace;
+      videoIds: Set<string>;
+      totalViews: number;
+      preScore: number; // max of contributing tallies' preScore
+    }>();
+
+    for (const { tally, geo } of geocoded) {
+      if (!geo) continue;
+      const existing = byPlaceId.get(geo.placeId);
+      if (existing) {
+        for (const id of tally.videoIds) existing.videoIds.add(id);
+        existing.totalViews += tally.totalViews;
+        existing.preScore = Math.max(existing.preScore, tally.preScore);
+      } else {
+        byPlaceId.set(geo.placeId, {
+          place: geo,
+          videoIds: new Set(tally.videoIds),
+          totalViews: tally.totalViews,
+          preScore: tally.preScore,
+        });
       }
     }
 
-    const geocodeResults = await Promise.all(
-      Array.from(uniqueKeys.entries()).map(async ([key, { name, city }]) => {
-        const geo = await geocodePlace(name, city, placesApiKey, {
-          latitude: body.latitude,
-          longitude: body.longitude,
-        });
-        return { key, geo };
-      })
-    );
+    // 8. Full score with rating, sort, take top TOP_N
+    const ranked = Array.from(byPlaceId.values())
+      .map((entry) => ({
+        ...entry,
+        score: computeFullScore(entry.preScore, entry.place.rating),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, TOP_N);
 
-    const geocoded = new Map<string, GeocodedPlace>();
-    for (const { key, geo } of geocodeResults) {
-      if (geo) geocoded.set(key, geo);
+    const locations: LocationOutput[] = ranked.map((entry, i) => ({
+      placeId: entry.place.placeId,
+      placeName: entry.place.placeName,
+      address: entry.place.address,
+      lat: entry.place.lat,
+      lng: entry.place.lng,
+      rank: i,
+      totalViews: entry.totalViews,
+      videoIds: Array.from(entry.videoIds),
+      videoCount: entry.videoIds.size,
+      rating: entry.place.rating,
+      isOpen: entry.place.isOpen,
+      neighborhood: entry.place.neighborhood,
+      score: Number(entry.score.toFixed(2)),
+    }));
+
+    // 9. unresolved = videos that contributed zero places to the final list
+    const finalVideoIds = new Set(locations.flatMap((l) => l.videoIds));
+    const unresolved = body.videos
+      .map((v) => v.videoId)
+      .filter((id) => !finalVideoIds.has(id));
+
+    console.log(`[tiktok-locations] Final top ${locations.length} (of ${byPlaceId.size} unique placeIds, ${unresolved.length} videos unresolved):`);
+    for (const l of locations) {
+      console.log(`  #${l.rank + 1}. ${l.placeName} | views=${l.totalViews} videos=${l.videoCount} rating=${l.rating ?? "?"} score=${l.score} | ${l.neighborhood ?? "(no nbhd)"}`);
     }
-    console.log(`[tiktok-locations] Geocoded ${geocoded.size}/${uniqueKeys.size} unique places`);
-
-    // 3. Dedupe by placeId, rank by total views
-    const { locations, unresolved } = dedupeAndRank(body.videos, extracted, geocoded);
-    console.log(`[tiktok-locations] Final: ${locations.length} locations, ${unresolved.length} unresolved`);
-    locations.forEach((l) => console.log(`  #${l.rank + 1}. ${l.placeName} — ${l.totalViews} views, ${l.videoIds.length} videos`));
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    return new Response(JSON.stringify({ locations, unresolved }), {
+    return new Response(JSON.stringify({ locations, unresolved, queryCity }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

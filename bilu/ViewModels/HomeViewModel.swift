@@ -66,6 +66,65 @@ struct FoodSubOption: Equatable {
     let key: String
     let emoji: String
     let label: String
+    let imageURL: String?
+
+    init(key: String, emoji: String, label: String, imageURL: String? = nil) {
+        self.key = key
+        self.emoji = emoji
+        self.label = label
+        self.imageURL = imageURL ?? FoodSubOption.defaultImageURL(for: key)
+    }
+
+    static func defaultImageURL(for key: String) -> String? {
+        switch key {
+        // Handheld
+        case "Burger":        return "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=900&auto=format&fit=crop&q=80"
+        case "Taco":          return "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=900&auto=format&fit=crop&q=80"
+        case "Shawarma":      return "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=900&auto=format&fit=crop&q=80"
+        case "Sandwich":      return "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=900&auto=format&fit=crop&q=80"
+        // Asian noodles & broth
+        case "Ramen":         return "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=900&auto=format&fit=crop&q=80"
+        case "Pho":           return "https://images.unsplash.com/photo-1585032226651-759b368d7246?w=900&auto=format&fit=crop&q=80"
+        case "Udon":          return "https://images.unsplash.com/photo-1591814468924-caf88d1232e1?w=900&auto=format&fit=crop&q=80"
+        case "Laksa":         return "https://images.unsplash.com/photo-1626804475297-41608ea09aeb?w=900&auto=format&fit=crop&q=80"
+        // Italian & pizza
+        case "Pizza":         return "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=80"
+        case "Pasta":         return "https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=900&auto=format&fit=crop&q=80"
+        case "Risotto":       return "https://images.unsplash.com/photo-1633964913849-96bb09cfc0c6?w=900&auto=format&fit=crop&q=80"
+        case "Italian":       return "https://images.unsplash.com/photo-1481931098730-318b6f776db0?w=900&auto=format&fit=crop&q=80"
+        // Meaty
+        case "Steak":         return "https://images.unsplash.com/photo-1546964124-0cce460f38ef?w=900&auto=format&fit=crop&q=80"
+        case "BBQ":           return "https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=900&auto=format&fit=crop&q=80"
+        case "Korean BBQ":    return "https://images.unsplash.com/photo-1583224944844-5b268c057b72?w=900&auto=format&fit=crop&q=80"
+        case "Kebab":         return "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=900&auto=format&fit=crop&q=80"
+        // Bowls & stews
+        case "Curry":         return "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=900&auto=format&fit=crop&q=80"
+        case "Ethiopian":     return "https://images.unsplash.com/photo-1567982047351-76b6f93e38ee?w=900&auto=format&fit=crop&q=80"
+        case "Tagine":        return "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=900&auto=format&fit=crop&q=80"
+        case "Bibimbap":      return "https://images.unsplash.com/photo-1590301157890-4810ed352733?w=900&auto=format&fit=crop&q=80"
+        // Fresh & light
+        case "Sushi":         return "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=900&auto=format&fit=crop&q=80"
+        case "Poke":          return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=900&auto=format&fit=crop&q=80"
+        case "Ceviche":       return "https://images.unsplash.com/photo-1559847844-5315695dadae?w=900&auto=format&fit=crop&q=80"
+        case "Vietnamese":    return "https://images.unsplash.com/photo-1583224944844-5b268c057b72?w=900&auto=format&fit=crop&q=80"
+        // Eggy & savory
+        case "Eggs benny":    return "https://images.unsplash.com/photo-1608039829572-78524f79c4c7?w=900&auto=format&fit=crop&q=80"
+        case "Shakshuka":     return "https://images.unsplash.com/photo-1590412200988-a436970781fa?w=900&auto=format&fit=crop&q=80"
+        case "Omelette":      return "https://images.unsplash.com/photo-1510693206972-df098062cb71?w=900&auto=format&fit=crop&q=80"
+        case "Avo toast":     return "https://images.unsplash.com/photo-1588137378633-dea1336ce1e2?w=900&auto=format&fit=crop&q=80"
+        // Doughy & warm
+        case "Pancakes":      return "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=900&auto=format&fit=crop&q=80"
+        case "French toast":  return "https://images.unsplash.com/photo-1484723091739-30a097e8f929?w=900&auto=format&fit=crop&q=80"
+        case "Waffles":       return "https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=900&auto=format&fit=crop&q=80"
+        case "Brioche":       return "https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=900&auto=format&fit=crop&q=80"
+        // Sweet & flaky
+        case "Croissant":     return "https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=900&auto=format&fit=crop&q=80"
+        case "Pastry":        return "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=900&auto=format&fit=crop&q=80"
+        case "Danish":        return "https://images.unsplash.com/photo-1509365465985-25d11c17e812?w=900&auto=format&fit=crop&q=80"
+        case "Donut":         return "https://images.unsplash.com/photo-1551024601-bec78aea704b?w=900&auto=format&fit=crop&q=80"
+        default: return nil
+        }
+    }
 }
 
 struct FoodCategoryOption: Equatable {
