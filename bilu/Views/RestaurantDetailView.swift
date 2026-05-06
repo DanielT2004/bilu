@@ -37,7 +37,14 @@ struct RestaurantDetailView: View {
     @State private var showingAllPhotos = false
     @State private var galleryPhotos: [String] = []
     @State private var isFetchingAllPhotos = false
+    @State private var vibeCheckVisible: Bool = false
+    @State private var bookmarkPhase: BookmarkPhase = .idle
+    @State private var bookmarkSaved: Bool = false
+    @State private var showMapsChoice = false
     @GestureState private var dragOffset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum BookmarkPhase { case idle, pressing }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -72,6 +79,7 @@ struct RestaurantDetailView: View {
         .sheet(isPresented: $showingAllPhotos) {
             AllPhotosView(heroPhoto: rec.image, galleryPhotos: galleryPhotos, name: rec.name)
         }
+        .mapsChoiceDialog(isPresented: $showMapsChoice, recommendation: rec)
         .task {
             guard let placeId = rec.placeId, galleryPhotos.isEmpty else { return }
             isFetchingAllPhotos = true
@@ -294,13 +302,21 @@ struct RestaurantDetailView: View {
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.muted)
                 if let r = rec.rating {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Image(systemName: "star.fill")
                             .font(.system(size: 12))
                             .foregroundStyle(AppTheme.terracotta)
                         Text(String(format: "%.1f", r))
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(AppTheme.onSurface)
+                        if let count = rec.reviewCount, count > 0 {
+                            Text("·")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(AppTheme.subtle)
+                            Text(formatReviewCount(count))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AppTheme.muted)
+                        }
                     }
                 } else {
                     Text("—")
@@ -330,6 +346,14 @@ struct RestaurantDetailView: View {
         return vals[abs(rec.name.hashValue) % vals.count]
     }
 
+    private func formatReviewCount(_ n: Int) -> String {
+        if n >= 1000 {
+            let k = Double(n) / 1000.0
+            return String(format: "%.1fk", k)
+        }
+        return "\(n)"
+    }
+
     // MARK: - CTA row
 
     private var ctaRow: some View {
@@ -356,16 +380,48 @@ struct RestaurantDetailView: View {
             }
             .buttonStyle(.plain)
 
-            // Bookmark circle
-            Button(action: {}) {
-                Image(systemName: "bookmark")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(AppTheme.onSurface)
-                    .frame(width: 52, height: 52)
-                    .background(Color(hex: "eae8e3"))
-                    .clipShape(Circle())
+            // Bookmark circle — soft wind-up press + fill swap on commit.
+            Button(action: tapBookmark) {
+                ZStack {
+                    Circle()
+                        .fill(bookmarkSaved ? AppTheme.sageLt : AppTheme.neutralBg)
+                        .frame(width: 52, height: 52)
+                    Image(systemName: bookmarkSaved ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(bookmarkSaved ? AppTheme.sage : AppTheme.onSurface)
+                        .scaleEffect(bookmarkPhase == .pressing ? 1.18 : 1.0)
+                }
+                .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion),
+                           value: bookmarkSaved)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// Bookmark toggle. Tap → medium haptic + brief 1.18× wind-up scale, then commit
+    /// (success haptic on save, light haptic on unsave). reduceMotion skips the wind-up.
+    private func tapBookmark() {
+        let willSave = !bookmarkSaved
+        Haptics.medium()
+        if reduceMotion {
+            bookmarkSaved.toggle()
+            if willSave { Haptics.success() }
+            return
+        }
+        withAnimation(AnimationProfile.selection.animation(reduceMotion: false)) {
+            bookmarkPhase = .pressing
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
+                bookmarkPhase = .idle
+                bookmarkSaved.toggle()
+            }
+            if willSave {
+                Haptics.success()
+            } else {
+                Haptics.soft()
+            }
         }
     }
 
@@ -453,6 +509,9 @@ struct RestaurantDetailView: View {
         VStack(alignment: .leading, spacing: 28) {
             actionButtonsRow
             vibeCheckCard
+            if !galleryPhotos.isEmpty {
+                photoRowSection
+            }
             if !tikTokVideos.isEmpty {
                 tikTokThumbnailsSection
             }
@@ -536,10 +595,10 @@ struct RestaurantDetailView: View {
 
     private var vibeCheckCard: some View {
         VStack(spacing: 10) {
-            Text("\"" + rec.explanation + "\"")
+            Text("\u{201C}\(rec.explanation)\u{201D}")
                 .font(.custom("Georgia", size: 16))
                 .italic()
-                .foregroundStyle(Color(hex: "434a2b"))
+                .foregroundStyle(AppTheme.onSurface)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
@@ -553,7 +612,72 @@ struct RestaurantDetailView: View {
         .padding(20)
         .frame(maxWidth: .infinity)
         .background(AppTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .opacity(vibeCheckVisible ? 1 : 0)
+        .scaleEffect(vibeCheckVisible ? 1.0 : 0.97, anchor: .top)
+        .animation(reduceMotion ? .linear(duration: 0)
+                                : .spring(response: 0.55, dampingFraction: 0.85),
+                   value: vibeCheckVisible)
+        .task(id: rec.id) {
+            vibeCheckVisible = false
+            if reduceMotion {
+                vibeCheckVisible = true
+                return
+            }
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            vibeCheckVisible = true
+            Haptics.light()
+        }
+        .onLongPressGesture(minimumDuration: 0.5) {
+            UIPasteboard.general.string = rec.explanation
+            Haptics.success()
+        }
+    }
+
+    // MARK: - Photo row (Google Maps)
+
+    private var photoRowSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Photos")
+                    .font(.custom("Georgia", size: 18))
+                    .foregroundStyle(AppTheme.onSurface)
+                Spacer()
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showingAllPhotos = true
+                } label: {
+                    Text("View All")
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(AppTheme.sage)
+                }
+                .buttonStyle(.plain)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(galleryPhotos.prefix(5).enumerated()), id: \.offset) { _, url in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showingAllPhotos = true
+                        } label: {
+                            AsyncImage(url: URL(string: url)) { phase in
+                                if let img = phase.image {
+                                    img.resizable().aspectRatio(contentMode: .fill)
+                                } else {
+                                    AppTheme.surface
+                                }
+                            }
+                            .frame(width: 140, height: 140)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Community Moments
@@ -561,7 +685,7 @@ struct RestaurantDetailView: View {
     private var tikTokThumbnailsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Clips")
+                Text("TikToks")
                     .font(.custom("Georgia", size: 18))
                     .foregroundStyle(AppTheme.onSurface)
                 Spacer()
@@ -1028,8 +1152,8 @@ struct RestaurantDetailView: View {
     }
 
     private func openMaps() {
-        guard let url = URL(string: rec.mapsUrl) else { return }
-        openURL(url)
+        Haptics.light()
+        showMapsChoice = true
     }
 }
 

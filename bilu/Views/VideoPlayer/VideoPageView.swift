@@ -24,14 +24,34 @@ struct VideoPageView: View {
             VideoLayerView(player: pageModel.player)
                 .ignoresSafeArea()
 
-            // Tap anywhere to pause/resume (active page only)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard isActive else { return }
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    pageModel.togglePlayPause()
+            // Tap zones — left + right halves. Tap = pause/resume, long-press = 2x.
+            HStack(spacing: 0) {
+                tapZone
+                tapZone
+            }
+
+            // 2x indicator pill — top-center, only when speeding up
+            if isActive && pageModel.playbackRate > 1.0 {
+                VStack {
+                    HStack(spacing: 6) {
+                        Image(systemName: "forward.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("2x")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .padding(.top, 70)
+                    Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.15), value: pageModel.playbackRate)
+            }
 
             // HUD — only on active page
             if isActive {
@@ -46,6 +66,7 @@ struct VideoPageView: View {
                             .shadow(radius: 10)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity.animation(.easeInOut(duration: 0.15)))
+                            .allowsHitTesting(false)
                     }
 
                     Spacer()
@@ -78,6 +99,35 @@ struct VideoPageView: View {
                 .ignoresSafeArea(edges: .bottom)
             }
         }
+    }
+
+    // MARK: - Tap zone (left or right half)
+
+    /// Tap → pause/resume. Long-press (≥0.18s) → 2x playback while held.
+    /// Two of these stacked horizontally cover the full screen.
+    private var tapZone: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isActive else { return }
+                Haptics.light()
+                pageModel.togglePlayPause()
+            }
+            .onLongPressGesture(
+                minimumDuration: 0.18,
+                maximumDistance: 30,
+                perform: {},
+                onPressingChanged: { pressing in
+                    guard isActive else { return }
+                    if pressing {
+                        Haptics.rigid()
+                        pageModel.setRate(2.0)
+                    } else {
+                        Haptics.light()
+                        pageModel.setRate(1.0)
+                    }
+                }
+            )
     }
 
     // MARK: - Metadata HUD

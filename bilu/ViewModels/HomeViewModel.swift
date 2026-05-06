@@ -7,6 +7,7 @@ import Foundation
 import Combine
 import CoreLocation
 import MapKit
+import SwiftUI
 
 enum Step: String, CaseIterable {
     case occasion
@@ -142,6 +143,13 @@ enum CuisineMode {
     case country
 }
 
+/// Drives the staged reveal of recommendations: header → map → cards.
+/// Comparable so views can gate content on `>= .headerIn` etc.
+enum RevealPhase: Int, Comparable {
+    case sealed, headerIn, mapIn, cardsIn
+    static func < (a: RevealPhase, b: RevealPhase) -> Bool { a.rawValue < b.rawValue }
+}
+
 @MainActor
 final class HomeViewModel: ObservableObject {
     @Published var step: Step = .occasion
@@ -155,14 +163,21 @@ final class HomeViewModel: ObservableObject {
     @Published var cuisineMode: CuisineMode = .vibe
     @Published var serviceCategory: String = "eat"
     @Published var selectedVibe: String = ""
-    @Published var selectedNoRushOccasion: String = "🍽 Best food"
     @Published var drinksSubType: String = ""
     @Published var tikTokVideos: [String: [TikTokVideo]] = [:]
+    @Published var revealPhase: RevealPhase = .sealed
+    /// Mirrors `@Environment(\.accessibilityReduceMotion)`; the View writes it on appear/change
+    /// so the ViewModel can branch animation logic without touching UIKit accessibility directly.
+    @Published var reduceMotionPreference: Bool = false
+    /// Vibes the user has saved from the reveal screen. In-memory only for now —
+    /// persistence (UserDefaults / SwiftData) is a follow-up; the slot is wired so
+    /// adding storage is a single-site change.
+    @Published var savedVibes: [VibeSelection] = []
 
     /// Tracks the active search so it can be cancelled when the user exits mid-search.
     private var searchTask: Task<Void, Never>?
 
-    static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "No Rush", "Brunch", "Late Night"]
+    static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "Brunch", "Late Night"]
     static let drinksOccasions:  Set<String> = ["Cafe", "Bakery", "Dessert", "Drinks"]
 
     static let countries: [(flag: String, name: String)] = [
@@ -195,6 +210,8 @@ final class HomeViewModel: ObservableObject {
         selection.outdoorSeating = false
         selection.petFriendly = false
         selection.wheelchairAccess = false
+        selection.dateNight = false
+        selection.specialOccasion = false
         selection.location = ""
         selection.pricePoints = ["$$", "$$$"]
         selection.partySize = 2
@@ -208,13 +225,8 @@ final class HomeViewModel: ObservableObject {
                 step = .drinksSubFlow
             }
         } else if Self.newTimeOccasions.contains(occasion) {
-            if occasion == "No Rush" {
-                selectedNoRushOccasion = "🍽 Best food"
-                selection.selectedVibe = "🍽 Best food"
-            } else {
-                selectedVibe = defaultVibe(for: occasion)
-                selection.selectedVibe = selectedVibe
-            }
+            selectedVibe = defaultVibe(for: occasion)
+            selection.selectedVibe = selectedVibe
             step = .foodFeeling
         } else {
             step = .keyQuestion
@@ -356,7 +368,7 @@ final class HomeViewModel: ObservableObject {
         case "Cafe":                                       return "none"
         case "Happy Hour":                                 return "opennow"
         case "Casual", "Brunch", "Late Night":             return "opennow"
-        case "Sit Down", "No Rush":                        return "full"
+        case "Sit Down":                                   return "full"
         default:                                           return "opennow"
         }
     }
@@ -456,9 +468,28 @@ final class HomeViewModel: ObservableObject {
         cuisineMode = .vibe
         serviceCategory = "eat"
         selectedVibe = ""
-        selectedNoRushOccasion = "🍽 Best food"
         drinksSubType = ""
         tikTokVideos = [:]
+        revealPhase = .sealed
+    }
+
+    // MARK: - Saved Vibes
+
+    /// True iff the current `selection` is already saved (matched on user-meaningful fields).
+    var currentVibeIsSaved: Bool {
+        savedVibes.contains { $0.matches(selection) }
+    }
+
+    /// Toggle save state for the current selection.
+    /// Tap → .medium haptic. Commit (save, not unsave) also fires .success for the milestone beat.
+    func toggleSaveCurrentVibe() {
+        Haptics.medium()
+        if let idx = savedVibes.firstIndex(where: { $0.matches(selection) }) {
+            savedVibes.remove(at: idx)
+        } else {
+            savedVibes.append(selection)
+            Haptics.success()
+        }
     }
 
     // MARK: - Survey Submit
@@ -495,28 +526,150 @@ final class HomeViewModel: ObservableObject {
         let outcome = await GeminiService.getVibeRecommendations(selection: selection)
         // If the user exited mid-search (reset/back), don't transition to results.
         guard step == .loading else { return }
-        recommendations = outcome.result.recommendations
+
         lastSearchFailure = outcome.failure
         lastSearchWasRelaxed = outcome.result.relaxed ?? false
-        step = .reveal
 
-        // No grounding metadata on transport errors — skip enrichment.
-        guard outcome.failure != .transportError else { return }
-
-        // Phase 2: Places enrichment in background — updates images + map pins
+        let initial = outcome.result.recommendations
         let groundingPlaces = outcome.result.groundingPlaces ?? []
-        let location = effectiveLocation
-        isEnriching = true
-        Task {
-            let enriched = await GeminiService.enrichRecommendations(
-                outcome.result.recommendations,
-                groundingPlaces: groundingPlaces,
-                location: location
-            )
-            recommendations = enriched
-            isEnriching = false
+        let canEnrich = outcome.failure != .transportError && !initial.isEmpty
+
+        // Short-circuit: empty results, transport error, or reduce-motion all
+        // skip the wait+prefetch window and reveal immediately on Phase 1 data.
+        if !canEnrich || reduceMotionPreference {
+            recommendations = initial
+            step = .reveal
+            revealPhase = .sealed
+            await stageReveal(reduceMotion: reduceMotionPreference)
+            return
         }
 
+        // Bridge phrase ("curated" appears in both states) so the loading→reveal
+        // handoff doesn't flicker.
+        loadingPhase = "Curating your\nperfect shortlist..."
+
+        // Kick off the single shared enrichment task. We'll either await it (if it
+        // beats the cap) or hand it off as a background fallback (if it doesn't).
+        let enrichTask = Task<[Recommendation], Never> {
+            await GeminiService.enrichRecommendations(
+                initial,
+                groundingPlaces: groundingPlaces,
+                location: effectiveLocation
+            )
+        }
+
+        let outcome2 = await raceEnrichmentAgainstCap(
+            enrichTask: enrichTask,
+            initial: initial
+        )
+        guard step == .loading else {
+            enrichTask.cancel()
+            return
+        }
+
+        recommendations = outcome2.recs
+        step = .reveal
+        revealPhase = .sealed
+
+        if outcome2.isEnriched {
+            // Synchronized happy path — everything in hand before reveal animates.
+            isEnriching = false
+            await stageReveal(reduceMotion: reduceMotionPreference)
+        } else {
+            // Cap fired before enrichment finished. Reveal now on Phase-1 data and
+            // let enrichment land in the background — old behavior as a safety net.
+            isEnriching = true
+            Task { [weak self] in
+                let enriched = await enrichTask.value
+                guard let self else { return }
+                await MainActor.run {
+                    if self.step == .reveal && !enriched.isEmpty {
+                        self.recommendations = enriched
+                    }
+                    self.isEnriching = false
+                }
+            }
+            await stageReveal(reduceMotion: reduceMotionPreference)
+        }
+    }
+
+    /// Holds on the loading screen while enrichment + image prefetch run, capped
+    /// at `revealReadinessCapNanos` so a slow Places API can't strand the user.
+    /// Returns the recs to reveal with and whether enrichment beat the cap.
+    private static let revealReadinessCapNanos: UInt64 = 8_000_000_000  // 8s
+    private static let prefetchTimeout: TimeInterval = 1.2
+
+    private struct ReadinessOutcome {
+        let recs: [Recommendation]
+        let isEnriched: Bool
+    }
+
+    @MainActor
+    private func raceEnrichmentAgainstCap(
+        enrichTask: Task<[Recommendation], Never>,
+        initial: [Recommendation]
+    ) async -> ReadinessOutcome {
+        let phase1URLs = initial.compactMap { $0.image.flatMap(URL.init(string:)) }
+
+        // Warm Phase-1 image cache in parallel with the enrichment race.
+        async let _ = ImagePrefetcher.warm(urls: phase1URLs, timeout: Self.prefetchTimeout)
+
+        // Race the enrichment task against the cap timer.
+        let enrichedOrNil: [Recommendation]? = await withTaskGroup(of: [Recommendation]?.self) { group in
+            group.addTask {
+                let recs = await enrichTask.value
+                return recs.isEmpty ? nil : recs
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: Self.revealReadinessCapNanos)
+                return nil  // sentinel: cap fired
+            }
+            let first = (await group.next()) ?? nil
+            group.cancelAll()
+            return first
+        }
+
+        guard let enriched = enrichedOrNil else {
+            // Cap fired first. Don't cancel enrichTask — the caller hands it off
+            // as a background write so the map and images still appear after reveal.
+            return ReadinessOutcome(recs: initial, isEnriched: false)
+        }
+
+        // Enrichment beat the cap. Warm any new URLs briefly so the cards land hot.
+        let enrichedURLs = enriched.compactMap { $0.image.flatMap(URL.init(string:)) }
+        let newURLs = Set(enrichedURLs).subtracting(phase1URLs)
+        if !newURLs.isEmpty {
+            await ImagePrefetcher.warm(urls: Array(newURLs), timeout: 0.6)
+        }
+        return ReadinessOutcome(recs: enriched, isEnriched: true)
+    }
+
+    /// Drives the staged reveal of the recommendations screen.
+    /// Three beats: header → map → cards, each with an escalating haptic.
+    /// Short-circuits to a single `.cardsIn` jump (with one success haptic) when reduceMotion is on,
+    /// or when results are empty (the staging beats only make sense when there's a list to reveal).
+    private func stageReveal(reduceMotion: Bool) async {
+        if reduceMotion || recommendations.isEmpty {
+            Haptics.success()
+            revealPhase = .cardsIn
+            return
+        }
+        Haptics.success()
+        withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
+            revealPhase = .headerIn
+        }
+        try? await Task.sleep(nanoseconds: 280_000_000)
+        guard step == .reveal else { return }
+        Haptics.light()
+        withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
+            revealPhase = .mapIn
+        }
+        try? await Task.sleep(nanoseconds: 320_000_000)
+        guard step == .reveal else { return }
+        Haptics.rigid()
+        withAnimation(AnimationProfile.listReveal.animation(reduceMotion: false)) {
+            revealPhase = .cardsIn
+        }
     }
 
     func fetchTikTokVideos(for rec: Recommendation) async -> [TikTokVideo] {
@@ -632,9 +785,14 @@ final class HomeViewModel: ObservableObject {
         selection.selectedVibe = vibe
     }
 
-    func selectNoRushOccasion(_ val: String) {
-        selectedNoRushOccasion = val
-        selection.selectedVibe = val
+    func toggleDateNight() {
+        selection.dateNight.toggle()
+        if selection.dateNight { selection.specialOccasion = false }
+    }
+
+    func toggleSpecialOccasion() {
+        selection.specialOccasion.toggle()
+        if selection.specialOccasion { selection.dateNight = false }
     }
 
     func selectDrinksSubType(_ subType: String) {
@@ -749,15 +907,6 @@ final class HomeViewModel: ObservableObject {
                 makeCat("Asian noodles & broth", emoji: "🍜", title: "Asian noodles & broth", subtitle: "Ramen, izakaya, Korean"),
                 makeCat("Fresh & light",         emoji: "🥗", title: "Fresh & light",         subtitle: "Sushi, Mediterranean, salads"),
                 makeCat("Handheld",              emoji: "🌮", title: "Handheld",              subtitle: "Tacos, burgers, sandwiches"),
-                surprise
-            ]
-        case "No Rush":
-            return [
-                makeCat("Meaty",           emoji: "🥩", title: "Meaty",           subtitle: "Steak, omakase, BBQ"),
-                makeCat("Italian & pizza", emoji: "🍕", title: "Italian & pizza", subtitle: "Pasta, pizza, trattoria"),
-                makeCat("Bowls & stews",   emoji: "🍲", title: "Bowls & stews",   subtitle: "Slow-cooked, braised, saucy"),
-                makeCat("Fresh & light",   emoji: "🥗", title: "Fresh & light",   subtitle: "Sushi, seafood, French"),
-                makeCat("Handheld",        emoji: "🌮", title: "Handheld",        subtitle: "Upscale tacos, tartine"),
                 surprise
             ]
         case "Brunch":

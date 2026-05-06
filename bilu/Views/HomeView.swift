@@ -21,8 +21,9 @@ private struct ScalePress: ButtonStyle {
 // MARK: - HomeView
 
 struct HomeView: View {
-    let selectedTab: Tab
-    let onSelectTab: (Tab) -> Void
+    /// Bound from RootTabView so the tab bar can slide off-screen during survey
+    /// steps and slide back at .occasion / .reveal. Single owner: HomeView.
+    @Binding var hideTabBar: Bool
     @StateObject private var viewModel = HomeViewModel()
     @FocusState private var locationFieldFocused: Bool
     @State private var selectedRestaurant: Recommendation? = nil
@@ -30,6 +31,11 @@ struct HomeView: View {
     @State private var mapIsExpanded = false
     @State private var expandedCategoryKey: String? = nil
     @State private var subOptionRevealTrigger: Int = 0
+    @State private var displayedRecommendationCount: Int = 0
+    /// Triggers a one-shot confetti burst when the user saves their vibe.
+    /// Set to a fresh UUID on each save commit so SwiftUI rebuilds the burst view.
+    @State private var confettiBurstID: UUID? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,21 +62,67 @@ struct HomeView: View {
                 .onChange(of: viewModel.step) { newStep in
                     proxy.scrollTo("top", anchor: .top)
                     expandedCategoryKey = nil
-                    if newStep == .reveal {
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    }
+                    // Reveal milestone haptic now lives in HomeViewModel.stageReveal() so it
+                    // fires once, in sync with the staged headerIn beat.
                 }
             }
 
-            if viewModel.step == .occasion {
-                TabBarView(selectedTab: selectedTab, onSelect: onSelectTab)
-            }
         }
         .background(C.surface)
         .sheet(item: $selectedRestaurant) { rec in
             RestaurantDetailView(rec: rec) {
                     await viewModel.fetchTikTokVideos(for: rec)
                 }
+        }
+        .onAppear {
+            viewModel.reduceMotionPreference = reduceMotion
+            // Sync the tab bar visibility on first appear so a hot-relaunch into
+            // a non-occasion step doesn't briefly flash the tab bar.
+            hideTabBar = shouldHideTabBar(for: viewModel.step)
+        }
+        .onDisappear {
+            // If the user switches to Search/Profile mid-survey, restore the tab
+            // bar so the destination view shows it normally.
+            hideTabBar = false
+        }
+        .onChange(of: reduceMotion) { newValue in
+            viewModel.reduceMotionPreference = newValue
+        }
+        .onChange(of: viewModel.step) { newStep in
+            hideTabBar = shouldHideTabBar(for: newStep)
+        }
+        .onChange(of: viewModel.revealPhase) { phase in
+            guard phase == .cardsIn, !viewModel.recommendations.isEmpty else { return }
+            if reduceMotion {
+                displayedRecommendationCount = viewModel.recommendations.count
+                return
+            }
+            displayedRecommendationCount = 0
+            Task { @MainActor in
+                for n in 1...viewModel.recommendations.count {
+                    displayedRecommendationCount = n
+                    try? await Task.sleep(nanoseconds: 90_000_000)
+                }
+            }
+        }
+        .onChange(of: viewModel.step) { newStep in
+            if newStep != .reveal { displayedRecommendationCount = 0 }
+        }
+        .onChange(of: viewModel.currentVibeIsSaved) { isSaved in
+            // Fire confetti only on the save-commit transition (false → true).
+            // Unsave is silent visually; the existing ViewModel haptics handle audio.
+            // Reduce Motion users skip the visual celebration but keep the haptic.
+            guard isSaved, !reduceMotion else { return }
+            confettiBurstID = UUID()
+        }
+    }
+
+    /// Tab bar shows on the entry step (.occasion) and the results step (.reveal),
+    /// hides during the survey itself so the user isn't tempted to bail mid-flow.
+    private func shouldHideTabBar(for step: Step) -> Bool {
+        switch step {
+        case .occasion, .reveal: return false
+        default:                 return true
         }
     }
 
@@ -242,7 +294,6 @@ struct HomeView: View {
             VStack(spacing: 12) {
                 timeCard(occasion: "Casual",   icon: "bolt.fill",   label: "Grab & Go!",     sub: "Quick fuel for a busy day",        badge: "30M • FAST",      accentColor: C.sage)
                 timeCard(occasion: "Sit Down", icon: "fork.knife",  label: "Sit Down Vibes", sub: "Unwind with a proper meal",        badge: "1-2HR • RELAXED", accentColor: C.terracotta)
-                timeCard(occasion: "No Rush",  icon: "clock",       label: "No Rush",        sub: "Make a night of it",               badge: "2HR+ • SLOW",     accentColor: C.openGreen)
             }
             .padding(.horizontal, 14)
             .padding(.top, 18)
@@ -620,7 +671,7 @@ struct HomeView: View {
     // MARK: - New food feeling step (time-based occasions)
 
     private var newFoodFeelingStep: some View {
-        let isNoRush = viewModel.selection.occasion == "No Rush"
+        let isSitDown = viewModel.selection.occasion == "Sit Down"
         return VStack(alignment: .leading, spacing: 0) {
             Text(breadcrumbLabel)
                 .font(.system(size: 10, weight: .medium))
@@ -630,35 +681,40 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
 
-            Text(isNoRush ? "What's the occasion?" : "What are you feeling?")
+            Text("What are you feeling?")
                 .font(.custom("Georgia", size: 30))
                 .foregroundColor(C.onSurface)
                 .lineSpacing(2)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
 
-            if isNoRush {
-                // No Rush: occasion sub-picker pills
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(["🍽 Best food", "⚡ Date night", "🎉 Special occasion"], id: \.self) { opt in
-                            noRushOccasionPill(opt)
-                        }
+            // Vibe toggle pills
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.vibeOptions(for: viewModel.selection.occasion), id: \.self) { vibe in
+                        vibePill(vibe)
                     }
-                    .padding(.horizontal, 20)
                 }
-                .padding(.top, 14)
-            } else {
-                // Vibe toggle pills
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(viewModel.vibeOptions(for: viewModel.selection.occasion), id: \.self) { vibe in
-                            vibePill(vibe)
-                        }
-                    }
+                .padding(.horizontal, 20)
+            }
+            .padding(.top, 14)
+
+            if isSitDown {
+                Text("MAKE IT A…")
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(1.0)
+                    .textCase(.uppercase)
+                    .foregroundColor(C.muted)
                     .padding(.horizontal, 20)
+                    .padding(.top, 14)
+
+                HStack(spacing: 8) {
+                    occasionToggle("⚡ Date night",       isOn: viewModel.selection.dateNight)       { viewModel.toggleDateNight() }
+                    occasionToggle("🎉 Special occasion", isOn: viewModel.selection.specialOccasion) { viewModel.toggleSpecialOccasion() }
+                    Spacer()
                 }
-                .padding(.top, 14)
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
             }
 
             // Food category list (expands to sub-options on tap)
@@ -751,7 +807,6 @@ struct HomeView: View {
         switch viewModel.selection.occasion {
         case "Casual":     return "Casual · counter service"
         case "Sit Down":   return "Sit down · table service"
-        case "No Rush":    return "No rush · making it a night"
         case "Brunch":     return "Brunch"
         case "Late Night": return "Late night eats"
         default:           return viewModel.selection.occasion
@@ -779,23 +834,22 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    private func noRushOccasionPill(_ opt: String) -> some View {
-        let isSelected = viewModel.selectedNoRushOccasion == opt
-        return Button {
+    private func occasionToggle(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                viewModel.selectNoRushOccasion(opt)
+                action()
             }
         } label: {
-            Text(opt)
+            Text(label)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(isSelected ? .white : C.onSurface)
+                .foregroundColor(isOn ? .white : C.onSurface)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(isSelected ? C.sage : C.white)
+                .background(isOn ? C.terracotta : C.white)
                 .clipShape(Capsule())
-                .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: isSelected ? 8 : 5, x: 0, y: 2)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+                .shadow(color: isOn ? C.terracotta.opacity(0.22) : C.shadowColor, radius: isOn ? 10 : 6, x: 0, y: 3)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isOn)
         }
         .buttonStyle(.plain)
     }
@@ -1584,38 +1638,44 @@ struct HomeView: View {
 
     private var revealStep: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Header ────────────────────────────────────────────────────
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("Vibe Matches")
-                        .font(.system(size: 10, weight: .medium))
-                        .tracking(1.0)
-                        .textCase(.uppercase)
-                        .foregroundStyle(C.muted)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(C.surface)
-                        .clipShape(Capsule())
+            // ── Header (gated on .headerIn) ──────────────────────────────
+            if viewModel.revealPhase >= .headerIn {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("Vibe Matches")
+                            .font(.system(size: 10, weight: .medium))
+                            .tracking(1.0)
+                            .textCase(.uppercase)
+                            .foregroundStyle(C.muted)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(C.surface)
+                            .clipShape(Capsule())
 
-                    Text("· \(viewModel.selection.occasion)")
-                        .font(.system(size: 12, weight: .light))
-                        .foregroundStyle(C.muted)
+                        Text("· \(viewModel.selection.occasion)")
+                            .font(.system(size: 12, weight: .light))
+                            .foregroundStyle(C.muted)
+                    }
+
+                    Text("Results for '\(viewModel.selection.location.isEmpty ? "you" : viewModel.selection.location)'")
+                        .font(.custom("Georgia", size: 28))
+                        .foregroundStyle(C.onSurface)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+
+                    if !viewModel.recommendations.isEmpty {
+                        Text("\(displayedRecommendationCount) spots curated for your vibe")
+                            .font(.system(size: 13, weight: .light))
+                            .foregroundStyle(C.muted)
+                            .contentTransition(.numericText())
+                            .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion),
+                                       value: displayedRecommendationCount)
+                    }
                 }
-
-                Text("Results for '\(viewModel.selection.location.isEmpty ? "you" : viewModel.selection.location)'")
-                    .font(.custom("Georgia", size: 28))
-                    .foregroundStyle(C.onSurface)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                if !viewModel.recommendations.isEmpty {
-                    Text("\(viewModel.recommendations.count) spots curated for your vibe")
-                        .font(.system(size: 13, weight: .light))
-                        .foregroundStyle(C.muted)
-                }
+                .padding(.top, 24)
+                .padding(.horizontal, 4)
+                .transition(.opacity)
             }
-            .padding(.top, 24)
-            .padding(.horizontal, 4)
 
             // ── Relaxed banner ────────────────────────────────────────────
             if viewModel.lastSearchWasRelaxed && !viewModel.recommendations.isEmpty {
@@ -1641,40 +1701,89 @@ struct HomeView: View {
                 emptyResultsState
                     .padding(.top, 32)
             } else {
-                // ── Map ───────────────────────────────────────────────────
-                BiluMapView(recommendations: viewModel.recommendations, isLoading: viewModel.isEnriching)
-                    .padding(.top, 20)
+                // ── Map (gated on .mapIn) ─────────────────────────────────
+                if viewModel.revealPhase >= .mapIn {
+                    BiluMapView(recommendations: viewModel.recommendations, isLoading: viewModel.isEnriching)
+                        .padding(.top, 20)
+                        .transition(.scale(scale: 0.96, anchor: .center).combined(with: .opacity))
+                }
 
-                // ── Cards ─────────────────────────────────────────────────
-                VStack(spacing: 28) {
-                    ForEach(Array(viewModel.recommendations.enumerated()), id: \.element.id) { index, rec in
-                        RecommendationCard(rec: rec)
-                            .onTapGesture { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); selectedRestaurant = rec }
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                            .animation(
-                                .spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.07),
-                                value: viewModel.recommendations.count
-                            )
+                // ── Cards (gated on .cardsIn) ─────────────────────────────
+                if viewModel.revealPhase >= .cardsIn {
+                    VStack(spacing: 28) {
+                        ForEach(Array(viewModel.recommendations.enumerated()), id: \.element.id) { index, rec in
+                            RecommendationCard(rec: rec, onSelect: {
+                                Haptics.medium()
+                                selectedRestaurant = rec
+                            })
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .animation(
+                                    .spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.07),
+                                    value: viewModel.recommendations.count
+                                )
+                        }
                     }
+                    .padding(.top, 24)
                 }
-                .padding(.top, 24)
             }
 
-            // ── New Vibe CTA ──────────────────────────────────────────────
-            Button(action: { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); viewModel.reset() }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 15))
-                    Text("New Vibe")
-                        .font(.system(size: 15, weight: .medium))
+            // ── Afterglow row: Save + Share + (demoted) New Vibe ─────────
+            // Only renders once the cards have settled, so the eye flows down naturally.
+            if viewModel.revealPhase >= .cardsIn && !viewModel.recommendations.isEmpty {
+                VStack(spacing: 12) {
+                    HStack(spacing: 10) {
+                        Button(action: {
+                            withAnimation(AnimationProfile.selection.animation(reduceMotion: reduceMotion)) {
+                                viewModel.toggleSaveCurrentVibe()
+                            }
+                        }) {
+                            HStack(spacing: 7) {
+                                Image(systemName: viewModel.currentVibeIsSaved ? "checkmark" : "bookmark.fill")
+                                    .font(.system(size: 14))
+                                Text(viewModel.currentVibeIsSaved ? "Saved" : "Save this vibe")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(viewModel.currentVibeIsSaved ? C.terracotta : C.sage)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(ScalePress())
+                        .overlay {
+                            // Confetti fans radially from the button's center on save.
+                            // Re-keyed by confettiBurstID so each save commit kicks a
+                            // fresh particle animation. Never blocks taps.
+                            if let id = confettiBurstID {
+                                ConfettiBurstView()
+                                    .id(id)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+
+                        Button(action: { Haptics.medium(); shareCurrentVibe() }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(C.onSurface)
+                                .frame(width: 52, height: 52)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .shadow(color: C.shadowColor, radius: 16, y: 6)
+                        }
+                        .buttonStyle(ScalePress())
+                    }
+
+                    Button(action: { Haptics.light(); viewModel.reset() }) {
+                        Text("New Vibe")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(C.muted)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(ScalePress())
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(C.terracotta)
-                .clipShape(Capsule())
+                .padding(.top, 32)
+                .transition(.opacity)
             }
-            .buttonStyle(ScalePress())
-            .padding(.top, 32)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
@@ -1708,7 +1817,7 @@ struct HomeView: View {
 
             if isTransport {
                 Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    Haptics.medium()
                     Task { await viewModel.submitSurvey() }
                 } label: {
                     HStack(spacing: 8) {
@@ -1731,9 +1840,29 @@ struct HomeView: View {
         .background(C.white)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: C.shadowColor, radius: 16, x: 0, y: 6)
+        .task {
+            // Fire .error only on a real failure — empty-by-design results stay silent.
+            if viewModel.lastSearchFailure != nil { Haptics.error() }
+        }
     }
 
     // MARK: - Shared continue button
+
+    /// Opens the iOS share sheet with a text payload of the current vibe + recommendations.
+    /// Stub: a renderable screenshot card is the follow-up; the slot is wired so swapping
+    /// the payload type is a single-site change.
+    private func shareCurrentVibe() {
+        let header = "My bilu vibe — \(viewModel.selection.occasion) in \(viewModel.effectiveLocation)"
+        let names = viewModel.recommendations.prefix(5).map { "• \($0.name)" }.joined(separator: "\n")
+        let payload = "\(header)\n\n\(names)"
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let root = scene.windows.first?.rootViewController else { return }
+        let av = UIActivityViewController(activityItems: [payload], applicationActivities: nil)
+        // Find the topmost presented controller to avoid presenting on an already-presenting one.
+        var top = root
+        while let presented = top.presentedViewController { top = presented }
+        top.present(av, animated: true)
+    }
 
     private func continueButton(action: @escaping () -> Void) -> some View {
         Button(action: { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); action() }) {
@@ -1806,5 +1935,5 @@ private struct SubBubble: View {
 }
 
 #Preview {
-    HomeView(selectedTab: .home, onSelectTab: { _ in })
+    HomeView(hideTabBar: .constant(false))
 }

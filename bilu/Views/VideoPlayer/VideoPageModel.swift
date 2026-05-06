@@ -17,6 +17,7 @@ final class VideoPageModel: ObservableObject {
 
     @Published var isPlaying = false
     @Published var progress: Double = 0
+    @Published var playbackRate: Float = 1.0
 
     private var timeObserver: Any?
     private var loopObserver: Any?
@@ -44,6 +45,7 @@ final class VideoPageModel: ObservableObject {
     func activate() {
         player.isMuted = false
         player.play()
+        player.rate = playbackRate
         isPlaying = true
     }
 
@@ -53,6 +55,7 @@ final class VideoPageModel: ObservableObject {
         player.isMuted = true
         player.seek(to: .zero)
         isPlaying = false
+        playbackRate = 1.0
     }
 
     func togglePlayPause() {
@@ -61,7 +64,18 @@ final class VideoPageModel: ObservableObject {
             isPlaying = false
         } else {
             player.play()
+            player.rate = playbackRate
             isPlaying = true
+        }
+    }
+
+    /// Set playback rate (e.g. 1.0 normal, 2.0 for hold-to-skim).
+    /// Only takes effect while the video is actively playing — a held finger
+    /// on a paused video must not auto-start playback.
+    func setRate(_ rate: Float) {
+        playbackRate = rate
+        if isPlaying {
+            player.rate = rate
         }
     }
 

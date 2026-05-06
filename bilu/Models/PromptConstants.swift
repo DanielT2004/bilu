@@ -18,7 +18,6 @@ enum PromptConstants {
         // New time-based occasions
         "Casual":        "The user wants good, casual food — counter service or a relaxed grab-and-go spot. Not a chain.",
         "Sit Down":      "The user wants a proper sit-down meal. The place should feel like a destination.",
-        "No Rush":       "The user wants to make a night of it. Quality and atmosphere both matter.",
         "Brunch":        "The user wants a great brunch spot.",
         "Late Night":    "The user wants somewhere open late with real food.",
         // Drinks tab
@@ -95,8 +94,7 @@ enum PromptConstants {
         "🌟 Hidden gem": "Prioritize lesser-known spots that locals love — strong reviews but low hype, not on every tourist list.",
         "📸 Aesthetic":  "The setting and vibe matter as much as the food — somewhere visually impressive and worth posting.",
         "😌 Low-key":    "Somewhere relaxed and unpretentious — good food without the fuss or fanfare.",
-        // No Rush occasion sub-picker
-        "🍽 Best food":         "Find the best food available — quality and reputation first.",
+        // Sit Down sub-occasion toggles
         "⚡ Date night":        "This is a date night. The setting and atmosphere must feel special.",
         "🎉 Special occasion":  "This is a special occasion — it needs to feel memorable and impressive.",
     ]

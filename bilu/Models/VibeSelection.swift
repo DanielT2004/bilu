@@ -63,6 +63,10 @@ struct VibeSelection: Codable {
     var petFriendly: Bool
     var wheelchairAccess: Bool
 
+    /// Sit Down sub-occasion toggles. Mutually exclusive at the UI layer.
+    var dateNight: Bool
+    var specialOccasion: Bool
+
     init(
         occasion: String = "",
         keyQuestionAnswer: String = "",
@@ -89,7 +93,9 @@ struct VibeSelection: Codable {
         parking: [String] = [],
         outdoorSeating: Bool = false,
         petFriendly: Bool = false,
-        wheelchairAccess: Bool = false
+        wheelchairAccess: Bool = false,
+        dateNight: Bool = false,
+        specialOccasion: Bool = false
     ) {
         self.occasion = occasion
         self.keyQuestionAnswer = keyQuestionAnswer
@@ -117,6 +123,23 @@ struct VibeSelection: Codable {
         self.outdoorSeating = outdoorSeating
         self.petFriendly = petFriendly
         self.wheelchairAccess = wheelchairAccess
+        self.dateNight = dateNight
+        self.specialOccasion = specialOccasion
+    }
+
+    /// Returns true if this selection represents the same user-meaningful vibe as `other`.
+    /// Compares the fields that drive a recommendation: occasion, key answer, cuisine, location.
+    /// Not all fields participate — fine-tune toggles like party size shouldn't make two
+    /// otherwise-identical vibes look distinct.
+    func matches(_ other: VibeSelection) -> Bool {
+        occasion == other.occasion
+            && keyQuestionAnswer == other.keyQuestionAnswer
+            && foodFeelings.sorted() == other.foodFeelings.sorted()
+            && selectedCountry == other.selectedCountry
+            && selectedVibe == other.selectedVibe
+            && location == other.location
+            && dateNight == other.dateNight
+            && specialOccasion == other.specialOccasion
     }
 
     // Custom decoder so older persisted JSON (without selectedSubOptions) still decodes cleanly.
@@ -148,5 +171,7 @@ struct VibeSelection: Codable {
         outdoorSeating        = (try? c.decode(Bool.self, forKey: .outdoorSeating)) ?? false
         petFriendly           = (try? c.decode(Bool.self, forKey: .petFriendly)) ?? false
         wheelchairAccess      = (try? c.decode(Bool.self, forKey: .wheelchairAccess)) ?? false
+        dateNight             = (try? c.decode(Bool.self, forKey: .dateNight)) ?? false
+        specialOccasion       = (try? c.decode(Bool.self, forKey: .specialOccasion)) ?? false
     }
 }

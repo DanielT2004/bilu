@@ -525,7 +525,10 @@ struct HomeMapWidget: View {
                 center: $mapCenter,
                 isExpanded: isExpanded,
                 showRadius: useRadius,
-                onDragBegan: { collapseTask?.cancel() },
+                onDragBegan: {
+                    collapseTask?.cancel()
+                    Haptics.soft()
+                },
                 onDragEnded: { scheduleAutoCollapse() },
                 onMapTapped: { handleMapTap() },
                 onCenterChanged: { newCenter in
@@ -621,8 +624,16 @@ struct HomeMapWidget: View {
         .onTapGesture { if !isExpanded { handleMapTap() } }
         .padding(.horizontal, 16)
         .animation(.easeInOut(duration: 0.35), value: isExpanded)
-        .onChange(of: radiusMiles) { _, newVal in
+        .onChange(of: radiusMiles) { oldVal, newVal in
             if useRadius { onRadiusChanged(newVal, mapCenter) }
+            // Tactile detents at integer mile boundaries (1, 2, 5, 10) — like a digital crown.
+            let thresholds: [Double] = [1, 2, 5, 10]
+            for t in thresholds {
+                if (oldVal < t && newVal >= t) || (oldVal > t && newVal <= t) {
+                    Haptics.rigid()
+                    break
+                }
+            }
         }
         .onAppear {
             reverseGeocode(mapCenter)

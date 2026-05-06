@@ -17,8 +17,12 @@ private func mockMatchScore(for name: String) -> Int {
 
 struct RecommendationCard: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let rec: Recommendation
+    var onSelect: (() -> Void)? = nil
     @State private var imageError = false
+    @State private var imageDidAppear = false
+    @State private var showMapsChoice = false
 
     private let fallbackImage = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80"
 
@@ -37,6 +41,11 @@ struct RecommendationCard: View {
                             .aspectRatio(contentMode: .fill)
                             .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                             .clipped()
+                            .opacity(imageDidAppear ? 1 : 0)
+                            .onAppear {
+                                if reduceMotion { imageDidAppear = true; return }
+                                withAnimation(.easeOut(duration: 0.25)) { imageDidAppear = true }
+                            }
                     case .failure:
                         AppTheme.surface
                             .overlay(
@@ -44,14 +53,20 @@ struct RecommendationCard: View {
                                     .font(.largeTitle)
                                     .foregroundStyle(AppTheme.subtle)
                             )
-                            .task { imageError = true }
+                            .task {
+                                if !imageError { Haptics.error() }
+                                imageError = true
+                            }
                     case .empty:
                         AppTheme.surface
                     @unknown default:
                         AppTheme.surface
                     }
                 }
-                .onChange(of: rec.image) { _ in imageError = false }
+                .onChange(of: rec.image) { _ in
+                    imageError = false
+                    imageDidAppear = false
+                }
 
                 // Bottom gradient scrim
                 LinearGradient(
@@ -60,46 +75,52 @@ struct RecommendationCard: View {
                     endPoint: .bottom
                 )
             }
-            .frame(maxWidth: .infinity, maxHeight: 320)
+            .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 320)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(alignment: .topTrailing) {
                 matchBadge
                     .padding(.top, 12)
                     .padding(.trailing, 12)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onSelect?() }
 
             // ── Metadata ──────────────────────────────────────────────────
             VStack(alignment: .leading, spacing: 0) {
-                // Name + rating
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(rec.name)
-                        .font(.custom("Georgia", size: 22))
-                        .foregroundStyle(AppTheme.onSurface)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                VStack(alignment: .leading, spacing: 0) {
+                    // Name + rating
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        Text(rec.name)
+                            .font(.custom("Georgia", size: 22))
+                            .foregroundStyle(AppTheme.onSurface)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
 
-                    Spacer(minLength: 8)
+                        Spacer(minLength: 8)
 
-                    if let rating = rec.rating {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(AppTheme.terracotta)
-                            Text(String(format: "%.1f", rating))
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(AppTheme.onSurface)
+                        if let rating = rec.rating {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(AppTheme.terracotta)
+                                Text(String(format: "%.1f", rating))
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(AppTheme.onSurface)
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(AppTheme.surface)
+                            .clipShape(Capsule())
                         }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(AppTheme.surface)
-                        .clipShape(Capsule())
                     }
-                }
-                .padding(.top, 14)
+                    .padding(.top, 14)
 
-                // Tags row
-                tagsRow
-                    .padding(.top, 6)
+                    // Tags row
+                    tagsRow
+                        .padding(.top, 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { onSelect?() }
 
                 // Take Me There button
                 Button(action: openMaps) {
@@ -124,7 +145,8 @@ struct RecommendationCard: View {
         .frame(maxWidth: .infinity)
         .background(AppTheme.white)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
+        .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
+        .mapsChoiceDialog(isPresented: $showMapsChoice, recommendation: rec)
     }
 
     // MARK: - Match badge
@@ -188,8 +210,8 @@ struct RecommendationCard: View {
     // MARK: - Helpers
 
     private func openMaps() {
-        guard let url = URL(string: rec.mapsUrl) else { return }
-        openURL(url)
+        Haptics.light()
+        showMapsChoice = true
     }
 
     private func mockDistance(for name: String) -> String {

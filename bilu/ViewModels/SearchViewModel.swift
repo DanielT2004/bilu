@@ -34,9 +34,17 @@ enum ResultsViewMode: Int, CaseIterable, Identifiable {
     }
     var systemImage: String {
         switch self {
-        case .videos: return "square.grid.2x2.fill"
+        case .videos: return "square.grid.2x2"
         case .list:   return "list.bullet"
         case .map:    return "map"
+        }
+    }
+    /// Filled / heavier variant used when this mode is the active selection.
+    var activeSystemImage: String {
+        switch self {
+        case .videos: return "square.grid.2x2.fill"
+        case .list:   return "text.justify.left"
+        case .map:    return "map.fill"
         }
     }
 }

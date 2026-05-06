@@ -6,11 +6,13 @@
 import SwiftUI
 
 struct LoadingPulseView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var outerAngle: Double = 0
     @State private var iconAngle: Double = 0
     @State private var orbit1: Double = 0
     @State private var orbit2: Double = 120
     @State private var orbit3: Double = 240
+    @State private var breathScale: CGFloat = 1.0
 
     private let primaryColor   = AppTheme.sage        // FF3B30 Spicy Red
     private let secondaryColor = AppTheme.terracotta  // FF9500 Mango Orange
@@ -53,6 +55,13 @@ struct LoadingPulseView: View {
             orbitDot(sfSymbol: "location.fill", color: primaryColor,   angle: $orbit3)
         }
         .frame(width: 190, height: 190)
+        .scaleEffect(breathScale)
+        .animation(
+            reduceMotion
+                ? .linear(duration: 0)
+                : .easeInOut(duration: 2.4).repeatForever(autoreverses: true),
+            value: breathScale
+        )
         .onAppear {
             withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) {
                 outerAngle = 360
@@ -69,6 +78,10 @@ struct LoadingPulseView: View {
             withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
                 orbit3 = orbit3 + 360
             }
+            // Breathing pulse — applied to the whole spinner so it reads as one
+            // organism. The .animation(value: breathScale) modifier above drives
+            // the tween; this kicks off the state change to start the cycle.
+            breathScale = 1.25
         }
     }
 

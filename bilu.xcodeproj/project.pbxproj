@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		EB1D7EC92F8384330090AFCE /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EB1D7EC82F8384330090AFCE /* MapKit.framework */; };
 		EB7740F52FA8474A00655567 /* biluShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB7740EB2FA8474800655567 /* biluShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EBE560462FAAF79F000E61DE /* 11.txt in Resources */ = {isa = PBXBuildFile; fileRef = EBE560452FAAF79F000E61DE /* 11.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,6 +40,7 @@
 		EB1D7EC82F8384330090AFCE /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.4.sdk/System/Library/Frameworks/MapKit.framework; sourceTree = DEVELOPER_DIR; };
 		EB7740EB2FA8474800655567 /* biluShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = biluShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = bilu.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EBE560452FAAF79F000E61DE /* 11.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = 11.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -111,6 +113,7 @@
 				EB7740EC2FA8474900655567 /* biluShare */,
 				EB1D7EC72F8384330090AFCE /* Frameworks */,
 				EBCC8DCB2F64BD4F00E9EF5D /* Products */,
+				EBE560452FAAF79F000E61DE /* 11.txt */,
 			);
 			sourceTree = "<group>";
 		};
@@ -222,6 +225,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EBE560462FAAF79F000E61DE /* 11.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

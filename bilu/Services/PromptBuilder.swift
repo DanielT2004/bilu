@@ -25,14 +25,14 @@ enum PromptBuilder {
 
     private static func showsPrice(for occasion: String) -> Bool {
         switch occasion {
-        case "Date Night", "Sit Down Meal", "Big Group", "Celebration", "Sit Down", "No Rush": return true
+        case "Date Night", "Sit Down Meal", "Big Group", "Celebration", "Sit Down": return true
         default: return false
         }
     }
 
     private static func showsPartySize(for occasion: String) -> Bool {
         switch occasion {
-        case "Sit Down Meal", "Big Group", "Celebration", "Sit Down", "No Rush": return true
+        case "Sit Down Meal", "Big Group", "Celebration", "Sit Down": return true
         default: return false
         }
     }
@@ -99,6 +99,14 @@ enum PromptBuilder {
         if !selection.selectedVibe.isEmpty,
            let vp = PromptConstants.vibePrompts[selection.selectedVibe] {
             missionLines.append(vp)
+        }
+
+        // Sit Down sub-occasion toggles — appended on top of the vibe filter when set.
+        if selection.dateNight, let dp = PromptConstants.vibePrompts["⚡ Date night"] {
+            missionLines.append(dp)
+        }
+        if selection.specialOccasion, let sp = PromptConstants.vibePrompts["🎉 Special occasion"] {
+            missionLines.append(sp)
         }
 
         let mission = missionLines.joined(separator: "\n")

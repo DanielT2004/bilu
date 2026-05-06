@@ -18,6 +18,7 @@ struct VideoFeedView: View {
     @ObservedObject var viewModel: VideoFeedViewModel
     @Environment(\.dismiss) private var dismiss
     @GestureState private var dragOffset: CGFloat = 0
+    @GestureState private var horizontalDrag: CGFloat = 0
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -40,7 +41,7 @@ struct VideoFeedView: View {
             }
         }
         .background(Color.black)
-        .offset(y: max(0, dragOffset))
+        .offset(x: min(0, horizontalDrag), y: max(0, dragOffset))
         .gesture(
             DragGesture()
                 .updating($dragOffset) { value, state, _ in
@@ -50,7 +51,25 @@ struct VideoFeedView: View {
                 }
                 .onEnded { value in
                     if value.translation.height > 120 {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        Haptics.medium()
+                        dismiss()
+                    }
+                }
+        )
+        .simultaneousGesture(
+            // Swipe left → dismiss. Filtered to horizontal-dominant negative
+            // drags so it doesn't fight the UIPageViewController vertical pan.
+            DragGesture(minimumDistance: 20)
+                .updating($horizontalDrag) { value, state, _ in
+                    if value.translation.width < 0 &&
+                       abs(value.translation.width) > abs(value.translation.height) {
+                        state = value.translation.width
+                    }
+                }
+                .onEnded { value in
+                    let horizontalDominant = abs(value.translation.width) > abs(value.translation.height)
+                    if horizontalDominant && value.translation.width < -120 {
+                        Haptics.medium()
                         dismiss()
                     }
                 }

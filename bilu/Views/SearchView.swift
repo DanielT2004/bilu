@@ -8,12 +8,15 @@ import SwiftUI
 private let C = AppTheme.self
 
 struct SearchView: View {
-    let selectedTab: Tab
-    let onSelectTab: (Tab) -> Void
     @StateObject private var viewModel = SearchViewModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var feedViewModel: VideoFeedViewModel? = nil
     @State private var selectedLocation: SearchLocation? = nil
     @State private var mapTabPulse = false
+    /// Tracks the prior view mode so transitions can slide directionally
+    /// (forward = right→left, backward = left→right). Initialized to .list
+    /// to match SearchViewModel's default; updated on every viewMode change.
+    @State private var prevModeRaw: Int = ResultsViewMode.list.rawValue
     @FocusState private var searchFocused: Bool
 
     private let columns = [
@@ -57,28 +60,35 @@ struct SearchView: View {
                 } else if viewModel.videos.isEmpty {
                     emptyPromptState
                 } else {
-                    switch viewModel.viewMode {
-                    case .videos:
-                        videosGrid
-                            .transition(.opacity)
-                    case .list:
-                        resultsList
-                            .transition(.opacity)
-                    case .map:
-                        SearchResultsMapView(
-                            locations: viewModel.filteredLocations,
-                            isLoading: viewModel.isLoadingLocations,
-                            videos: viewModel.videos,
-                            onSelect: { selectedLocation = $0 }
-                        )
-                        .transition(.opacity)
+                    Group {
+                        switch viewModel.viewMode {
+                        case .videos:
+                            videosGrid
+                        case .list:
+                            resultsList
+                        case .map:
+                            SearchResultsMapView(
+                                locations: viewModel.filteredLocations,
+                                isLoading: viewModel.isLoadingLocations,
+                                videos: viewModel.videos,
+                                onSelect: { selectedLocation = $0 }
+                            )
+                        }
                     }
+                    .id(viewModel.viewMode)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: viewModel.viewMode.rawValue > prevModeRaw ? .trailing : .leading)
+                                      .combined(with: .opacity),
+                        removal:   .move(edge: viewModel.viewMode.rawValue > prevModeRaw ? .leading : .trailing)
+                                      .combined(with: .opacity)
+                    ))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.easeInOut(duration: 0.2), value: viewModel.viewMode)
-
-            TabBarView(selectedTab: selectedTab, onSelect: onSelectTab)
+            .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: viewModel.viewMode)
+            .onChange(of: viewModel.viewMode) { newMode in
+                prevModeRaw = newMode.rawValue
+            }
         }
         .background(C.surface.ignoresSafeArea())
         .fullScreenCover(item: $feedViewModel) { vm in
@@ -127,7 +137,7 @@ struct SearchView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: mode.systemImage)
+                Image(systemName: isActive ? mode.activeSystemImage : mode.systemImage)
                     .font(.system(size: 13, weight: .medium))
                 Text(mode.label)
                     .font(.system(size: 13, weight: .medium))
@@ -383,6 +393,18 @@ struct SearchView: View {
 
         return ScrollView {
             VStack(spacing: 0) {
+                // Filter chips always render when we have locations, even if the
+                // current filter wipes everything — otherwise the user has no way
+                // to undo the filter.
+                if !viewModel.locations.isEmpty {
+                    FilterChipsBar(
+                        openNowOnly: $viewModel.openNowOnly,
+                        selectedNeighborhoods: $viewModel.selectedNeighborhoods,
+                        availableNeighborhoods: viewModel.availableNeighborhoods
+                    )
+                    .padding(.bottom, 14)
+                }
+
                 if viewModel.isLoadingLocations && filtered.isEmpty {
                     findingLocationsBlock
                         .padding(.top, 16)
@@ -390,7 +412,8 @@ struct SearchView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 } else if filtered.isEmpty {
                     if !viewModel.locations.isEmpty {
-                        // Filter eliminated everything
+                        // Filter eliminated everything — chips stay visible above
+                        // so the user can toggle the filter back off.
                         VStack(spacing: 8) {
                             Image(systemName: "line.3.horizontal.decrease")
                                 .font(.system(size: 28, weight: .light))
@@ -413,27 +436,20 @@ struct SearchView: View {
                         .padding(.top, 60)
                     }
                 } else {
-                    // Filter chips (only when we have locations)
-                    if !viewModel.locations.isEmpty {
-                        FilterChipsBar(
-                            openNowOnly: $viewModel.openNowOnly,
-                            selectedNeighborhoods: $viewModel.selectedNeighborhoods,
-                            availableNeighborhoods: viewModel.availableNeighborhoods
-                        )
-                        .padding(.bottom, 14)
-                    }
-
                     // Tier 1 — heroes
                     VStack(spacing: 14) {
                         ForEach(top3) { loc in
-                            LocationHeroCard(
-                                location: loc,
-                                heroVideo: heroVideo(for: loc)
-                            )
-                            .onTapGesture {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Button {
+                                Haptics.light()
                                 selectedLocation = loc
+                            } label: {
+                                LocationHeroCard(
+                                    location: loc,
+                                    heroVideo: heroVideo(for: loc)
+                                )
                             }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                         }
                     }
                     .padding(.horizontal, 20)
@@ -442,14 +458,17 @@ struct SearchView: View {
                     if !mid.isEmpty {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                             ForEach(mid) { loc in
-                                LocationMediumCard(
-                                    location: loc,
-                                    heroVideo: heroVideo(for: loc)
-                                )
-                                .onTapGesture {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                Button {
+                                    Haptics.light()
                                     selectedLocation = loc
+                                } label: {
+                                    LocationMediumCard(
+                                        location: loc,
+                                        heroVideo: heroVideo(for: loc)
+                                    )
                                 }
+                                .buttonStyle(.plain)
+                                .contentShape(Rectangle())
                             }
                         }
                         .padding(.horizontal, 20)
@@ -460,14 +479,17 @@ struct SearchView: View {
                     if !tail.isEmpty {
                         VStack(spacing: 8) {
                             ForEach(tail) { loc in
-                                LocationRow(
-                                    location: loc,
-                                    heroVideo: heroVideo(for: loc)
-                                )
-                                .onTapGesture {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                Button {
+                                    Haptics.light()
                                     selectedLocation = loc
+                                } label: {
+                                    LocationRow(
+                                        location: loc,
+                                        heroVideo: heroVideo(for: loc)
+                                    )
                                 }
+                                .buttonStyle(.plain)
+                                .contentShape(Rectangle())
                             }
                         }
                         .padding(.horizontal, 20)
@@ -476,8 +498,8 @@ struct SearchView: View {
                 }
             }
             .padding(.bottom, 100)
-            .animation(.easeInOut(duration: 0.35), value: viewModel.isLoadingLocations)
-            .animation(.easeInOut(duration: 0.35), value: filtered.isEmpty)
+            .animation(AnimationProfile.fastFeedback.animation(reduceMotion: reduceMotion), value: viewModel.isLoadingLocations)
+            .animation(AnimationProfile.fastFeedback.animation(reduceMotion: reduceMotion), value: filtered.isEmpty)
         }
         .scrollIndicators(.hidden)
     }
@@ -877,5 +899,5 @@ private struct FilterChipsBar: View {
 }
 
 #Preview {
-    SearchView(selectedTab: .search, onSelectTab: { _ in })
+    SearchView()
 }
