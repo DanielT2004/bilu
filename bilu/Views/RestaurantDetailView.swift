@@ -23,6 +23,7 @@ private enum DetailTab: Int, CaseIterable {
 struct RestaurantDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var store: SavedPlacesStore
     let rec: Recommendation
     let fetchTikToks: () async -> [TikTokVideo]
 
@@ -40,6 +41,7 @@ struct RestaurantDetailView: View {
     @State private var vibeCheckVisible: Bool = false
     @State private var bookmarkPhase: BookmarkPhase = .idle
     @State private var bookmarkSaved: Bool = false
+    @State private var wantToGoSaved: Bool = false
     @State private var showMapsChoice = false
     @GestureState private var dragOffset: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -80,6 +82,10 @@ struct RestaurantDetailView: View {
             AllPhotosView(heroPhoto: rec.image, galleryPhotos: galleryPhotos, name: rec.name)
         }
         .mapsChoiceDialog(isPresented: $showMapsChoice, recommendation: rec)
+        .onAppear {
+            bookmarkSaved = store.isSaved(rec, in: .saved)
+            wantToGoSaved = store.isSaved(rec, in: .wantToGo)
+        }
         .task {
             guard let placeId = rec.placeId, galleryPhotos.isEmpty else { return }
             isFetchingAllPhotos = true
@@ -122,17 +128,21 @@ struct RestaurantDetailView: View {
             Spacer()
             HStack(spacing: 6) {
                 topBarIcon("magnifyingglass")
-                topBarIcon("bookmark")
+                Button(action: tapWantToGo) {
+                    topBarIcon(wantToGoSaved ? "bookmark.fill" : "bookmark",
+                               tint: wantToGoSaved ? AppTheme.sage : AppTheme.onSurface)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
     }
 
-    private func topBarIcon(_ name: String) -> some View {
+    private func topBarIcon(_ name: String, tint: Color = AppTheme.onSurface) -> some View {
         Image(systemName: name)
             .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(AppTheme.onSurface)
+            .foregroundStyle(tint)
             .padding(10)
             .background(.ultraThinMaterial)
             .clipShape(Circle())
@@ -398,14 +408,15 @@ struct RestaurantDetailView: View {
         }
     }
 
-    /// Bookmark toggle. Tap → medium haptic + brief 1.18× wind-up scale, then commit
-    /// (success haptic on save, light haptic on unsave). reduceMotion skips the wind-up.
+    /// Bookmark toggle → persists into the Saved list. Tap → medium haptic + brief
+    /// 1.18× wind-up scale, then commit. The store owns the save/unsave haptic and is
+    /// the source of truth; `bookmarkSaved` mirrors it for the fill swap.
+    /// reduceMotion skips the wind-up.
     private func tapBookmark() {
-        let willSave = !bookmarkSaved
         Haptics.medium()
         if reduceMotion {
-            bookmarkSaved.toggle()
-            if willSave { Haptics.success() }
+            store.toggle(rec, list: .saved)
+            bookmarkSaved = store.isSaved(rec, in: .saved)
             return
         }
         withAnimation(AnimationProfile.selection.animation(reduceMotion: false)) {
@@ -413,15 +424,20 @@ struct RestaurantDetailView: View {
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 140_000_000)
+            store.toggle(rec, list: .saved)
             withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
                 bookmarkPhase = .idle
-                bookmarkSaved.toggle()
+                bookmarkSaved = store.isSaved(rec, in: .saved)
             }
-            if willSave {
-                Haptics.success()
-            } else {
-                Haptics.soft()
-            }
+        }
+    }
+
+    /// Top-bar "Want to Go" toggle → persists into the Want-to-Go list.
+    private func tapWantToGo() {
+        Haptics.medium()
+        store.toggle(rec, list: .wantToGo)
+        withAnimation(AnimationProfile.selection.animation(reduceMotion: reduceMotion)) {
+            wantToGoSaved = store.isSaved(rec, in: .wantToGo)
         }
     }
 

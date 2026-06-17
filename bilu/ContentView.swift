@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 // MARK: - Tab
 
@@ -17,6 +18,7 @@ struct RootTabView: View {
     @State private var selectedTab: Tab = .home
     @State private var hideTabBar: Bool = false
     @Namespace private var tabNS
+    @EnvironmentObject private var coordinator: ProfileCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -46,6 +48,12 @@ struct RootTabView: View {
             }
             .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: hideTabBar)
         }
+        .onChange(of: coordinator.requestedTab) { tab in
+            // Profile asks to jump to Home (e.g. re-running a saved vibe).
+            guard let tab else { return }
+            coordinator.requestedTab = nil
+            selectTab(tab)
+        }
     }
 
     private func selectTab(_ tab: Tab) {
@@ -57,5 +65,12 @@ struct RootTabView: View {
 }
 
 #Preview {
-    RootTabView()
+    let container = try! ModelContainer(
+        for: SavedPlace.self, SavedVibe.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    return RootTabView()
+        .environmentObject(SavedPlacesStore(context: container.mainContext))
+        .environmentObject(ProfileCoordinator())
+        .modelContainer(container)
 }

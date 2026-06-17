@@ -160,6 +160,11 @@ final class HomeViewModel: ObservableObject {
     @Published var isEnriching: Bool = false
     @Published var loadingPhase: String = "Scanning the streets\nfor your vibe..."
     @Published var detectedLocation: String = ""
+    /// Drives the soft location pre-prompt card on the home screen.
+    @Published var showLocationPrompt = false
+    /// The user's resolved coordinate; nil until GPS resolves. The map widget adopts this once.
+    @Published var initialMapCenter: CLLocationCoordinate2D? = nil
+    private var didRequestLocation = false
     @Published var cuisineMode: CuisineMode = .vibe
     @Published var serviceCategory: String = "eat"
     @Published var selectedVibe: String = ""
@@ -169,10 +174,12 @@ final class HomeViewModel: ObservableObject {
     /// Mirrors `@Environment(\.accessibilityReduceMotion)`; the View writes it on appear/change
     /// so the ViewModel can branch animation logic without touching UIKit accessibility directly.
     @Published var reduceMotionPreference: Bool = false
-    /// Vibes the user has saved from the reveal screen. In-memory only for now —
-    /// persistence (UserDefaults / SwiftData) is a follow-up; the slot is wired so
-    /// adding storage is a single-site change.
+    /// Vibes the user has saved from the reveal screen. Mirrors the persisted
+    /// SwiftData store (hydrated on `attach`); writes go through `savedStore`.
     @Published var savedVibes: [VibeSelection] = []
+
+    /// The persistence seam, injected from HomeView's environment via `attach`.
+    private weak var savedStore: SavedPlacesStore?
 
     /// Tracks the active search so it can be cancelled when the user exits mid-search.
     private var searchTask: Task<Void, Never>?
@@ -475,20 +482,40 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Saved Vibes
 
+    /// Connects the persistence store and hydrates `savedVibes` so save-state
+    /// survives launches. Called from HomeView.onAppear (idempotent).
+    func attach(store: SavedPlacesStore) {
+        savedStore = store
+        savedVibes = store.savedVibeSelections()
+    }
+
+    /// Restore a saved vibe (from the Profile re-run flow) and kick the search.
+    func restore(_ selection: VibeSelection) {
+        self.selection = selection
+        cuisineMode = selection.cuisineMode == "country" ? .country : .vibe
+        selectedVibe = selection.selectedVibe
+        searchTask = Task { await submitSurvey() }
+    }
+
     /// True iff the current `selection` is already saved (matched on user-meaningful fields).
     var currentVibeIsSaved: Bool {
         savedVibes.contains { $0.matches(selection) }
     }
 
-    /// Toggle save state for the current selection.
-    /// Tap → .medium haptic. Commit (save, not unsave) also fires .success for the milestone beat.
+    /// Toggle save state for the current selection. Haptics live in the store.
     func toggleSaveCurrentVibe() {
-        Haptics.medium()
-        if let idx = savedVibes.firstIndex(where: { $0.matches(selection) }) {
-            savedVibes.remove(at: idx)
+        savedStore?.toggleVibe(selection)
+        if let store = savedStore {
+            savedVibes = store.savedVibeSelections()
         } else {
-            savedVibes.append(selection)
-            Haptics.success()
+            // No store attached (e.g. previews) — keep the in-memory fallback.
+            Haptics.medium()
+            if let idx = savedVibes.firstIndex(where: { $0.matches(selection) }) {
+                savedVibes.remove(at: idx)
+            } else {
+                savedVibes.append(selection)
+                Haptics.success()
+            }
         }
     }
 
@@ -679,6 +706,47 @@ final class HomeViewModel: ObservableObject {
         let videos = await TikTokService.fetchVideos(query: query)
         tikTokVideos[rec.id] = videos
         return videos
+    }
+
+    // MARK: - Location
+
+    /// Called once on home load. Shows the soft pre-prompt only when iOS permission is
+    /// still .notDetermined; resolves silently when already granted, no-ops when denied.
+    func primeLocationIfNeeded() async {
+        guard !didRequestLocation else { return }
+        switch LocationService.shared.authorizationStatus {
+        case .notDetermined:
+            showLocationPrompt = true
+        case .authorizedWhenInUse, .authorizedAlways:
+            await resolveCurrentLocation()
+        default:
+            if detectedLocation.isEmpty { detectedLocation = "Set your location" }
+        }
+    }
+
+    /// Resolves the user's location and adopts it. Triggers the iOS dialog when the user
+    /// taps "Use my location" on the pre-prompt; also used directly when already authorized.
+    func resolveCurrentLocation() async {
+        guard !didRequestLocation else { return }
+        didRequestLocation = true
+        showLocationPrompt = false
+        do {
+            let resolved = try await LocationService.shared.currentLocation()
+            initialMapCenter = resolved.coordinate
+            detectedLocation = resolved.cityLabel
+            if selection.location.isEmpty { selection.location = resolved.cityLabel }
+        } catch {
+            // Denied or failed — don't imply a hard-coded city. Keep the label neutral
+            // and leave selection.location empty so search treats it as unset.
+            if detectedLocation.isEmpty { detectedLocation = "Set your location" }
+        }
+    }
+
+    /// User tapped "Maybe later" — never fire the iOS dialog, keep the label neutral.
+    func dismissLocationPrompt() {
+        showLocationPrompt = false
+        didRequestLocation = true
+        if detectedLocation.isEmpty { detectedLocation = "Set your location" }
     }
 
     // MARK: - Map label

@@ -10,7 +10,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     static let shared = LocationService()
 
     private let manager = CLLocationManager()
-    private var continuation: CheckedContinuation<String, Error>?
+    private var continuation: CheckedContinuation<ResolvedLocation, Error>?
 
     override private init() {
         super.init()
@@ -18,8 +18,19 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
-    /// Returns a human-readable neighborhood/city string for the current location.
-    func currentLocationString() async throws -> String {
+    /// Current iOS authorization status — lets callers decide whether to prompt without
+    /// reaching into `CLLocationManager` themselves.
+    var authorizationStatus: CLAuthorizationStatus { manager.authorizationStatus }
+
+    /// A resolved location: the raw coordinate plus human-readable labels.
+    struct ResolvedLocation {
+        let coordinate: CLLocationCoordinate2D
+        let cityLabel: String          // locality, e.g. "Los Angeles"
+        let neighborhoodLabel: String  // subLocality, falls back to locality
+    }
+
+    /// Resolves the user's current location to a coordinate and reverse-geocoded labels.
+    func currentLocation() async throws -> ResolvedLocation {
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             let status = manager.authorizationStatus
@@ -32,6 +43,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
                 self.continuation = nil
             }
         }
+    }
+
+    /// Returns a human-readable neighborhood/city string for the current location.
+    func currentLocationString() async throws -> String {
+        try await currentLocation().neighborhoodLabel
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -64,9 +80,13 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         do {
             let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
             let p = placemarks.first
-            // Prefer neighborhood, fall back to city
-            let label = p?.subLocality ?? p?.locality ?? p?.administrativeArea ?? "your area"
-            continuation?.resume(returning: label)
+            let city         = p?.locality ?? p?.administrativeArea ?? "your area"
+            let neighborhood = p?.subLocality ?? p?.locality ?? p?.administrativeArea ?? "your area"
+            continuation?.resume(returning: ResolvedLocation(
+                coordinate: location.coordinate,
+                cityLabel: city,
+                neighborhoodLabel: neighborhood
+            ))
         } catch {
             continuation?.resume(throwing: error)
         }

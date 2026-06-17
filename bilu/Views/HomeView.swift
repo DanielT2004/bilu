@@ -10,7 +10,7 @@ import CoreLocation
 private let C = AppTheme.self
 
 // MARK: - Scale press button style
-private struct ScalePress: ButtonStyle {
+struct ScalePress: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
@@ -25,6 +25,8 @@ struct HomeView: View {
     /// steps and slide back at .occasion / .reveal. Single owner: HomeView.
     @Binding var hideTabBar: Bool
     @StateObject private var viewModel = HomeViewModel()
+    @EnvironmentObject private var savedStore: SavedPlacesStore
+    @EnvironmentObject private var coordinator: ProfileCoordinator
     @FocusState private var locationFieldFocused: Bool
     @State private var selectedRestaurant: Recommendation? = nil
     @State private var stepForward = true
@@ -69,16 +71,36 @@ struct HomeView: View {
 
         }
         .background(C.surface)
+        .overlay {
+            if viewModel.showLocationPrompt {
+                LocationPermissionCard(
+                    onAllow:   { Task { await viewModel.resolveCurrentLocation() } },
+                    onDismiss: { viewModel.dismissLocationPrompt() }
+                )
+                .transition(.scale(scale: 0.92).combined(with: .opacity))
+            }
+        }
+        .animation(AnimationProfile.stepTransition.animation(reduceMotion: reduceMotion),
+                   value: viewModel.showLocationPrompt)
+        .task {
+            await viewModel.primeLocationIfNeeded()
+        }
         .sheet(item: $selectedRestaurant) { rec in
             RestaurantDetailView(rec: rec) {
                     await viewModel.fetchTikTokVideos(for: rec)
                 }
+                .environmentObject(savedStore)
         }
         .onAppear {
             viewModel.reduceMotionPreference = reduceMotion
+            viewModel.attach(store: savedStore)
             // Sync the tab bar visibility on first appear so a hot-relaunch into
             // a non-occasion step doesn't briefly flash the tab bar.
             hideTabBar = shouldHideTabBar(for: viewModel.step)
+            consumePendingVibeIfNeeded()
+        }
+        .onChange(of: coordinator.pendingVibeToken) { _ in
+            consumePendingVibeIfNeeded()
         }
         .onDisappear {
             // If the user switches to Search/Profile mid-survey, restore the tab
@@ -124,6 +146,14 @@ struct HomeView: View {
         case .occasion, .reveal: return false
         default:                 return true
         }
+    }
+
+    /// When the Profile re-runs a saved vibe, it lands here. Restore the selection
+    /// and kick the search, then clear the pending slot so it fires once.
+    private func consumePendingVibeIfNeeded() {
+        guard let vibe = coordinator.pendingVibe else { return }
+        coordinator.pendingVibe = nil
+        viewModel.restore(vibe)
     }
 
     // MARK: - Step router
@@ -213,6 +243,7 @@ struct HomeView: View {
 
             HomeMapWidget(
                 locationLabel: viewModel.mapLocationLabel,
+                initialCenter: viewModel.initialMapCenter,
                 isExpanded: $mapIsExpanded,
                 onRadiusChanged: { miles, coord in
                     viewModel.selection.radiusMiles = miles

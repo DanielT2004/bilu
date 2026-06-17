@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>logFormatVersion</key>
+	<integer>12</integer>
+	<key>logs</key>
+	<dict>
+		<key>13D29125-F18A-49A0-9653-9C476747A782</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>13D29125-F18A-49A0-9653-9C476747A782.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>E</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>1</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>12</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>bilu project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>bilu</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Building project bilu with scheme bilu and configuration Debug</string>
+			<key>timeStartedRecording</key>
+			<real>803020727.519436</real>
+			<key>timeStoppedRecording</key>
+			<real>803020738.76861799</real>
+			<key>title</key>
+			<string>Building project bilu with scheme bilu and configuration Debug</string>
+			<key>uniqueIdentifier</key>
+			<string>13D29125-F18A-49A0-9653-9C476747A782</string>
+		</dict>
+		<key>D92E4CC1-E6BD-482B-9A0A-A056CFD7FF15</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>D92E4CC1-E6BD-482B-9A0A-A056CFD7FF15.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>E</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>1</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>12</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>bilu project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>bilu</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Building project bilu with scheme bilu and configuration Debug</string>
+			<key>timeStartedRecording</key>
+			<real>803020770.25446105</real>
+			<key>timeStoppedRecording</key>
+			<real>803020772.50593901</real>
+			<key>title</key>
+			<string>Building project bilu with scheme bilu and configuration Debug</string>
+			<key>uniqueIdentifier</key>
+			<string>D92E4CC1-E6BD-482B-9A0A-A056CFD7FF15</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

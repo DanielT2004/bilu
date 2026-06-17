@@ -1,0 +1,44 @@
+{
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/ProfileSettingsRow.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileSettingsRow.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileSettingsRow.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileSettingsRow.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileSettingsRow.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileSettingsRow.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/ProfileStatsView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileStatsView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileStatsView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileStatsView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileStatsView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ProfileStatsView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/RecommendationCard.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RecommendationCard.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RecommendationCard.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RecommendationCard.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RecommendationCard.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RecommendationCard.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/SavedVibesRowView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SavedVibesRowView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SavedVibesRowView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SavedVibesRowView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SavedVibesRowView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SavedVibesRowView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/SearchResultsMapView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchResultsMapView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchResultsMapView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchResultsMapView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchResultsMapView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchResultsMapView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/SurveyOptionCard.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SurveyOptionCard.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SurveyOptionCard.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SurveyOptionCard.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SurveyOptionCard.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SurveyOptionCard.swiftdeps"
+  }
+}

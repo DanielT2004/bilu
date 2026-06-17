@@ -121,7 +121,7 @@ final class SearchViewModel: ObservableObject {
 
         videos = await TikTokService.fetchVideos(
             query: trimmed,
-            maxResults: 10,
+            maxResults: 25,
             sortType: sort.rawValue
         )
         isLoading = false

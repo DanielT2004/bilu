@@ -1,0 +1,44 @@
+{
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Config/Config.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Config.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Config.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Config.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Config.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Config.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Helpers/AppTheme.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/AppTheme.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/AppTheme.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/AppTheme.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/AppTheme.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/AppTheme.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Helpers/Color+Hex.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Color+Hex.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Color+Hex.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Color+Hex.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Color+Hex.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Color+Hex.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Helpers/Haptics.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Haptics.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Haptics.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Haptics.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Haptics.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/Haptics.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Helpers/ImagePrefetcher.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ImagePrefetcher.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ImagePrefetcher.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ImagePrefetcher.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ImagePrefetcher.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ImagePrefetcher.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Helpers/MapsLauncher.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/MapsLauncher.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/MapsLauncher.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/MapsLauncher.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/MapsLauncher.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/MapsLauncher.swiftdeps"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "" : {
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/biluShare-primary.dia",
+    "emit-module-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/biluShare-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/biluShare-primary-emit-module.dia",
+    "pch" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/biluShare-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/biluShare-primary.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/biluShare/ShareRootView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.dia",
+    "index-unit-output-path" : "/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.o",
+    "llvm-bc" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.bc",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView.swiftdeps",
+    "swiftmodule" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareRootView~partial.swiftmodule"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/biluShare/ShareTheme.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.dia",
+    "index-unit-output-path" : "/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.o",
+    "llvm-bc" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.bc",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme.swiftdeps",
+    "swiftmodule" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareTheme~partial.swiftmodule"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/biluShare/ShareViewController.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.dia",
+    "index-unit-output-path" : "/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.o",
+    "llvm-bc" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.bc",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController.swiftdeps",
+    "swiftmodule" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/biluShare.build/Objects-normal/arm64/ShareViewController~partial.swiftmodule"
+  }
+}

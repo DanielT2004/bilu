@@ -1,0 +1,44 @@
+{
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/BiluMapView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/BiluMapView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/BiluMapView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/BiluMapView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/BiluMapView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/BiluMapView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/ConfettiBurstView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ConfettiBurstView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ConfettiBurstView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ConfettiBurstView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ConfettiBurstView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ConfettiBurstView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/HomeMapWidget.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HomeMapWidget.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HomeMapWidget.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HomeMapWidget.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HomeMapWidget.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HomeMapWidget.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/HorizontalOccasionCard.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HorizontalOccasionCard.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HorizontalOccasionCard.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HorizontalOccasionCard.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HorizontalOccasionCard.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HorizontalOccasionCard.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/HungerCard.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HungerCard.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HungerCard.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HungerCard.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HungerCard.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/HungerCard.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/Components/LoadingPulseView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/LoadingPulseView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/LoadingPulseView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/LoadingPulseView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/LoadingPulseView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/LoadingPulseView.swiftdeps"
+  }
+}

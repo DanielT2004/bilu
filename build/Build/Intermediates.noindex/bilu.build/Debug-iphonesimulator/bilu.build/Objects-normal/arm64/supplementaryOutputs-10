@@ -1,0 +1,44 @@
+{
+  "/Users/Owner/Desktop/Projects/bilu/bilu/ContentView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ContentView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/ContentView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/RestaurantDetailView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RestaurantDetailView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RestaurantDetailView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RestaurantDetailView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RestaurantDetailView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/RestaurantDetailView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/SearchView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/SearchView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/Views/UserView.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/UserView.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/UserView.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/UserView.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/UserView.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/UserView.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/bilu/biluApp.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/biluApp.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/biluApp.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/biluApp.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/biluApp.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/biluApp.swiftdeps"
+  },
+  "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "object" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/Owner/Desktop/Projects/bilu/build/Build/Intermediates.noindex/bilu.build/Debug-iphonesimulator/bilu.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps"
+  }
+}

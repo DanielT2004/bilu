@@ -181,12 +181,19 @@ private struct InteractiveMapView: UIViewRepresentable {
     @Binding var center: CLLocationCoordinate2D
     let isExpanded: Bool
     let showRadius: Bool
+    let animateCenterChange: Bool
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
     let onMapTapped: () -> Void
     let onCenterChanged: (CLLocationCoordinate2D) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    /// Coordinates are equal within a tight tolerance — avoids re-regioning on
+    /// floating-point noise from gesture round-trips.
+    private func coordsEqual(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Bool {
+        abs(a.latitude - b.latitude) < 1e-6 && abs(a.longitude - b.longitude) < 1e-6
+    }
 
     /// Map span in degrees. Uses a sqrt curve so small radii zoom in tightly
     /// and large radii zoom out gradually — prevents the map from flying out too fast.
@@ -267,6 +274,20 @@ private struct InteractiveMapView: UIViewRepresentable {
         mapView.isUserInteractionEnabled = true   // always on — tap must reach UIKit to expand
         coord.collapseTap?.isEnabled = true        // always on — fires expand when collapsed, collapse when expanded
         coord.mapPanGesture?.isEnabled = isExpanded
+
+        // Programmatic recenter (e.g. GPS adopt). Gesture handlers keep `currentCenter`
+        // in sync with `center`, so a mismatch here means the center was set externally.
+        // Animate the glide unless the caller asked for an instant move (reduceMotion).
+        if !coordsEqual(center, coord.currentCenter) {
+            coord.currentCenter = center
+            coord.centerAnnotation?.coordinate = center
+            let span: Double = isExpanded ? Self.spanForRadius(radiusMiles) : 0.05
+            mapView.setRegion(
+                MKCoordinateRegion(center: center,
+                                   span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)),
+                animated: animateCenterChange
+            )
+        }
 
         // Zoom transition on expand/collapse
         if isExpanded != coord.wasExpanded {
@@ -504,15 +525,24 @@ private struct InteractiveMapView: UIViewRepresentable {
 
 struct HomeMapWidget: View {
     let locationLabel: String
+    /// GPS-resolved center from the ViewModel. Adopted once, then ignored.
+    var initialCenter: CLLocationCoordinate2D? = nil
     @Binding var isExpanded: Bool
     var onRadiusChanged: (Double, CLLocationCoordinate2D) -> Void = { _, _ in }
     var onLocationResolved: (String) -> Void = { _ in }
     var onRadiusModeChanged: (Bool) -> Void = { _ in }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Silent render fallback — the map needs *some* center; this is never surfaced as the
+    /// user's location unless GPS resolves and overwrites it.
     @State private var mapCenter = CLLocationCoordinate2D(latitude: 34.0224, longitude: -118.2851)
     @State private var radiusMiles = 2.0
     @State private var useRadius = false
     @State private var collapseTask: DispatchWorkItem? = nil
+    /// Guards so a late GPS result never clobbers a manual pan: adopt at most once,
+    /// and never once the user has interacted.
+    @State private var didApplyInitialCenter = false
+    @State private var userHasInteracted = false
     /// Broad city/area label (e.g. "Los Angeles") — shown in city-wide mode.
     @State private var cityLabel = ""
     /// Specific neighborhood label (e.g. "University Park") — shown in radius mode.
@@ -525,6 +555,7 @@ struct HomeMapWidget: View {
                 center: $mapCenter,
                 isExpanded: isExpanded,
                 showRadius: useRadius,
+                animateCenterChange: !reduceMotion,
                 onDragBegan: {
                     collapseTask?.cancel()
                     Haptics.soft()
@@ -532,6 +563,7 @@ struct HomeMapWidget: View {
                 onDragEnded: { scheduleAutoCollapse() },
                 onMapTapped: { handleMapTap() },
                 onCenterChanged: { newCenter in
+                    userHasInteracted = true
                     mapCenter = newCenter
                     if useRadius { onRadiusChanged(radiusMiles, newCenter) }
                     reverseGeocode(newCenter)
@@ -635,9 +667,32 @@ struct HomeMapWidget: View {
                 }
             }
         }
-        .onAppear {
-            reverseGeocode(mapCenter)
+        // CLLocationCoordinate2D isn't Equatable; watch a string proxy so the GPS adopt
+        // fires when the resolved coordinate arrives.
+        .onChange(of: initialCenterKey) { _, _ in
+            applyInitialCenterIfAppropriate(initialCenter)
         }
+        .onAppear {
+            applyInitialCenterIfAppropriate(initialCenter)
+            // Skip the throwaway default geocode if a GPS center is already in hand.
+            if initialCenter == nil { reverseGeocode(mapCenter) }
+        }
+    }
+
+    /// Equatable proxy for `initialCenter` so `.onChange` can observe it.
+    private var initialCenterKey: String {
+        guard let c = initialCenter else { return "" }
+        return "\(c.latitude),\(c.longitude)"
+    }
+
+    /// Adopts the GPS-resolved center exactly once, and only while the map is in its
+    /// initial collapsed state and the user hasn't taken over.
+    private func applyInitialCenterIfAppropriate(_ coord: CLLocationCoordinate2D?) {
+        guard let coord, !didApplyInitialCenter, !userHasInteracted, !isExpanded else { return }
+        didApplyInitialCenter = true
+        mapCenter = coord
+        Haptics.light()
+        reverseGeocode(coord)
     }
 
     private func reverseGeocode(_ coord: CLLocationCoordinate2D) {

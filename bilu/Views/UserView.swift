@@ -4,93 +4,174 @@
 //
 
 import SwiftUI
-
-private let C = AppTheme.self
+import SwiftData
 
 struct UserView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathScale: CGFloat = 1.0
+    @EnvironmentObject private var store: SavedPlacesStore
+    @EnvironmentObject private var coordinator: ProfileCoordinator
+    @StateObject private var viewModel = ProfileViewModel()
 
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
+    @Query(sort: \SavedPlace.dateSaved, order: .reverse)
+    private var allPlaces: [SavedPlace]
+    @Query(sort: \SavedVibe.dateSaved, order: .reverse)
+    private var savedVibes: [SavedVibe]
 
-            VStack(spacing: 24) {
-                // Breathing avatar — placeholder for Bilu the Bear mascot art.
-                // Continuous slow breath signals "alive but idle"; suppressed
-                // when Reduce Motion is on. When mascot ships, swap the
-                // Image(systemName:) for Image("BiluAvatar") — layout unchanged.
-                ZStack {
-                    Circle()
-                        .fill(C.sageLt)
-                        .frame(width: 88, height: 88)
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 38, weight: .light))
-                        .foregroundColor(C.sage)
-                }
-                .scaleEffect(breathScale)
-                .animation(
-                    reduceMotion
-                        ? .linear(duration: 0)
-                        : .easeInOut(duration: 2.4).repeatForever(autoreverses: true),
-                    value: breathScale
-                )
-                .onAppear {
-                    if !reduceMotion { breathScale = 1.06 }
-                }
+    @State private var selectedList: SavedListType = .saved
+    @State private var selectedPlace: SavedPlace? = nil
 
-                VStack(spacing: 6) {
-                    Text("Profile")
-                        .font(.custom("Georgia", size: 28))
-                        .foregroundColor(C.onSurface)
-
-                    Text("Coming soon")
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(1.0)
-                        .textCase(.uppercase)
-                        .foregroundColor(C.subtle)
-                }
-
-                // Teaser feature list — disabled-style preview of what will live here.
-                VStack(spacing: 10) {
-                    teaserRow(icon: "bookmark.fill",      label: "Saved vibes")
-                    teaserRow(icon: "map.fill",           label: "Your map")
-                    teaserRow(icon: "clock.arrow.circlepath", label: "Activity history")
-                }
-                .padding(.horizontal, 32)
-                .padding(.top, 8)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(C.surface.ignoresSafeArea())
+    private var savedPlaces: [SavedPlace] { allPlaces.filter { $0.listType == .saved } }
+    private var wantToGoPlaces: [SavedPlace] { allPlaces.filter { $0.listType == .wantToGo } }
+    private var visiblePlaces: [SavedPlace] {
+        selectedList == .saved ? savedPlaces : wantToGoPlaces
     }
 
-    private func teaserRow(icon: String, label: String) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .light))
-                .foregroundColor(C.subtle)
-                .frame(width: 22)
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                ProfileHeaderView(
+                    avatarEmoji: viewModel.avatarEmoji,
+                    displayName: viewModel.displayName,
+                    handle: viewModel.handle,
+                    hasName: viewModel.hasName,
+                    onEdit: { viewModel.beginEditProfile() }
+                )
+                .padding(.top, 16)
 
-            Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(C.muted)
+                ProfileStatsView(
+                    savedCount: savedPlaces.count,
+                    wantToGoCount: wantToGoPlaces.count,
+                    cuisineCount: CuisineClassifier.distinctCount(in: allPlaces)
+                )
+                .padding(.horizontal, 20)
 
-            Spacer(minLength: 0)
+                savedVibesSection
 
-            Image(systemName: "lock.fill")
-                .font(.system(size: 11))
-                .foregroundColor(C.subtle.opacity(0.6))
+                listsSection
+
+                dietarySection
+                    .padding(.bottom, 32)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(C.white.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppTheme.surface.ignoresSafeArea())
+        .sheet(isPresented: $viewModel.showingEditProfile) {
+            EditProfileView(viewModel: viewModel)
+        }
+        .sheet(isPresented: $viewModel.showingDietaryEditor) {
+            DietaryPreferencesView(viewModel: viewModel)
+        }
+        .sheet(item: $selectedPlace) { place in
+            RestaurantDetailView(rec: place.asRecommendation) { [] }
+                .environmentObject(store)
+        }
+    }
+
+    // MARK: - Saved vibes
+
+    @ViewBuilder
+    private var savedVibesSection: some View {
+        if !savedVibes.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionLabel("Your vibes")
+                SavedVibesRowView(vibes: savedVibes) { vibe in
+                    if let selection = vibe.selection {
+                        coordinator.rerun(selection)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Saved / Want-to-Go lists
+
+    private var listsSection: some View {
+        VStack(spacing: 16) {
+            ProfileSegmentedControl(
+                selection: $selectedList,
+                savedCount: savedPlaces.count,
+                wantToGoCount: wantToGoPlaces.count
+            )
+            .padding(.horizontal, 20)
+
+            if visiblePlaces.isEmpty {
+                ProfileEmptyState(
+                    icon: selectedList == .saved ? "bookmark" : "airplane.departure",
+                    title: selectedList == .saved ? "No saves yet" : "Nowhere on your list yet",
+                    message: selectedList == .saved
+                        ? "Tap the bookmark on a place you love and it'll land here."
+                        : "Add spots to your Want-to-Go list from any restaurant."
+                )
+            } else {
+                LazyVStack(spacing: 16) {
+                    ForEach(visiblePlaces) { place in
+                        RecommendationCard(rec: place.asRecommendation) {
+                            Haptics.light()
+                            selectedPlace = place
+                        }
+                        .contextMenu { contextActions(for: place) }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contextActions(for place: SavedPlace) -> some View {
+        if place.listType == .saved {
+            Button {
+                store.move(place, to: .wantToGo)
+            } label: {
+                Label("Move to Want to Go", systemImage: "airplane")
+            }
+        } else {
+            Button {
+                store.move(place, to: .saved)
+            } label: {
+                Label("Move to Saved", systemImage: "bookmark.fill")
+            }
+        }
+        Button(role: .destructive) {
+            store.remove(place)
+        } label: {
+            Label("Remove", systemImage: "trash")
+        }
+    }
+
+    // MARK: - Dietary
+
+    private var dietarySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Preferences")
+            ProfileSettingsRow(
+                icon: "leaf.fill",
+                title: "Dietary",
+                value: viewModel.dietarySummary,
+                onTap: { viewModel.showingDietaryEditor = true }
+            )
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .tracking(1.0)
+            .textCase(.uppercase)
+            .foregroundStyle(AppTheme.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
     }
 }
 
 #Preview {
-    UserView()
+    let container = try! ModelContainer(
+        for: SavedPlace.self, SavedVibe.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    return UserView()
+        .environmentObject(SavedPlacesStore(context: container.mainContext))
+        .environmentObject(ProfileCoordinator())
+        .modelContainer(container)
 }

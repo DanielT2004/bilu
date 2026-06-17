@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'bilu' in project 'bilu'
+➜ Explicit dependency on target 'biluShare' in project 'bilu'
+Target 'biluShare' in project 'bilu' (no dependencies)
