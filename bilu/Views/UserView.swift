@@ -10,6 +10,8 @@ struct UserView: View {
     @EnvironmentObject private var store: SavedPlacesStore
     @EnvironmentObject private var coordinator: ProfileCoordinator
     @StateObject private var viewModel = ProfileViewModel()
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     @Query(sort: \SavedPlace.dateSaved, order: .reverse)
     private var allPlaces: [SavedPlace]
@@ -44,6 +46,8 @@ struct UserView: View {
                 )
                 .padding(.horizontal, 20)
 
+                pendingSharesSection
+
                 savedVibesSection
 
                 listsSection
@@ -64,6 +68,32 @@ struct UserView: View {
         .sheet(item: $selectedPlace) { place in
             RestaurantDetailView(rec: place.asRecommendation) { [] }
                 .environmentObject(store)
+        }
+        .onAppear { viewModel.refreshPendingShares() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { viewModel.refreshPendingShares() }
+        }
+    }
+
+    // MARK: - Shared from TikTok
+
+    @ViewBuilder
+    private var pendingSharesSection: some View {
+        if !viewModel.pendingShares.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionLabel("Shared from TikTok")
+                PendingSharesRowView(
+                    shares: viewModel.pendingShares,
+                    onOpen: { share in
+                        if let url = URL(string: share.urlString) {
+                            openURL(url)
+                        }
+                    },
+                    onDismiss: { share in
+                        viewModel.dismissPendingShare(share)
+                    }
+                )
+            }
         }
     }
 
@@ -166,10 +196,7 @@ struct UserView: View {
 }
 
 #Preview {
-    let container = try! ModelContainer(
-        for: SavedPlace.self, SavedVibe.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
+    let container = PersistenceController.previewContainer()
     return UserView()
         .environmentObject(SavedPlacesStore(context: container.mainContext))
         .environmentObject(ProfileCoordinator())

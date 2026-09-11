@@ -9,6 +9,9 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .clear
         loadSharedURL { [weak self] url in
+            if let url {
+                PendingShareStore.append(urlString: url.absoluteString)
+            }
             DispatchQueue.main.async {
                 self?.present(url: url)
             }

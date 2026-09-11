@@ -10,7 +10,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     static let shared = LocationService()
 
     private let manager = CLLocationManager()
-    private var continuation: CheckedContinuation<ResolvedLocation, Error>?
+    /// Every in-flight `currentLocation()` caller waits here. A single CoreLocation
+    /// request resolves all of them at once — callers no longer overwrite each
+    /// other, which matters now that multiple views (e.g. a list of result cards)
+    /// can call this concurrently.
+    private var pendingContinuations: [CheckedContinuation<ResolvedLocation, Error>] = []
 
     override private init() {
         super.init()
@@ -30,17 +34,18 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     }
 
     /// Resolves the user's current location to a coordinate and reverse-geocoded labels.
+    /// Safe to call concurrently — every caller waiting when a result (or error) lands
+    /// gets that same result.
     func currentLocation() async throws -> ResolvedLocation {
         return try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
+            pendingContinuations.append(continuation)
             let status = manager.authorizationStatus
             if status == .notDetermined {
                 manager.requestWhenInUseAuthorization()
             } else if status == .authorizedWhenInUse || status == .authorizedAlways {
                 manager.requestLocation()
             } else {
-                continuation.resume(throwing: LocationError.denied)
-                self.continuation = nil
+                resumeAll(.failure(LocationError.denied))
             }
         }
     }
@@ -56,8 +61,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             if status == .authorizedWhenInUse || status == .authorizedAlways {
                 manager.requestLocation()
             } else if status == .denied || status == .restricted {
-                continuation?.resume(throwing: LocationError.denied)
-                continuation = nil
+                resumeAll(.failure(LocationError.denied))
             }
         }
     }
@@ -71,8 +75,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
-            continuation?.resume(throwing: error)
-            continuation = nil
+            resumeAll(.failure(error))
         }
     }
 
@@ -82,15 +85,25 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             let p = placemarks.first
             let city         = p?.locality ?? p?.administrativeArea ?? "your area"
             let neighborhood = p?.subLocality ?? p?.locality ?? p?.administrativeArea ?? "your area"
-            continuation?.resume(returning: ResolvedLocation(
+            resumeAll(.success(ResolvedLocation(
                 coordinate: location.coordinate,
                 cityLabel: city,
                 neighborhoodLabel: neighborhood
-            ))
+            )))
         } catch {
-            continuation?.resume(throwing: error)
+            resumeAll(.failure(error))
         }
-        continuation = nil
+    }
+
+    /// Drains every waiting continuation with the same result. Resuming happens
+    /// exactly once per continuation regardless of how many CoreLocation callbacks
+    /// fire afterward, since the list is emptied first.
+    private func resumeAll(_ result: Result<ResolvedLocation, Error>) {
+        let waiters = pendingContinuations
+        pendingContinuations = []
+        for continuation in waiters {
+            continuation.resume(with: result)
+        }
     }
 
     enum LocationError: Error {

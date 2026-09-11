@@ -88,7 +88,8 @@ extension SavedPlace {
             phone: phone,
             website: website,
             placeId: placeId,
-            photoRefs: photoRefs
+            photoRefs: photoRefs,
+            reviews: nil
         )
     }
 }

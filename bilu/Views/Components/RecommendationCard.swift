@@ -4,14 +4,7 @@
 //
 
 import SwiftUI
-
-// MARK: - Mock match scores (deterministic per name)
-
-private func mockMatchScore(for name: String) -> Int {
-    let seeds: [Int] = [98, 95, 92, 89, 94, 91, 97, 88, 93, 96]
-    let idx = abs(name.hashValue) % seeds.count
-    return seeds[idx]
-}
+import CoreLocation
 
 // MARK: - Recommendation card
 
@@ -23,6 +16,7 @@ struct RecommendationCard: View {
     @State private var imageError = false
     @State private var imageDidAppear = false
     @State private var showMapsChoice = false
+    @State private var distanceText: String? = nil
 
     private let fallbackImage = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80"
 
@@ -77,11 +71,6 @@ struct RecommendationCard: View {
             }
             .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 320)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(alignment: .topTrailing) {
-                matchBadge
-                    .padding(.top, 12)
-                    .padding(.trailing, 12)
-            }
             .contentShape(Rectangle())
             .onTapGesture { onSelect?() }
 
@@ -147,34 +136,27 @@ struct RecommendationCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
         .mapsChoiceDialog(isPresented: $showMapsChoice, recommendation: rec)
-    }
-
-    // MARK: - Match badge
-
-    private var matchBadge: some View {
-        let score = mockMatchScore(for: rec.name)
-        return Text("\(score)% Match")
-            .font(.system(size: 10, weight: .bold))
-            .tracking(0.5)
-            .textCase(.uppercase)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(AppTheme.sage)
-            .clipShape(Capsule())
+        .task {
+            guard distanceText == nil,
+                  let lat = rec.latitude, let lng = rec.longitude,
+                  let resolved = try? await LocationService.shared.currentLocation() else { return }
+            let userLoc = CLLocation(latitude: resolved.coordinate.latitude, longitude: resolved.coordinate.longitude)
+            let placeLoc = CLLocation(latitude: lat, longitude: lng)
+            let miles = userLoc.distance(from: placeLoc) / 1609.34
+            distanceText = miles < 0.1 ? "<0.1 mi" : String(format: "%.1f mi", miles)
+        }
     }
 
     // MARK: - Tags row
 
     private var tagsRow: some View {
         HStack(spacing: 0) {
+            if let distance = distanceText {
+                tagText(distance)
+                if rec.address != nil { dot() }
+            }
             if let address = rec.address {
-                let distanceMock = mockDistance(for: rec.name)
-                tagText(distanceMock)
-                dot()
                 tagText(shortAddress(address))
-            } else {
-                tagText(mockDistance(for: rec.name))
             }
 
             if let cuisine = cuisineTag {
@@ -214,10 +196,6 @@ struct RecommendationCard: View {
         showMapsChoice = true
     }
 
-    private func mockDistance(for name: String) -> String {
-        let vals = ["0.3 mi", "0.8 mi", "1.2 mi", "0.5 mi", "1.7 mi", "2.1 mi"]
-        return vals[abs(name.hashValue) % vals.count]
-    }
 
     private func shortAddress(_ address: String) -> String {
         // Take just the neighborhood/city portion if long
@@ -252,8 +230,6 @@ struct RecommendationCard: View {
         if text.contains("$$$") || text.contains("mid-range") || text.contains("sit-down") { return "$$$" }
         if text.contains("$$") || text.contains("casual") { return "$$" }
         if text.contains("$") || text.contains("budget") || text.contains("cheap") { return "$" }
-        // Mock fallback based on name hash
-        let tiers = ["$$", "$$$", "$$", "$$$", "$$$$"]
-        return tiers[abs(rec.name.hashValue) % tiers.count]
+        return nil
     }
 }

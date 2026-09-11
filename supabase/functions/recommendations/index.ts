@@ -3,7 +3,7 @@ import { GoogleGenAI } from "npm:@google/genai@1.46.0";
 import type { Recommendation, GroundingPlace } from "../_shared/places.ts";
 
 /** Gemini model — see https://ai.google.dev/gemini-api/docs */
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.6-flash";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,7 +45,10 @@ async function generateOnce(
     contents: prompt,
     config: {
       temperature,
-      thinkingConfig: { thinkingBudget: 0 },
+      // NOTE: thinkingConfig: { thinkingBudget: 0 } used to disable thinking for
+      // speed, but GEMINI_MODEL (3.6-flash) rejects thinkingBudget: 0 with
+      // INVALID_ARGUMENT — this generation apparently requires a minimum budget.
+      // Omitted for now; revisit if a valid low-budget value is found.
       tools: [{ googleMaps: {} }],
       ...locationConfig,
     },

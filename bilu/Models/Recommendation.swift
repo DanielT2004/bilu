@@ -23,6 +23,16 @@ struct Recommendation: Codable, Identifiable {
     let website: String?
     let placeId: String?
     let photoRefs: [String]?
+    /// Guest reviews from Google Places, when the backend resolved this place fresh
+    /// (not on a places_cache hit — the cache doesn't store review text yet).
+    let reviews: [PlaceReview]?
+}
+
+struct PlaceReview: Codable {
+    let authorName: String
+    let rating: Double?
+    let relativeTime: String?
+    let text: String
 }
 
 struct VibeResult: Codable {

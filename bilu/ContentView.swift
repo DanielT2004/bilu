@@ -65,10 +65,7 @@ struct RootTabView: View {
 }
 
 #Preview {
-    let container = try! ModelContainer(
-        for: SavedPlace.self, SavedVibe.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
+    let container = PersistenceController.previewContainer()
     return RootTabView()
         .environmentObject(SavedPlacesStore(context: container.mainContext))
         .environmentObject(ProfileCoordinator())

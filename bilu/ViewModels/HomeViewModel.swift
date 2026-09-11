@@ -155,6 +155,10 @@ final class HomeViewModel: ObservableObject {
     @Published var step: Step = .occasion
     @Published var selection: VibeSelection
     @Published var recommendations: [Recommendation] = []
+    /// "Trending Now" row on the Home screen — separate from `recommendations`
+    /// so it survives independently of whatever the survey flow is doing.
+    @Published var trendingRecommendations: [Recommendation] = []
+    @Published var isLoadingTrending: Bool = false
     @Published var lastSearchFailure: SearchFailure? = nil
     @Published var lastSearchWasRelaxed: Bool = false
     @Published var isEnriching: Bool = false
@@ -697,6 +701,34 @@ final class HomeViewModel: ObservableObject {
         withAnimation(AnimationProfile.listReveal.animation(reduceMotion: false)) {
             revealPhase = .cardsIn
         }
+    }
+
+    // MARK: - Trending Now
+
+    private func trendingSelection() -> VibeSelection {
+        var sel = VibeSelection()
+        sel.occasion = "Casual"
+        sel.foodFeelings = ["Surprise me"]
+        sel.selectedVibe = "🔥 Trending"
+        sel.location = effectiveLocation
+        return sel
+    }
+
+    /// Loads the Home screen's "Trending Now" row once. Safe to call repeatedly —
+    /// no-ops once populated or while already in flight.
+    func loadTrendingIfNeeded() async {
+        guard trendingRecommendations.isEmpty, !isLoadingTrending else { return }
+        isLoadingTrending = true
+        defer { isLoadingTrending = false }
+        let outcome = await GeminiService.getVibeRecommendations(selection: trendingSelection())
+        trendingRecommendations = Array(outcome.result.recommendations.prefix(6))
+    }
+
+    /// "View all" on the Trending Now row — runs the same search as the row itself
+    /// through the normal loading → reveal flow so the user sees the full list.
+    func viewAllTrending() {
+        selection = trendingSelection()
+        searchTask = Task { await submitSurvey() }
     }
 
     func fetchTikTokVideos(for rec: Recommendation) async -> [TikTokVideo] {

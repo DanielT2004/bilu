@@ -12,7 +12,7 @@ import {
 } from "../_shared/places.ts";
 
 /** Lightweight Gemini model for location extraction — see https://ai.google.dev/gemini-api/docs */
-const GEMINI_MODEL = "gemini-2.5-flash-lite";
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 /** Top N venues actually returned to the client. */
 const TOP_N = 12;

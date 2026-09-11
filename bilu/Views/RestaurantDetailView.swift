@@ -43,6 +43,7 @@ struct RestaurantDetailView: View {
     @State private var bookmarkSaved: Bool = false
     @State private var wantToGoSaved: Bool = false
     @State private var showMapsChoice = false
+    @State private var distanceText: String = "—"
     @GestureState private var dragOffset: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -85,6 +86,7 @@ struct RestaurantDetailView: View {
         .onAppear {
             bookmarkSaved = store.isSaved(rec, in: .saved)
             wantToGoSaved = store.isSaved(rec, in: .wantToGo)
+            ivenBeenHere = VisitedPlacesStore.isVisited(rec.identityKey)
         }
         .task {
             guard let placeId = rec.placeId, galleryPhotos.isEmpty else { return }
@@ -104,6 +106,14 @@ struct RestaurantDetailView: View {
             if !fetched.isEmpty {
                 prewarmedFeedViewModel = VideoFeedViewModel(videos: fetched, startIndex: 0)
             }
+        }
+        .task {
+            guard let lat = rec.latitude, let lng = rec.longitude else { return }
+            guard let resolved = try? await LocationService.shared.currentLocation() else { return }
+            let userLocation = CLLocation(latitude: resolved.coordinate.latitude, longitude: resolved.coordinate.longitude)
+            let placeLocation = CLLocation(latitude: lat, longitude: lng)
+            let miles = userLocation.distance(from: placeLocation) / 1609.34
+            distanceText = miles < 0.1 ? "< 0.1 mi" : String(format: "%.1f mi", miles)
         }
     }
 
@@ -336,24 +346,19 @@ struct RestaurantDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            // Distance (mocked)
+            // Distance
             VStack(alignment: .trailing, spacing: 4) {
                 Text("Distance")
                     .font(.system(size: 10, weight: .bold))
                     .tracking(1.0)
                     .textCase(.uppercase)
                     .foregroundStyle(AppTheme.muted)
-                Text(mockDistance)
+                Text(distanceText)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(AppTheme.onSurface)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
-    }
-
-    private var mockDistance: String {
-        let vals = ["0.3 mi", "0.8 mi", "1.2 mi", "0.5 mi", "1.7 mi", "2.1 mi", "4.2 mi"]
-        return vals[abs(rec.name.hashValue) % vals.count]
     }
 
     private func formatReviewCount(_ n: Int) -> String {
@@ -371,8 +376,9 @@ struct RestaurantDetailView: View {
             // "I've been here" pill button
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                let nowVisited = VisitedPlacesStore.toggle(rec.identityKey)
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                    ivenBeenHere.toggle()
+                    ivenBeenHere = nowVisited
                 }
             } label: {
                 HStack(spacing: 8) {
@@ -863,14 +869,77 @@ struct RestaurantDetailView: View {
 
     // MARK: - ══ INSIGHTS TAB ══
 
+    /// Non-empty captions from the videos already loaded for the Media tab —
+    /// real TikTok user text, not a fabricated summary.
+    private var tikTokCaptionHighlights: [TikTokVideo] {
+        tikTokVideos.filter { !$0.desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
     private var insightsTab: some View {
-        VStack(spacing: 0) {
-            stubCard(icon: "sparkles", message: "AI-powered insights\ncoming soon")
+        VStack(alignment: .leading, spacing: 24) {
+            if isFetchingTikTok && tikTokVideos.isEmpty {
+                stubCard(icon: "sparkles", message: "Reading the TikTok\nbuzz…")
+            } else if tikTokVideos.isEmpty {
+                stubCard(icon: "sparkles", message: "Not enough TikTok mentions\nyet to summarize")
+            } else {
+                HStack(spacing: 10) {
+                    insightStat(icon: "video.fill", value: formatCount(tikTokVideos.count), label: "Clips")
+                    insightStat(icon: "eye.fill", value: formatCount(tikTokVideos.reduce(0) { $0 + $1.viewCount }), label: "Views")
+                    insightStat(icon: "heart.fill", value: formatCount(tikTokVideos.reduce(0) { $0 + $1.diggCount }), label: "Likes")
+                }
+
+                if !tikTokCaptionHighlights.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("WHAT PEOPLE ARE SAYING")
+                            .font(.system(size: 10, weight: .medium))
+                            .tracking(1.0)
+                            .foregroundStyle(AppTheme.muted)
+
+                        ForEach(tikTokCaptionHighlights.prefix(5)) { video in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(video.desc)
+                                    .font(.custom("Georgia", size: 15))
+                                    .foregroundStyle(AppTheme.onSurface)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("— @\(video.author.name)")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(AppTheme.subtle)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .background(AppTheme.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .shadow(color: AppTheme.shadowColor, radius: 10, x: 0, y: 4)
+                        }
+                    }
+                }
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
         .padding(.bottom, 80)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func insightStat(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(AppTheme.terracotta)
+            Text(value)
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(AppTheme.onSurface)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .tracking(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(AppTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(AppTheme.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppTheme.shadowColor, radius: 10, x: 0, y: 4)
     }
 
     // MARK: - ══ MEDIA TAB ══
@@ -1134,13 +1203,53 @@ struct RestaurantDetailView: View {
     // MARK: - ══ REVIEWS TAB ══
 
     private var reviewsTab: some View {
-        VStack(spacing: 0) {
-            stubCard(icon: "quote.bubble", message: "Guest reviews\ncoming soon")
+        VStack(alignment: .leading, spacing: 14) {
+            if let reviews = rec.reviews, !reviews.isEmpty {
+                ForEach(Array(reviews.enumerated()), id: \.offset) { _, review in
+                    reviewCard(review)
+                }
+            } else {
+                stubCard(icon: "quote.bubble", message: "No guest reviews yet")
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
         .padding(.bottom, 80)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func reviewCard(_ review: PlaceReview) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(review.authorName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppTheme.onSurface)
+                Spacer()
+                if let time = review.relativeTime {
+                    Text(time)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppTheme.subtle)
+                }
+            }
+            if let rating = review.rating {
+                HStack(spacing: 2) {
+                    ForEach(0..<5, id: \.self) { i in
+                        Image(systemName: Double(i) < rating ? "star.fill" : "star")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.terracotta)
+                    }
+                }
+            }
+            Text(review.text)
+                .font(.system(size: 14, weight: .light))
+                .foregroundStyle(AppTheme.onSurface)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(AppTheme.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppTheme.shadowColor, radius: 10, x: 0, y: 4)
     }
 
     private func stubCard(icon: String, message: String) -> some View {

@@ -1,5 +1,12 @@
 // Shared Places API helpers — used by both /recommendations and /enrich
 
+export interface PlaceReview {
+  authorName: string;
+  rating?: number;
+  relativeTime?: string;
+  text: string;
+}
+
 export interface Recommendation {
   name: string;
   dish: string;
@@ -17,6 +24,7 @@ export interface Recommendation {
   website?: string;
   placeId?: string;
   photoRefs?: string[];
+  reviews?: PlaceReview[];
 }
 
 export interface GroundingPlace {
@@ -37,6 +45,7 @@ export interface PlaceDetails {
   website: string | undefined;
   neighborhood: string | undefined;
   displayName: string | undefined;
+  reviews: PlaceReview[] | undefined;
 }
 
 function logPlaces(...args: unknown[]) {
@@ -63,6 +72,7 @@ export interface CacheRow {
   address: string | null;
   phone: string | null;
   website: string | null;
+  reviews: PlaceReview[] | null;
   latitude: number | null;
   longitude: number | null;
   neighborhood: string | null;
@@ -300,11 +310,11 @@ export async function fetchPlaceDetails(placeId: string, apiKey: string, logTag:
   const res = await fetch(url, {
     headers: {
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "displayName,photos,location,rating,userRatingCount,regularOpeningHours,formattedAddress,nationalPhoneNumber,websiteUri,addressComponents",
+      "X-Goog-FieldMask": "displayName,photos,location,rating,userRatingCount,regularOpeningHours,formattedAddress,nationalPhoneNumber,websiteUri,addressComponents,reviews",
     },
   });
 
-  const empty: PlaceDetails = { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, isOpen: undefined, address: undefined, phone: undefined, website: undefined, neighborhood: undefined, displayName: undefined };
+  const empty: PlaceDetails = { photoNames: [], latitude: undefined, longitude: undefined, rating: undefined, reviewCount: undefined, isOpen: undefined, address: undefined, phone: undefined, website: undefined, neighborhood: undefined, displayName: undefined, reviews: undefined };
 
   const bodyText = await res.text();
   if (!res.ok) {
@@ -323,6 +333,13 @@ export async function fetchPlaceDetails(placeId: string, apiKey: string, logTag:
     nationalPhoneNumber?: string;
     websiteUri?: string;
     addressComponents?: Array<{ longText?: string; shortText?: string; types?: string[] }>;
+    reviews?: Array<{
+      rating?: number;
+      text?: { text?: string };
+      originalText?: { text?: string };
+      relativePublishTimeDescription?: string;
+      authorAttribution?: { displayName?: string };
+    }>;
   };
   try {
     data = JSON.parse(bodyText);
@@ -354,11 +371,22 @@ export async function fetchPlaceDetails(placeId: string, apiKey: string, logTag:
     }
   }
 
+  const reviews: PlaceReview[] = (data?.reviews ?? [])
+    .slice(0, 5)
+    .map((r) => ({
+      authorName: r.authorAttribution?.displayName ?? "Anonymous",
+      rating: r.rating,
+      relativeTime: r.relativePublishTimeDescription,
+      text: r.originalText?.text ?? r.text?.text ?? "",
+    }))
+    .filter((r) => r.text.length > 0);
+
   logPlaces(logTag, "placeDetails: location", { latitude, longitude });
   logPlaces(logTag, "placeDetails: rating/reviews/open", { rating, reviewCount, isOpen });
   logPlaces(logTag, "placeDetails: neighborhood", neighborhood ?? "(none)");
+  logPlaces(logTag, "placeDetails: review count fetched", reviews.length);
 
-  return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood, displayName };
+  return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood, displayName, reviews };
 }
 
 export async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string, maxWidthPx = 800): Promise<string | null> {
@@ -444,6 +472,7 @@ export async function enrichRecommendation(
           address: cached.address ?? undefined,
           phone: cached.phone ?? undefined,
           website: cached.website ?? undefined,
+          reviews: cached.reviews ?? undefined,
         },
         error: null,
       };
@@ -464,6 +493,7 @@ export async function enrichRecommendation(
         address: cached.address ?? undefined,
         phone: cached.phone ?? undefined,
         website: cached.website ?? undefined,
+        reviews: cached.reviews ?? undefined,
         image: heroUri ?? rec.image,
         photos: heroUri ? [heroUri] : undefined,
         photoRefs: cached.photo_refs.slice(1),
@@ -475,7 +505,7 @@ export async function enrichRecommendation(
   // ── 3. Cache miss — fetch from Google Places ──────────────────────────────
   logPlaces(logTag, "CACHE MISS — fetching from Places API", placeId);
 
-  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood } =
+  const { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood, reviews } =
     await fetchPlaceDetails(placeId, placesApiKey, logTag);
 
   const recWithMeta = {
@@ -489,6 +519,7 @@ export async function enrichRecommendation(
     address,
     phone,
     website,
+    reviews,
   };
 
   if (photoNames.length === 0) {
@@ -504,6 +535,7 @@ export async function enrichRecommendation(
       address: address ?? null,
       phone: phone ?? null,
       website: website ?? null,
+      reviews: reviews ?? null,
       latitude: latitude ?? null,
       longitude: longitude ?? null,
       neighborhood: neighborhood ?? null,
@@ -532,6 +564,7 @@ export async function enrichRecommendation(
     address: address ?? null,
     phone: phone ?? null,
     website: website ?? null,
+    reviews: reviews ?? null,
     latitude: latitude ?? null,
     longitude: longitude ?? null,
     neighborhood: neighborhood ?? null,

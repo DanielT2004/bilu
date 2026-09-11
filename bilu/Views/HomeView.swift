@@ -84,6 +84,7 @@ struct HomeView: View {
                    value: viewModel.showLocationPrompt)
         .task {
             await viewModel.primeLocationIfNeeded()
+            await viewModel.loadTrendingIfNeeded()
         }
         .sheet(item: $selectedRestaurant) { rec in
             RestaurantDetailView(rec: rec) {
@@ -449,81 +450,125 @@ struct HomeView: View {
 
     // MARK: - Trending Now section
 
-    private var trendingNowSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .bottom) {
-                (Text("Trending ").foregroundColor(C.onSurface) + Text("Now").foregroundColor(C.sage))
-                    .font(.system(size: 26, weight: .black))
-                    .tracking(-0.5)
-                Spacer()
-                Button(action: {}) {
-                    Text("View all")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(C.sage)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
+    private static let trendingTrayColors: [Color] = [C.traySlate, C.trayAmber, C.trayMoss, C.trayPeach]
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    trendingCard(name: "The Rusty Grill", category: "Aged Steaks & Malbec", trayColor: C.traySlate,  badge: "NEW ENTRY")
-                    trendingCard(name: "Neon Noodle",     category: "Bangkok Heat & Bass",   trayColor: C.trayAmber, badge: "TOP RATED")
-                    trendingCard(name: "Lasa",            category: "Filipino Fine Dining",  trayColor: C.trayMoss)
+    @ViewBuilder
+    private var trendingNowSection: some View {
+        if viewModel.isLoadingTrending || !viewModel.trendingRecommendations.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .bottom) {
+                    (Text("Trending ").foregroundColor(C.onSurface) + Text("Now").foregroundColor(C.sage))
+                        .font(.system(size: 26, weight: .black))
+                        .tracking(-0.5)
+                    Spacer()
+                    if !viewModel.trendingRecommendations.isEmpty {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            stepForward = true
+                            viewModel.viewAllTrending()
+                        } label: {
+                            Text("View all")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(C.sage)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 4)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        if viewModel.isLoadingTrending {
+                            ForEach(0..<3, id: \.self) { i in
+                                trendingPlaceholderCard(trayColor: Self.trendingTrayColors[i % Self.trendingTrayColors.count])
+                            }
+                        } else {
+                            ForEach(Array(viewModel.trendingRecommendations.enumerated()), id: \.element.id) { index, rec in
+                                trendingCard(rec: rec, trayColor: Self.trendingTrayColors[index % Self.trendingTrayColors.count])
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+                }
             }
+            .padding(.top, 20)
+            .padding(.bottom, 8)
         }
-        .padding(.top, 20)
-        .padding(.bottom, 8)
     }
 
-    private func trendingCard(name: String, category: String, trayColor: Color, badge: String? = nil) -> some View {
-        ZStack(alignment: .bottom) {
-            // Photo background (tray color as placeholder)
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(trayColor)
-                .overlay(
-                    Image(systemName: "fork.knife")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundColor(C.subtle.opacity(0.5))
+    private func trendingCard(rec: Recommendation, trayColor: Color) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selectedRestaurant = rec
+        } label: {
+            ZStack(alignment: .bottom) {
+                if let urlString = rec.image, let url = URL(string: urlString) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        default:
+                            trayPlaceholder(trayColor)
+                        }
+                    }
+                } else {
+                    trayPlaceholder(trayColor)
+                }
+
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.55)],
+                    startPoint: .center,
+                    endPoint: .bottom
                 )
 
-            // Gradient scrim
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.55)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-
-            // Bottom metadata
-            VStack(alignment: .leading, spacing: 2) {
-                if let badge = badge {
-                    Text(badge)
-                        .font(.system(size: 9, weight: .black))
-                        .tracking(0.8)
-                        .foregroundColor(C.mintBadgeText)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(C.mintBadge)
-                        .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 2) {
+                    if let rating = rec.rating, rating >= 4.5 {
+                        Text("TOP RATED")
+                            .font(.system(size: 9, weight: .black))
+                            .tracking(0.8)
+                            .foregroundColor(C.mintBadgeText)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(C.mintBadge)
+                            .clipShape(Capsule())
+                    }
+                    Text(rec.name)
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text(rec.dish)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.75))
+                        .lineLimit(1)
                 }
-                Text(name)
-                    .font(.system(size: 15, weight: .heavy))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(category)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.75))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 14)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 14)
+            .frame(width: 200, height: 260)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 6)
         }
-        .frame(width: 200, height: 260)
-        .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 6)
+        .buttonStyle(ScalePress())
+    }
+
+    private func trendingPlaceholderCard(trayColor: Color) -> some View {
+        trayPlaceholder(trayColor)
+            .frame(width: 200, height: 260)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 6)
+            .redacted(reason: .placeholder)
+    }
+
+    private func trayPlaceholder(_ trayColor: Color) -> some View {
+        Rectangle()
+            .fill(trayColor)
+            .overlay(
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 28, weight: .light))
+                    .foregroundColor(C.subtle.opacity(0.5))
+            )
     }
 
     // MARK: - ══════════ KEY QUESTION STEP ══════════

@@ -19,6 +19,7 @@ final class ProfileViewModel: ObservableObject {
 
     @Published var showingEditProfile = false
     @Published var showingDietaryEditor = false
+    @Published var pendingShares: [PendingTikTokShare] = []
 
     /// Draft fields for the edit sheet so edits can be cancelled without committing.
     @Published var draftName: String = ""
@@ -32,6 +33,20 @@ final class ProfileViewModel: ObservableObject {
         self.avatarEmoji = defaults.string(forKey: ProfileStorageKey.avatarEmoji) ?? ProfileStorageKey.defaultAvatar
         self.dietary = DietaryPreference.decode(defaults.string(forKey: ProfileStorageKey.dietary) ?? "")
         ensureUserId()
+        pendingShares = PendingShareStore.fetchAll()
+    }
+
+    // MARK: - Pending TikTok shares
+
+    /// Re-reads the App Group queue — call when Profile appears or the app returns to foreground.
+    func refreshPendingShares() {
+        pendingShares = PendingShareStore.fetchAll()
+    }
+
+    func dismissPendingShare(_ share: PendingTikTokShare) {
+        PendingShareStore.remove(id: share.id)
+        pendingShares.removeAll { $0.id == share.id }
+        Haptics.soft()
     }
 
     // MARK: - Identity

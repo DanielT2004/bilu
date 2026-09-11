@@ -144,8 +144,21 @@ enum PromptBuilder {
             }
         }
 
-        let constraintBlock = constraints.isEmpty ? "" :
-            "\n\nConstraints:\n" + constraints.map { "- \($0)" }.joined(separator: "\n")
+        let constraintBlock: String = {
+            var allConstraints = constraints
+
+            // Thread dietary preferences from the user's profile — these are
+            // hard constraints the model must never ignore.
+            let dietaryRaw = UserDefaults.standard.string(forKey: ProfileStorageKey.dietary) ?? ""
+            let dietary = DietaryPreference.decode(dietaryRaw)
+            if !dietary.isEmpty {
+                let labels = dietary.sorted { $0.label < $1.label }.map(\.label)
+                allConstraints.append("Dietary requirements: \(labels.joined(separator: ", ")) — every result must accommodate these")
+            }
+
+            return allConstraints.isEmpty ? "" :
+                "\n\nConstraints:\n" + allConstraints.map { "- \($0)" }.joined(separator: "\n")
+        }()
 
         // --- Recognition / chain preference ---
         // Strong preference, never a hard reject — model must always return results, never refuse.
