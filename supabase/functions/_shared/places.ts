@@ -22,6 +22,7 @@ export interface Recommendation {
   address?: string;
   phone?: string;
   website?: string;
+  parking?: string;
   placeId?: string;
   photoRefs?: string[];
   reviews?: PlaceReview[];
@@ -86,7 +87,6 @@ export async function getCachedPlace(placeId: string): Promise<CacheRow | null> 
       {
         headers: {
           "apikey": SUPABASE_SERVICE_ROLE_KEY,
-          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
       }
     );
@@ -107,7 +107,6 @@ export async function upsertCachedPlace(row: Omit<CacheRow, "cached_at">): Promi
       method: "POST",
       headers: {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates",
       },
@@ -129,7 +128,6 @@ export async function getCachedPlaceIdByName(nameKey: string): Promise<string | 
       {
         headers: {
           "apikey": SUPABASE_SERVICE_ROLE_KEY,
-          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
       }
     );
@@ -150,7 +148,6 @@ export async function upsertPlaceNameCache(nameKey: string, placeId: string): Pr
       method: "POST",
       headers: {
         "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates",
       },
@@ -389,6 +386,47 @@ export async function fetchPlaceDetails(placeId: string, apiKey: string, logTag:
   return { photoNames, latitude, longitude, rating, reviewCount, isOpen, address, phone, website, neighborhood, displayName, reviews };
 }
 
+/**
+ * Opening status is time-sensitive and must never be served from the 30-day
+ * metadata cache. Undefined means the status could not be verified, allowing
+ * callers to fail closed instead of showing a possibly closed venue.
+ */
+export async function fetchCurrentOpenStatus(
+  placeId: string,
+  apiKey: string,
+  logTag: string,
+): Promise<boolean | undefined> {
+  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
+  const res = await fetch(url, {
+    headers: {
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "regularOpeningHours.openNow",
+    },
+  });
+
+  const bodyText = await res.text();
+  if (!res.ok) {
+    logPlacesWarn(logTag, "openStatus: HTTP error", {
+      status: res.status,
+      placeId,
+      bodySnippet: bodyText.slice(0, 300),
+    });
+    return undefined;
+  }
+
+  try {
+    const data = JSON.parse(bodyText) as {
+      regularOpeningHours?: { openNow?: boolean };
+    };
+    const isOpen = data.regularOpeningHours?.openNow;
+    logPlaces(logTag, "openStatus: live", { placeId, isOpen });
+    return isOpen;
+  } catch {
+    logPlacesWarn(logTag, "openStatus: invalid JSON", bodyText.slice(0, 300));
+    return undefined;
+  }
+}
+
 export async function fetchPhotoUri(photoName: string, apiKey: string, logTag: string, maxWidthPx = 800): Promise<string | null> {
   const resource = photoName.endsWith("/media") ? photoName : `${photoName}/media`;
   const mediaUrl = `https://places.googleapis.com/v1/${resource}?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true`;
@@ -458,6 +496,14 @@ export async function enrichRecommendation(
   if (cached) {
     logPlaces(logTag, "CACHE HIT", placeId);
 
+    // Cached is_open reflects the instant this metadata row was written and can
+    // be days old. Feed eligibility always requires a live status check.
+    const currentIsOpen = await fetchCurrentOpenStatus(
+      placeId,
+      placesApiKey,
+      logTag,
+    );
+
     if (!cached.photo_refs.length) {
       logPlacesWarn(logTag, "CACHE HIT but no photo_refs — returning metadata only");
       return {
@@ -468,7 +514,7 @@ export async function enrichRecommendation(
           longitude: cached.longitude ?? undefined,
           rating: cached.rating ?? undefined,
           reviewCount: cached.review_count ?? undefined,
-          isOpen: cached.is_open ?? undefined,
+          isOpen: currentIsOpen,
           address: cached.address ?? undefined,
           phone: cached.phone ?? undefined,
           website: cached.website ?? undefined,
@@ -489,7 +535,7 @@ export async function enrichRecommendation(
         longitude: cached.longitude ?? undefined,
         rating: cached.rating ?? undefined,
         reviewCount: cached.review_count ?? undefined,
-        isOpen: cached.is_open ?? undefined,
+        isOpen: currentIsOpen,
         address: cached.address ?? undefined,
         phone: cached.phone ?? undefined,
         website: cached.website ?? undefined,

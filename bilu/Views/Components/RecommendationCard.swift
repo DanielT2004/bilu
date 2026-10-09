@@ -57,7 +57,7 @@ struct RecommendationCard: View {
                         AppTheme.surface
                     }
                 }
-                .onChange(of: rec.image) { _ in
+                .onChange(of: rec.image) {
                     imageError = false
                     imageDidAppear = false
                 }
@@ -107,6 +107,19 @@ struct RecommendationCard: View {
                     // Tags row
                     tagsRow
                         .padding(.top, 6)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "parkingsign.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AppTheme.sage)
+                        Text(rec.parkingDisplayText)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(AppTheme.muted)
+                            .lineLimit(1)
+                    }
+                    .padding(.top, 9)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Parking: \(rec.parkingDisplayText)")
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { onSelect?() }

@@ -155,10 +155,13 @@ final class HomeViewModel: ObservableObject {
     @Published var step: Step = .occasion
     @Published var selection: VibeSelection
     @Published var recommendations: [Recommendation] = []
+    @Published var showingRewardGate = false
     /// "Trending Now" row on the Home screen — separate from `recommendations`
     /// so it survives independently of whatever the survey flow is doing.
     @Published var trendingRecommendations: [Recommendation] = []
     @Published var isLoadingTrending: Bool = false
+    private var trendingLocationKey: String?
+    private var lastAnchoredTrendingSelection: VibeSelection?
     @Published var lastSearchFailure: SearchFailure? = nil
     @Published var lastSearchWasRelaxed: Bool = false
     @Published var isEnriching: Bool = false
@@ -168,6 +171,7 @@ final class HomeViewModel: ObservableObject {
     @Published var showLocationPrompt = false
     /// The user's resolved coordinate; nil until GPS resolves. The map widget adopts this once.
     @Published var initialMapCenter: CLLocationCoordinate2D? = nil
+    private var resolvedUserLocationLabel: String?
     private var didRequestLocation = false
     @Published var cuisineMode: CuisineMode = .vibe
     @Published var serviceCategory: String = "eat"
@@ -526,6 +530,16 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Survey Submit
 
     func submitSurvey() async {
+        let allowance = DiscoveryAllowance.shared
+        guard allowance.canRunDiscovery else {
+            showingRewardGate = true
+            return
+        }
+        let rewardToken = allowance.remainingFreeDiscoveries > 0
+            ? nil
+            : allowance.rewardedAccessToken
+        let submissionStep = step
+
         step = .loading
         lastSearchFailure = nil
         lastSearchWasRelaxed = false
@@ -554,9 +568,23 @@ final class HomeViewModel: ObservableObject {
         }
 
         // Phase 1: Gemini results — show cards immediately
-        let outcome = await GeminiService.getVibeRecommendations(selection: selection)
+        let outcome = await GeminiService.getVibeRecommendations(
+            selection: selection,
+            rewardedAccessToken: rewardToken
+        )
         // If the user exited mid-search (reset/back), don't transition to results.
         guard step == .loading else { return }
+
+        if outcome.failure == .rewardRequired {
+            allowance.reconcileRewardRequired()
+            step = submissionStep
+            showingRewardGate = true
+            return
+        }
+
+        if outcome.failure == nil || outcome.failure == .noMatches {
+            allowance.recordDiscovery(usedRewardToken: rewardToken)
+        }
 
         lastSearchFailure = outcome.failure
         lastSearchWasRelaxed = outcome.result.relaxed ?? false
@@ -565,10 +593,11 @@ final class HomeViewModel: ObservableObject {
         let groundingPlaces = outcome.result.groundingPlaces ?? []
         let canEnrich = outcome.failure != .transportError && !initial.isEmpty
 
-        // Short-circuit: empty results, transport error, or reduce-motion all
-        // skip the wait+prefetch window and reveal immediately on Phase 1 data.
-        if !canEnrich || reduceMotionPreference {
-            recommendations = initial
+        // Raw Gemini results do not contain a trustworthy live opening status.
+        // Never reveal them before Places verification, including when Reduce
+        // Motion is enabled.
+        if !canEnrich {
+            recommendations = []
             step = .reveal
             revealPhase = .sealed
             await stageReveal(reduceMotion: reduceMotionPreference)
@@ -614,8 +643,8 @@ final class HomeViewModel: ObservableObject {
                 let enriched = await enrichTask.value
                 guard let self else { return }
                 await MainActor.run {
-                    if self.step == .reveal && !enriched.isEmpty {
-                        self.recommendations = enriched
+                    if self.step == .reveal {
+                        self.recommendations = enriched.verifiedOpenRecommendations
                     }
                     self.isEnriching = false
                 }
@@ -635,6 +664,11 @@ final class HomeViewModel: ObservableObject {
         let isEnriched: Bool
     }
 
+    private enum EnrichmentRaceResult {
+        case finished([Recommendation])
+        case timedOut
+    }
+
     @MainActor
     private func raceEnrichmentAgainstCap(
         enrichTask: Task<[Recommendation], Never>,
@@ -646,24 +680,24 @@ final class HomeViewModel: ObservableObject {
         async let _ = ImagePrefetcher.warm(urls: phase1URLs, timeout: Self.prefetchTimeout)
 
         // Race the enrichment task against the cap timer.
-        let enrichedOrNil: [Recommendation]? = await withTaskGroup(of: [Recommendation]?.self) { group in
+        let raceResult = await withTaskGroup(of: EnrichmentRaceResult.self) { group in
             group.addTask {
                 let recs = await enrichTask.value
-                return recs.isEmpty ? nil : recs
+                return .finished(recs)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: Self.revealReadinessCapNanos)
-                return nil  // sentinel: cap fired
+                return .timedOut
             }
-            let first = (await group.next()) ?? nil
+            let first = (await group.next()) ?? .timedOut
             group.cancelAll()
             return first
         }
 
-        guard let enriched = enrichedOrNil else {
+        guard case .finished(let enriched) = raceResult else {
             // Cap fired first. Don't cancel enrichTask — the caller hands it off
-            // as a background write so the map and images still appear after reveal.
-            return ReadinessOutcome(recs: initial, isEnriched: false)
+            // as a background write. Fail closed while status is unknown.
+            return ReadinessOutcome(recs: [], isEnriched: false)
         }
 
         // Enrichment beat the cap. Warm any new URLs briefly so the cards land hot.
@@ -714,20 +748,116 @@ final class HomeViewModel: ObservableObject {
         return sel
     }
 
-    /// Loads the Home screen's "Trending Now" row once. Safe to call repeatedly —
-    /// no-ops once populated or while already in flight.
+    private static let cityWideTrendingRadiusMiles = 30.0
+
+    /// Loads Trending Now for the currently displayed location. A location change
+    /// replaces the old city's recommendations rather than reusing stale results.
     func loadTrendingIfNeeded() async {
-        guard trendingRecommendations.isEmpty, !isLoadingTrending else { return }
+        let requestedLocation = effectiveLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isUsableTrendingLocation(requestedLocation) else { return }
+
+        let locationKey = requestedLocation.lowercased()
+        guard trendingLocationKey != locationKey || trendingRecommendations.isEmpty else { return }
+
+        trendingLocationKey = locationKey
+        trendingRecommendations = []
         isLoadingTrending = true
-        defer { isLoadingTrending = false }
-        let outcome = await GeminiService.getVibeRecommendations(selection: trendingSelection())
-        trendingRecommendations = Array(outcome.result.recommendations.prefix(6))
+        defer {
+            if trendingLocationKey == locationKey { isLoadingTrending = false }
+        }
+
+        let trending = await anchoredTrendingSelection(for: requestedLocation)
+        guard !Task.isCancelled, trendingLocationKey == locationKey else { return }
+        lastAnchoredTrendingSelection = trending
+
+        let outcome = await GeminiService.getVibeRecommendations(selection: trending)
+        guard !Task.isCancelled, trendingLocationKey == locationKey else { return }
+        let initial = outcome.result.recommendations
+        guard !initial.isEmpty else { return }
+
+        // Do not publish raw Gemini results: opening status is only trustworthy
+        // after the Places enrichment request completes.
+        let enriched = await GeminiService.enrichRecommendations(
+            initial,
+            groundingPlaces: outcome.result.groundingPlaces ?? [],
+            location: trending.location
+        )
+        guard !Task.isCancelled, trendingLocationKey == locationKey else { return }
+
+        // Maps grounding improves relevance but is not a hard boundary. Only show
+        // places whose resolved coordinates can be verified near the selected city
+        // or user pin; unverifiable and out-of-area results are discarded.
+        let verified = recommendations(
+            enriched.verifiedOpenRecommendations,
+            within: trending
+        )
+        trendingRecommendations = Array(verified.prefix(6))
+    }
+
+    private func isUsableTrendingLocation(_ location: String) -> Bool {
+        !location.isEmpty
+            && location.caseInsensitiveCompare("your area") != .orderedSame
+            && location.caseInsensitiveCompare("Set your location") != .orderedSame
+    }
+
+    private func anchoredTrendingSelection(for location: String) async -> VibeSelection {
+        var trending = trendingSelection()
+        trending.location = location
+
+        if selection.useRadiusSearch,
+           let latitude = selection.latitude,
+           let longitude = selection.longitude {
+            trending.latitude = latitude
+            trending.longitude = longitude
+            trending.radiusMiles = selection.radiusMiles
+            trending.useRadiusSearch = true
+            return trending
+        }
+
+        if let coordinate = initialMapCenter,
+           let resolvedUserLocationLabel,
+           resolvedUserLocationLabel.caseInsensitiveCompare(location) == .orderedSame {
+            trending.latitude = coordinate.latitude
+            trending.longitude = coordinate.longitude
+            trending.radiusMiles = Self.cityWideTrendingRadiusMiles
+            trending.useRadiusSearch = true
+            return trending
+        }
+
+        if let placemark = try? await CLGeocoder().geocodeAddressString(location).first,
+           let coordinate = placemark.location?.coordinate {
+            trending.latitude = coordinate.latitude
+            trending.longitude = coordinate.longitude
+            trending.radiusMiles = Self.cityWideTrendingRadiusMiles
+            trending.useRadiusSearch = true
+        }
+        return trending
+    }
+
+    private func recommendations(
+        _ recommendations: [Recommendation],
+        within selection: VibeSelection
+    ) -> [Recommendation] {
+        guard selection.useRadiusSearch,
+              let latitude = selection.latitude,
+              let longitude = selection.longitude else {
+            return recommendations
+        }
+
+        let center = CLLocation(latitude: latitude, longitude: longitude)
+        let maximumDistance = selection.radiusMiles * 1_609.344
+        return recommendations.filter { recommendation in
+            guard let latitude = recommendation.latitude,
+                  let longitude = recommendation.longitude else { return false }
+            let place = CLLocation(latitude: latitude, longitude: longitude)
+            return center.distance(from: place) <= maximumDistance
+        }
     }
 
     /// "View all" on the Trending Now row — runs the same search as the row itself
     /// through the normal loading → reveal flow so the user sees the full list.
     func viewAllTrending() {
-        selection = trendingSelection()
+        selection = lastAnchoredTrendingSelection ?? trendingSelection()
         searchTask = Task { await submitSurvey() }
     }
 
@@ -735,7 +865,7 @@ final class HomeViewModel: ObservableObject {
         if let cached = tikTokVideos[rec.id], !cached.isEmpty { return cached }
         let city = await cityForTikTok()
         let query = city.isEmpty ? rec.name : "\(rec.name) \(city)"
-        let videos = await TikTokService.fetchVideos(query: query)
+        let videos = (try? await TikTokService.fetchVideos(query: query)) ?? []
         tikTokVideos[rec.id] = videos
         return videos
     }
@@ -765,6 +895,7 @@ final class HomeViewModel: ObservableObject {
         do {
             let resolved = try await LocationService.shared.currentLocation()
             initialMapCenter = resolved.coordinate
+            resolvedUserLocationLabel = resolved.cityLabel
             detectedLocation = resolved.cityLabel
             if selection.location.isEmpty { selection.location = resolved.cityLabel }
         } catch {

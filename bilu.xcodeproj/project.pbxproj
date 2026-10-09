@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AD0000000000000000000003 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = AD0000000000000000000002 /* GoogleMobileAds */; };
 		EB1D7EC92F8384330090AFCE /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EB1D7EC82F8384330090AFCE /* MapKit.framework */; };
 		EB7740F52FA8474A00655567 /* biluShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB7740EB2FA8474800655567 /* biluShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		EBE560462FAAF79F000E61DE /* 11.txt in Resources */ = {isa = PBXBuildFile; fileRef = EBE560452FAAF79F000E61DE /* 11.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -19,6 +19,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = EB7740EA2FA8474800655567;
 			remoteInfo = biluShare;
+		};
+		F1000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EBCC8DC22F64BD4F00E9EF5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EBCC8DC92F64BD4F00E9EF5D;
+			remoteInfo = bilu;
+		};
+		F2000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EBCC8DC22F64BD4F00E9EF5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EBCC8DC92F64BD4F00E9EF5D;
+			remoteInfo = bilu;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -40,7 +54,8 @@
 		EB1D7EC82F8384330090AFCE /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.4.sdk/System/Library/Frameworks/MapKit.framework; sourceTree = DEVELOPER_DIR; };
 		EB7740EB2FA8474800655567 /* biluShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = biluShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = bilu.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		EBE560452FAAF79F000E61DE /* 11.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = 11.txt; sourceTree = "<group>"; };
+		F10000000000000000000001 /* biluTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = biluTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F20000000000000000000001 /* biluUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = biluUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -77,6 +92,16 @@
 			path = bilu;
 			sourceTree = "<group>";
 		};
+		F10000000000000000000002 /* biluTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = biluTests;
+			sourceTree = "<group>";
+		};
+		F20000000000000000000002 /* biluUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = biluUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -91,7 +116,22 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD0000000000000000000003 /* GoogleMobileAds in Frameworks */,
 				EB1D7EC92F8384330090AFCE /* MapKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,9 +151,10 @@
 			children = (
 				EBCC8DCC2F64BD4F00E9EF5D /* bilu */,
 				EB7740EC2FA8474900655567 /* biluShare */,
+				F10000000000000000000002 /* biluTests */,
+				F20000000000000000000002 /* biluUITests */,
 				EB1D7EC72F8384330090AFCE /* Frameworks */,
 				EBCC8DCB2F64BD4F00E9EF5D /* Products */,
-				EBE560452FAAF79F000E61DE /* 11.txt */,
 			);
 			sourceTree = "<group>";
 		};
@@ -122,6 +163,8 @@
 			children = (
 				EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */,
 				EB7740EB2FA8474800655567 /* biluShare.appex */,
+				F10000000000000000000001 /* biluTests.xctest */,
+				F20000000000000000000001 /* biluUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -170,10 +213,57 @@
 			);
 			name = bilu;
 			packageProductDependencies = (
+				AD0000000000000000000002 /* GoogleMobileAds */,
 			);
 			productName = bilu;
 			productReference = EBCC8DCA2F64BD4F00E9EF5D /* bilu.app */;
 			productType = "com.apple.product-type.application";
+		};
+		F10000000000000000000006 /* biluTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000009 /* Build configuration list for PBXNativeTarget "biluTests" */;
+			buildPhases = (
+				F10000000000000000000005 /* Sources */,
+				F10000000000000000000003 /* Frameworks */,
+				F10000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F1000000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				F10000000000000000000002 /* biluTests */,
+			);
+			name = biluTests;
+			packageProductDependencies = (
+			);
+			productName = biluTests;
+			productReference = F10000000000000000000001 /* biluTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F20000000000000000000006 /* biluUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F20000000000000000000009 /* Build configuration list for PBXNativeTarget "biluUITests" */;
+			buildPhases = (
+				F20000000000000000000005 /* Sources */,
+				F20000000000000000000003 /* Frameworks */,
+				F20000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F2000000000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				F20000000000000000000002 /* biluUITests */,
+			);
+			name = biluUITests;
+			packageProductDependencies = (
+			);
+			productName = biluUITests;
+			productReference = F20000000000000000000001 /* biluUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -191,6 +281,14 @@
 					EBCC8DC92F64BD4F00E9EF5D = {
 						CreatedOnToolsVersion = 26.3;
 					};
+					F10000000000000000000006 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = EBCC8DC92F64BD4F00E9EF5D;
+					};
+					F20000000000000000000006 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = EBCC8DC92F64BD4F00E9EF5D;
+					};
 				};
 			};
 			buildConfigurationList = EBCC8DC52F64BD4F00E9EF5D /* Build configuration list for PBXProject "bilu" */;
@@ -202,6 +300,9 @@
 			);
 			mainGroup = EBCC8DC12F64BD4F00E9EF5D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AD0000000000000000000001 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBCC8DCB2F64BD4F00E9EF5D /* Products */;
 			projectDirPath = "";
@@ -209,6 +310,8 @@
 			targets = (
 				EBCC8DC92F64BD4F00E9EF5D /* bilu */,
 				EB7740EA2FA8474800655567 /* biluShare */,
+				F10000000000000000000006 /* biluTests */,
+				F20000000000000000000006 /* biluUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -225,7 +328,20 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EBE560462FAAF79F000E61DE /* 11.txt in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -246,6 +362,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F20000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -253,6 +383,16 @@
 			isa = PBXTargetDependency;
 			target = EB7740EA2FA8474800655567 /* biluShare */;
 			targetProxy = EB7740F32FA8474A00655567 /* PBXContainerItemProxy */;
+		};
+		F1000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EBCC8DC92F64BD4F00E9EF5D /* bilu */;
+			targetProxy = F1000000000000000000000A /* PBXContainerItemProxy */;
+		};
+		F2000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EBCC8DC92F64BD4F00E9EF5D /* bilu */;
+			targetProxy = F2000000000000000000000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -262,13 +402,13 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = biluShare/biluShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = P29NUSYG5X;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = biluShare/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = biluShare;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -294,13 +434,13 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = biluShare/biluShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = P29NUSYG5X;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = biluShare/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = biluShare;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -445,7 +585,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = bilu/bilu.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = P29NUSYG5X;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -473,16 +613,16 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.simonsoloman.bilu;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.2;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -493,7 +633,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = bilu/bilu.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = P29NUSYG5X;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -521,16 +661,118 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.simonsoloman.bilu;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator xros xrsimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 26.2;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F10000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P29NUSYG5X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simonsoloman.biluTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/bilu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/bilu";
+			};
+			name = Debug;
+		};
+		F10000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P29NUSYG5X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simonsoloman.biluTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/bilu.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/bilu";
+			};
+			name = Release;
+		};
+		F20000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P29NUSYG5X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simonsoloman.biluUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = bilu;
+			};
+			name = Debug;
+		};
+		F20000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = P29NUSYG5X;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.simonsoloman.biluUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = bilu;
 			};
 			name = Release;
 		};
@@ -564,7 +806,44 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		F10000000000000000000009 /* Build configuration list for PBXNativeTarget "biluTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000007 /* Debug */,
+				F10000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F20000000000000000000009 /* Build configuration list for PBXNativeTarget "biluUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F20000000000000000000007 /* Debug */,
+				F20000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AD0000000000000000000001 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AD0000000000000000000002 /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AD0000000000000000000001 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EBCC8DC22F64BD4F00E9EF5D /* Project object */;
 }

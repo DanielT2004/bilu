@@ -10,6 +10,13 @@ import {
   fetchPlaceDetails,
   type LocationBias,
 } from "../_shared/places.ts";
+import {
+  consumePaidAPIQuota,
+  paidAPIAccessErrorResponse,
+  quotaHeaders,
+  quotaPolicy,
+  requireAuthenticatedUser,
+} from "../_shared/paid_api_guard.ts";
 
 /** Lightweight Gemini model for location extraction — see https://ai.google.dev/gemini-api/docs */
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -23,10 +30,13 @@ const CITY_BIAS_RADIUS_METERS = 40_000;
 /** Max places a single video can contribute IF those places aren't corroborated by other videos.
  *  Corroborated places (mentioned in ≥2 videos) bypass this cap — overlap is our strongest quality signal. */
 const PER_VIDEO_SOLO_CAP = 4;
+const MAX_INPUT_VIDEOS = 25;
+const PAID_API_QUOTA = quotaPolicy("tiktok_locations", "TIKTOK_LOCATIONS", 10, 40, 1_000);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Expose-Headers": "retry-after, x-ratelimit-remaining, x-daily-budget-remaining, x-global-daily-budget-remaining",
 };
 
 interface VideoAnchor {
@@ -195,9 +205,9 @@ ${JSON.stringify(payload, null, 2)}`;
 
   const response = await ai.models.generateContent({
     model: GEMINI_MODEL,
-    systemInstruction,
     contents: prompt,
     config: {
+      systemInstruction,
       temperature: 0.1,
       responseMimeType: "application/json",
       responseSchema: {
@@ -349,6 +359,7 @@ async function geocodePlace(
     address: details.address ?? null,
     phone: details.phone ?? null,
     website: details.website ?? null,
+    reviews: details.reviews ?? null,
     latitude: details.latitude,
     longitude: details.longitude,
     neighborhood: details.neighborhood ?? null,
@@ -541,6 +552,19 @@ serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (body.videos.length > MAX_INPUT_VIDEOS) {
+      return new Response(JSON.stringify({ error: `at most ${MAX_INPUT_VIDEOS} videos are allowed` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const user = await requireAuthenticatedUser(req);
+    const quota = await consumePaidAPIQuota(
+      user.id,
+      PAID_API_QUOTA,
+      1 + Math.ceil(body.videos.length / 5),
+    );
 
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("[tiktok-locations] INCOMING REQUEST");
@@ -677,9 +701,15 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ locations, unresolved, queryCity }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        ...quotaHeaders(quota),
+        "Content-Type": "application/json",
+      },
     });
   } catch (err) {
+    const accessResponse = paidAPIAccessErrorResponse(err, corsHeaders);
+    if (accessResponse) return accessResponse;
     const message = err instanceof Error ? err.message : String(err);
     console.error("[tiktok-locations] 500:", message);
     return new Response(JSON.stringify({ error: message }), {

@@ -8,7 +8,7 @@ import SwiftUI
 private let C = AppTheme.self
 
 struct SearchView: View {
-    @StateObject private var viewModel = SearchViewModel()
+    @ObservedObject private var viewModel: SearchViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var feedViewModel: VideoFeedViewModel? = nil
     @State private var selectedLocation: SearchLocation? = nil
@@ -17,12 +17,17 @@ struct SearchView: View {
     /// (forward = right→left, backward = left→right). Initialized to .list
     /// to match SearchViewModel's default; updated on every viewMode change.
     @State private var prevModeRaw: Int = ResultsViewMode.list.rawValue
-    @FocusState private var searchFocused: Bool
+    @State private var searchFocused = false
+    @ScaledMetric(relativeTo: .body) private var searchFieldHeight = 44.0
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
         GridItem(.flexible(), spacing: 10)
     ]
+
+    init(viewModel: SearchViewModel) {
+        self.viewModel = viewModel
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,6 +60,8 @@ struct SearchView: View {
                     loadingState
                 } else if viewModel.needsCity {
                     needsCityState
+                } else if let error = viewModel.searchError {
+                    errorState(error)
                 } else if viewModel.hasSearched && viewModel.videos.isEmpty {
                     emptyResultsState
                 } else if viewModel.videos.isEmpty {
@@ -86,7 +93,7 @@ struct SearchView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: viewModel.viewMode)
-            .onChange(of: viewModel.viewMode) { newMode in
+            .onChange(of: viewModel.viewMode) { _, newMode in
                 prevModeRaw = newMode.rawValue
             }
         }
@@ -189,21 +196,14 @@ struct SearchView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(searchFocused ? C.sage : C.muted)
+                    .accessibilityHidden(true)
 
-                ZStack(alignment: .leading) {
-                    if viewModel.query.isEmpty {
-                        Text("Try: matcha in San Diego")
-                            .font(.system(size: 15))
-                            .foregroundColor(C.muted)
-                            .allowsHitTesting(false)
-                    }
-                    TextField("", text: $viewModel.query)
-                        .font(.system(size: 15))
-                        .foregroundColor(C.onSurface)
-                        .focused($searchFocused)
-                        .submitLabel(.search)
-                        .onSubmit { triggerSearch() }
-                }
+                SearchQueryField(
+                    text: $viewModel.query,
+                    isFocused: $searchFocused,
+                    onSubmit: triggerSearch
+                )
+                .frame(maxWidth: .infinity, minHeight: searchFieldHeight, maxHeight: searchFieldHeight)
 
                 if !viewModel.query.isEmpty {
                     Button {
@@ -214,12 +214,15 @@ struct SearchView: View {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14))
                             .foregroundColor(C.subtle)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                    .accessibilityIdentifier("search-clear-button")
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 11)
             .background(C.white)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
@@ -235,6 +238,7 @@ struct SearchView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 11)
+                    .frame(minHeight: 44)
                     .background(C.sage)
                     .clipShape(Capsule())
             }
@@ -306,6 +310,38 @@ struct SearchView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(C.muted)
         }
+    }
+
+    // MARK: - Error
+
+    private func errorState(_ error: TikTokServiceError) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: error == .offline ? "wifi.slash" : "exclamationmark.triangle")
+                .font(.system(size: 34, weight: .light))
+                .foregroundColor(C.sage)
+            Text(error.title)
+                .font(.custom("Georgia", size: 22))
+                .foregroundColor(C.onSurface)
+            Text(error.message)
+                .font(.system(size: 13, weight: .light))
+                .foregroundColor(C.muted)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            Button {
+                triggerSearch()
+            } label: {
+                Text("Try Again")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 11)
+                    .background(C.sage)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("search-error-retry")
+        }
+        .accessibilityIdentifier("search-error-state")
     }
 
     // MARK: - Empty results
@@ -541,6 +577,78 @@ struct SearchView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         searchFocused = false
         Task { await viewModel.search() }
+    }
+}
+
+/// Keeps UIKit's first responder stable while the observable search query updates.
+/// Use ordinary state for its focus binding; a SwiftUI FocusState needs a SwiftUI
+/// focus attachment and must not drive this UIKit field's responder lifecycle.
+private struct SearchQueryField: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.borderStyle = .none
+        field.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 15))
+        field.adjustsFontForContentSizeCategory = true
+        field.textColor = UIColor(C.onSurface)
+        field.tintColor = UIColor(C.sage)
+        field.attributedPlaceholder = NSAttributedString(
+            string: "Try: matcha in San Diego",
+            attributes: [.foregroundColor: UIColor(C.muted)]
+        )
+        field.returnKeyType = .search
+        field.delegate = context.coordinator
+        field.accessibilityLabel = "Search food and places"
+        field.accessibilityHint = "Enter a food, restaurant, or city"
+        field.accessibilityIdentifier = "search-query-field"
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        context.coordinator.parent = self
+        if field.text != text {
+            field.text = text
+        }
+        if isFocused, !field.isFirstResponder {
+            field.becomeFirstResponder()
+        } else if !isFocused, field.isFirstResponder {
+            field.resignFirstResponder()
+        }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: SearchQueryField
+
+        init(_ parent: SearchQueryField) {
+            self.parent = parent
+        }
+
+        @objc func textChanged(_ field: UITextField) {
+            parent.text = field.text ?? ""
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            if !parent.isFocused { parent.isFocused = true }
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            if parent.isFocused { parent.isFocused = false }
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            parent.onSubmit()
+            return true
+        }
     }
 }
 
@@ -899,5 +1007,5 @@ private struct FilterChipsBar: View {
 }
 
 #Preview {
-    SearchView()
+    SearchView(viewModel: SearchViewModel())
 }

@@ -14,39 +14,123 @@
 
 import Foundation
 
+enum TikTokServiceError: Error, Equatable {
+    case offline
+    case timedOut
+    case unauthorized
+    case rateLimited(retryAfterSeconds: Int?)
+    case serverUnavailable
+    case invalidResponse
+    case requestFailed
+
+    var title: String {
+        switch self {
+        case .offline: return "You're offline"
+        case .timedOut: return "Search took too long"
+        case .unauthorized: return "Couldn't start search"
+        case .rateLimited: return "Too many searches"
+        case .serverUnavailable: return "Search is unavailable"
+        case .invalidResponse, .requestFailed: return "Couldn't load results"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .offline:
+            return "Check your internet connection and try again."
+        case .timedOut:
+            return "The search service didn't respond in time. Please try again."
+        case .unauthorized:
+            return "We couldn't verify this search. Please try again."
+        case .rateLimited(let retryAfterSeconds):
+            if let retryAfterSeconds, retryAfterSeconds > 0 {
+                return "Please wait about \(retryAfterSeconds) seconds, then try again."
+            }
+            return "Please wait a moment, then try again."
+        case .serverUnavailable:
+            return "Our search service is having trouble. Please try again shortly."
+        case .invalidResponse:
+            return "The search service returned an unexpected response. Please try again."
+        case .requestFailed:
+            return "Something interrupted the search. Please try again."
+        }
+    }
+
+    static func fromHTTPStatus(_ statusCode: Int, retryAfter: String? = nil) -> TikTokServiceError {
+        switch statusCode {
+        case 401, 403:
+            return .unauthorized
+        case 408:
+            return .timedOut
+        case 429:
+            return .rateLimited(retryAfterSeconds: retryAfter.flatMap(Int.init))
+        case 500...599:
+            return .serverUnavailable
+        default:
+            return .requestFailed
+        }
+    }
+
+    static func from(_ error: Error) -> TikTokServiceError {
+        if let serviceError = error as? TikTokServiceError { return serviceError }
+
+        if let authError = error as? SupabaseAuthError {
+            switch authError {
+            case .requestFailed(let statusCode):
+                return fromHTTPStatus(statusCode)
+            case .invalidResponse, .missingSession, .keychain:
+                return .unauthorized
+            }
+        }
+
+        guard let urlError = error as? URLError else { return .requestFailed }
+        switch urlError.code {
+        case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed,
+             .internationalRoamingOff, .cannotFindHost, .cannotConnectToHost,
+             .dnsLookupFailed:
+            return .offline
+        case .timedOut:
+            return .timedOut
+        default:
+            return .requestFailed
+        }
+    }
+}
+
 enum TikTokService {
 
     /// ScrapTik sortType values:
     /// 0 = relevance, 1 = most liked, 2 = most recent
-    static func fetchVideos(query: String, maxResults: Int = 10, sortType: Int = 0) async -> [TikTokVideo] {
-        guard let url = URL(string: "\(Config.apiBaseURL)/tiktok-search") else { return [] }
-
+    static func fetchVideos(query: String, maxResults: Int = 10, sortType: Int = 0) async throws -> [TikTokVideo] {
         let body: [String: Any] = [
             "query": query,
             "maxResults": maxResults,
             "sortType": sortType
         ]
-        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return [] }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(Config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 60
-        request.httpBody = httpBody
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
+            throw TikTokServiceError.requestFailed
+        }
 
         do {
+            var request = try await AuthenticatedAPIRequest.post(path: "tiktok-search", timeout: 60)
+            request.httpBody = httpBody
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            guard let http = response as? HTTPURLResponse else {
+                throw TikTokServiceError.invalidResponse
+            }
+            guard (200...299).contains(http.statusCode) else {
                 #if DEBUG
                 let body = String(data: data, encoding: .utf8) ?? ""
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 print("[TikTokService] HTTP \(code) for '\(query)': \(body.prefix(300))")
                 #endif
-                return []
+                throw TikTokServiceError.fromHTTPStatus(
+                    http.statusCode,
+                    retryAfter: http.value(forHTTPHeaderField: "Retry-After")
+                )
             }
 
-            let videos = parseVideos(from: data)
+            let videos = try parseVideos(from: data)
             #if DEBUG
             print("[TikTokService] Fetched \(videos.count) videos for '\(query)'")
             if let first = videos.first {
@@ -58,15 +142,16 @@ enum TikTokService {
             #if DEBUG
             print("[TikTokService] Error for '\(query)': \(error)")
             #endif
-            return []
+            throw TikTokServiceError.from(error)
         }
     }
 
     // MARK: - Manual JSON parsing
 
-    private static func parseVideos(from data: Data) -> [TikTokVideo] {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return []
+    private static func parseVideos(from data: Data) throws -> [TikTokVideo] {
+        let json = try? JSONSerialization.jsonObject(with: data)
+        guard let root = json as? [[String: Any]] else {
+            throw TikTokServiceError.invalidResponse
         }
 
         var results: [TikTokVideo] = []

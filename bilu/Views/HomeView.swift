@@ -27,6 +27,8 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @EnvironmentObject private var savedStore: SavedPlacesStore
     @EnvironmentObject private var coordinator: ProfileCoordinator
+    @EnvironmentObject private var discoveryAllowance: DiscoveryAllowance
+    @EnvironmentObject private var rewardedAds: RewardedAdService
     @FocusState private var locationFieldFocused: Bool
     @State private var selectedRestaurant: Recommendation? = nil
     @State private var stepForward = true
@@ -61,7 +63,7 @@ struct HomeView: View {
                 .scrollIndicators(.hidden)
                 .scrollDisabled(mapIsExpanded)
                 .animation(.spring(response: 0.38, dampingFraction: 0.86), value: viewModel.step)
-                .onChange(of: viewModel.step) { newStep in
+                .onChange(of: viewModel.step) {
                     proxy.scrollTo("top", anchor: .top)
                     expandedCategoryKey = nil
                     // Reveal milestone haptic now lives in HomeViewModel.stageReveal() so it
@@ -84,6 +86,8 @@ struct HomeView: View {
                    value: viewModel.showLocationPrompt)
         .task {
             await viewModel.primeLocationIfNeeded()
+        }
+        .task(id: viewModel.effectiveLocation) {
             await viewModel.loadTrendingIfNeeded()
         }
         .sheet(item: $selectedRestaurant) { rec in
@@ -91,6 +95,13 @@ struct HomeView: View {
                     await viewModel.fetchTikTokVideos(for: rec)
                 }
                 .environmentObject(savedStore)
+        }
+        .sheet(isPresented: $viewModel.showingRewardGate) {
+            RewardedDiscoveryView {
+                Task { await viewModel.submitSurvey() }
+            }
+            .environmentObject(discoveryAllowance)
+            .environmentObject(rewardedAds)
         }
         .onAppear {
             viewModel.reduceMotionPreference = reduceMotion
@@ -100,7 +111,7 @@ struct HomeView: View {
             hideTabBar = shouldHideTabBar(for: viewModel.step)
             consumePendingVibeIfNeeded()
         }
-        .onChange(of: coordinator.pendingVibeToken) { _ in
+        .onChange(of: coordinator.pendingVibeToken) {
             consumePendingVibeIfNeeded()
         }
         .onDisappear {
@@ -108,13 +119,13 @@ struct HomeView: View {
             // bar so the destination view shows it normally.
             hideTabBar = false
         }
-        .onChange(of: reduceMotion) { newValue in
+        .onChange(of: reduceMotion) { _, newValue in
             viewModel.reduceMotionPreference = newValue
         }
-        .onChange(of: viewModel.step) { newStep in
+        .onChange(of: viewModel.step) { _, newStep in
             hideTabBar = shouldHideTabBar(for: newStep)
         }
-        .onChange(of: viewModel.revealPhase) { phase in
+        .onChange(of: viewModel.revealPhase) { _, phase in
             guard phase == .cardsIn, !viewModel.recommendations.isEmpty else { return }
             if reduceMotion {
                 displayedRecommendationCount = viewModel.recommendations.count
@@ -128,10 +139,10 @@ struct HomeView: View {
                 }
             }
         }
-        .onChange(of: viewModel.step) { newStep in
+        .onChange(of: viewModel.step) { _, newStep in
             if newStep != .reveal { displayedRecommendationCount = 0 }
         }
-        .onChange(of: viewModel.currentVibeIsSaved) { isSaved in
+        .onChange(of: viewModel.currentVibeIsSaved) { _, isSaved in
             // Fire confetti only on the save-commit transition (false → true).
             // Unsave is silent visually; the existing ViewModel haptics handle audio.
             // Reduce Motion users skip the visual celebration but keep the haptic.
@@ -1489,7 +1500,7 @@ struct HomeView: View {
             VStack(spacing: 12) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    Task { await viewModel.proceedWithFineTune() }
+                    Task { viewModel.proceedWithFineTune() }
                 } label: {
                     HStack(spacing: 8) {
                         Text("Apply & find my spot")
@@ -1870,28 +1881,38 @@ struct HomeView: View {
     @ViewBuilder
     private var emptyResultsState: some View {
         let isTransport = viewModel.lastSearchFailure == .transportError
+        let isCapacity = viewModel.lastSearchFailure == .capacityUnavailable
+        let isUsageLimit = viewModel.lastSearchFailure == .usageLimitExceeded
+        let isTimeout = viewModel.lastSearchFailure == .timedOut
+        let isServiceFailure = isTransport || isCapacity || isTimeout
         VStack(spacing: 14) {
-            Image(systemName: isTransport ? "wifi.exclamationmark" : "magnifyingglass")
+            Image(systemName: isUsageLimit ? "gauge.with.dots.needle.67percent" : (isCapacity ? "hourglass" : (isTimeout ? "clock.arrow.circlepath" : (isTransport ? "wifi.exclamationmark" : "magnifyingglass"))))
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(C.sage)
                 .frame(width: 56, height: 56)
                 .background(C.sageLt)
                 .clipShape(Circle())
 
-            Text(isTransport ? "Couldn't reach us" : "Nothing matched, yet")
+            Text(isUsageLimit ? "Search limit reached" : (isCapacity ? "Search is at capacity" : (isTimeout ? "Search took too long" : (isTransport ? "Couldn't reach us" : "Nothing matched, yet"))))
                 .font(.custom("Georgia", size: 22))
                 .foregroundStyle(C.onSurface)
 
-            Text(isTransport
-                 ? "Something went wrong on our end. Tap retry — usually works the second time."
-                 : "Try a different vibe or widen your search — there's always something nearby worth trying.")
+            Text(isUsageLimit
+                 ? "This account has used its current search allowance. Please try again after the limit resets."
+                 : (isCapacity
+                    ? "Our search provider is temporarily at its limit. Give it a minute, then try again."
+                    : (isTimeout
+                       ? "We stopped waiting so you wouldn't be stuck here. Try again for a fresh search."
+                       : (isTransport
+                          ? "Something went wrong on our end. Tap retry — usually works the second time."
+                          : "Try a different vibe or widen your search — there's always something nearby worth trying."))))
                 .font(.system(size: 14, weight: .light))
                 .foregroundStyle(C.muted)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
 
-            if isTransport {
+            if isServiceFailure {
                 Button {
                     Haptics.medium()
                     Task { await viewModel.submitSurvey() }

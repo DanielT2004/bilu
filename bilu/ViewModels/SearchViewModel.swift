@@ -54,11 +54,14 @@ private let kSuggestedCities = ["Los Angeles", "New York", "San Francisco", "Chi
 
 @MainActor
 final class SearchViewModel: ObservableObject {
+    typealias VideoSearch = (_ query: String, _ maxResults: Int, _ sortType: Int) async throws -> [TikTokVideo]
+
     @Published var query = ""
     @Published var videos: [TikTokVideo] = []
     @Published var isLoading = false
     @Published var hasSearched = false
     @Published var sort: SearchSort = .relevant
+    @Published var searchError: TikTokServiceError?
 
     // Phase 2: locations + map
     @Published var locations: [SearchLocation] = []
@@ -94,6 +97,39 @@ final class SearchViewModel: ObservableObject {
     }
 
     private var locationTask: Task<Void, Never>?
+    private let fetchVideos: VideoSearch
+
+    init(fetchVideos: @escaping VideoSearch = { query, maxResults, sortType in
+        try await TikTokService.fetchVideos(query: query, maxResults: maxResults, sortType: sortType)
+    }) {
+        #if DEBUG
+        if let simulatedError = Self.simulatedErrorForUITesting() {
+            self.fetchVideos = { _, _, _ in throw simulatedError }
+            query = "ramen in Los Angeles"
+            hasSearched = true
+            searchError = simulatedError
+            return
+        }
+        #endif
+        self.fetchVideos = fetchVideos
+    }
+
+    #if DEBUG
+    /// Deterministic simulator/UI-test seam. It is not compiled into Release builds
+    /// and prevents test runs from consuming paid search API calls.
+    private static func simulatedErrorForUITesting() -> TikTokServiceError? {
+        switch ProcessInfo.processInfo.environment["BILU_UI_TEST_TIKTOK_ERROR"] {
+        case "offline": return .offline
+        case "timedOut": return .timedOut
+        case "unauthorized": return .unauthorized
+        case "rateLimited": return .rateLimited(retryAfterSeconds: 42)
+        case "serverUnavailable": return .serverUnavailable
+        case "invalidResponse": return .invalidResponse
+        case "requestFailed": return .requestFailed
+        default: return nil
+        }
+    }
+    #endif
 
     func search() async {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
@@ -101,6 +137,7 @@ final class SearchViewModel: ObservableObject {
 
         // Client-side fast path: if no city hint, prompt user without burning any backend calls.
         if !hasCityHint(in: trimmed) {
+            searchError = nil
             needsCity = true
             suggestedCities = kSuggestedCities
             hasSearched = true
@@ -111,7 +148,9 @@ final class SearchViewModel: ObservableObject {
         }
 
         needsCity = false
+        searchError = nil
         isLoading = true
+        isLoadingLocations = false
         hasSearched = true
         locations = []
         unresolvedVideoIds = []
@@ -119,15 +158,16 @@ final class SearchViewModel: ObservableObject {
         selectedNeighborhoods = []
         locationTask?.cancel()
 
-        videos = await TikTokService.fetchVideos(
-            query: trimmed,
-            maxResults: 25,
-            sortType: sort.rawValue
-        )
+        do {
+            videos = try await fetchVideos(trimmed, 25, sort.rawValue)
+        } catch {
+            videos = []
+            searchError = TikTokServiceError.from(error)
+        }
         isLoading = false
 
         // Kick off location extraction in the background — don't block the grid.
-        if !videos.isEmpty {
+        if searchError == nil, !videos.isEmpty {
             locationTask = Task { [trimmed] in
                 await self.extractLocations(for: videos, searchQuery: trimmed)
             }
@@ -158,6 +198,9 @@ final class SearchViewModel: ObservableObject {
         videos = []
         hasSearched = false
         needsCity = false
+        searchError = nil
+        isLoading = false
+        isLoadingLocations = false
         locations = []
         unresolvedVideoIds = []
         viewMode = .list

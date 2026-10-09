@@ -2,6 +2,21 @@
 xcuserdata/
 *.xcuserstate
 DerivedData/
+/build/
+*.xcarchive/
+*.xcresult/
 
 # macOS
 .DS_Store
+
+# Local web-research cache
+.firecrawl/
+
+# Generated capacity-test reports
+load-tests/*-summary.json
+
+# Local backend CLI state
+/supabase/.temp/
+
+# Local App Review captures and legacy mockups
+/AppStore/review-assets/*.png

@@ -9,6 +9,8 @@ import SwiftData
 struct UserView: View {
     @EnvironmentObject private var store: SavedPlacesStore
     @EnvironmentObject private var coordinator: ProfileCoordinator
+    @EnvironmentObject private var discoveryAllowance: DiscoveryAllowance
+    @EnvironmentObject private var rewardedAds: RewardedAdService
     @StateObject private var viewModel = ProfileViewModel()
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
@@ -20,6 +22,9 @@ struct UserView: View {
 
     @State private var selectedList: SavedListType = .saved
     @State private var selectedPlace: SavedPlace? = nil
+    @State private var showingRewardGate = false
+    @AppStorage(AppDiagnosticsReporter.consentDefaultsKey)
+    private var sharesDiagnostics = false
 
     private var savedPlaces: [SavedPlace] { allPlaces.filter { $0.listType == .saved } }
     private var wantToGoPlaces: [SavedPlace] { allPlaces.filter { $0.listType == .wantToGo } }
@@ -52,7 +57,11 @@ struct UserView: View {
 
                 listsSection
 
+                discoveryAccessSection
+
                 dietarySection
+
+                privacySection
                     .padding(.bottom, 32)
             }
         }
@@ -65,12 +74,17 @@ struct UserView: View {
         .sheet(isPresented: $viewModel.showingDietaryEditor) {
             DietaryPreferencesView(viewModel: viewModel)
         }
+        .sheet(isPresented: $showingRewardGate) {
+            RewardedDiscoveryView()
+                .environmentObject(discoveryAllowance)
+                .environmentObject(rewardedAds)
+        }
         .sheet(item: $selectedPlace) { place in
             RestaurantDetailView(rec: place.asRecommendation) { [] }
                 .environmentObject(store)
         }
         .onAppear { viewModel.refreshPendingShares() }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active { viewModel.refreshPendingShares() }
         }
     }
@@ -169,6 +183,49 @@ struct UserView: View {
         }
     }
 
+    // MARK: - Discovery access
+
+    private var discoveryAccessSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Discoveries")
+
+            Button {
+                Haptics.light()
+                showingRewardGate = true
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: discoveryAllowance.hasRewardedDiscovery ? "checkmark.seal.fill" : "play.rectangle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(AppTheme.sage)
+                        .frame(width: 40, height: 40)
+                        .background(AppTheme.sageLt)
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Rewarded discoveries")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(AppTheme.onSurface)
+                        Text(discoveryAllowance.hasRewardedDiscovery
+                             ? "One discovery unlocked"
+                             : "\(discoveryAllowance.remainingFreeDiscoveries) free discovery left today")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.muted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.subtle)
+                }
+                .padding(16)
+                .background(AppTheme.white)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: AppTheme.shadowColor, radius: 12, x: 0, y: 4)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+        }
+    }
+
     // MARK: - Dietary
 
     private var dietarySection: some View {
@@ -180,6 +237,83 @@ struct UserView: View {
                 value: viewModel.dietarySummary,
                 onTap: { viewModel.showingDietaryEditor = true }
             )
+            .padding(.horizontal, 20)
+        }
+    }
+
+    // MARK: - Privacy
+
+    private var privacySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Privacy")
+
+            VStack(spacing: 0) {
+                Toggle(isOn: $sharesDiagnostics) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Share Diagnostics")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.onSurface)
+                        Text("Send crash and performance reports to help improve Bilu")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.muted)
+                    }
+                }
+                .tint(AppTheme.sage)
+                .padding(16)
+                .onChange(of: sharesDiagnostics) { _, isEnabled in
+                    AppDiagnosticsReporter.shared.setCollectionEnabled(isEnabled)
+                }
+
+                Divider()
+                    .padding(.leading, 16)
+
+                Button {
+                    Haptics.light()
+                    openURL(Config.privacyPolicyURL)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "hand.raised.fill")
+                            .foregroundStyle(AppTheme.sage)
+                        Text("Privacy Policy")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.onSurface)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.subtle)
+                    }
+                    .padding(16)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens Bilu's privacy policy")
+
+                if rewardedAds.privacyOptionsRequired {
+                    Divider()
+                        .padding(.leading, 16)
+
+                    Button {
+                        Haptics.light()
+                        Task { await rewardedAds.presentPrivacyOptions() }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "slider.horizontal.3")
+                                .foregroundStyle(AppTheme.sage)
+                            Text("Ad privacy choices")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(AppTheme.onSurface)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(AppTheme.subtle)
+                        }
+                        .padding(16)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .background(AppTheme.white)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: AppTheme.shadowColor, radius: 12, x: 0, y: 4)
             .padding(.horizontal, 20)
         }
     }
@@ -200,5 +334,7 @@ struct UserView: View {
     return UserView()
         .environmentObject(SavedPlacesStore(context: container.mainContext))
         .environmentObject(ProfileCoordinator())
+        .environmentObject(DiscoveryAllowance.shared)
+        .environmentObject(RewardedAdService.shared)
         .modelContainer(container)
 }

@@ -55,5 +55,10 @@ struct TabBarView: View {
             Haptics.light()
             onSelect(tab)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("tab-\(label.lowercased())")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }

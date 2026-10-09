@@ -17,6 +17,7 @@ enum Tab {
 struct RootTabView: View {
     @State private var selectedTab: Tab = .home
     @State private var hideTabBar: Bool = false
+    @StateObject private var searchViewModel = SearchViewModel()
     @Namespace private var tabNS
     @EnvironmentObject private var coordinator: ProfileCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -30,7 +31,7 @@ struct RootTabView: View {
                 Group {
                     switch selectedTab {
                     case .home:    HomeView(hideTabBar: $hideTabBar)
-                    case .search:  SearchView()
+                    case .search:  SearchView(viewModel: searchViewModel)
                     case .profile: UserView()
                     }
                 }
@@ -48,7 +49,7 @@ struct RootTabView: View {
             }
             .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: hideTabBar)
         }
-        .onChange(of: coordinator.requestedTab) { tab in
+        .onChange(of: coordinator.requestedTab) { _, tab in
             // Profile asks to jump to Home (e.g. re-running a saved vibe).
             guard let tab else { return }
             coordinator.requestedTab = nil
@@ -69,5 +70,7 @@ struct RootTabView: View {
     return RootTabView()
         .environmentObject(SavedPlacesStore(context: container.mainContext))
         .environmentObject(ProfileCoordinator())
+        .environmentObject(DiscoveryAllowance.shared)
+        .environmentObject(RewardedAdService.shared)
         .modelContainer(container)
 }

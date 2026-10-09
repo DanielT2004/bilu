@@ -27,6 +27,7 @@ final class SavedPlace {
     var address: String?
     var phone: String?
     var website: String?
+    var parking: String?
     var placeId: String?
     var latitude: Double?
     var longitude: Double?
@@ -55,6 +56,7 @@ final class SavedPlace {
         self.address = rec.address
         self.phone = rec.phone
         self.website = rec.website
+        self.parking = rec.parking
         self.placeId = rec.placeId
         self.latitude = rec.latitude
         self.longitude = rec.longitude
@@ -87,6 +89,7 @@ extension SavedPlace {
             address: address,
             phone: phone,
             website: website,
+            parking: parking,
             placeId: placeId,
             photoRefs: photoRefs,
             reviews: nil

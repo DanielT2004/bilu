@@ -6,6 +6,8 @@
 import Foundation
 
 enum PromptBuilder {
+    // Keep in sync with the server's MAX_RECOMMENDATIONS.
+    private static let maxRecommendations = 6
 
     static func effectiveLocation(for selection: VibeSelection) -> String {
         let t = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -46,9 +48,9 @@ enum PromptBuilder {
                let lat = selection.latitude,
                let lng = selection.longitude {
                 let coordLine = " (\(String(format: "%.4f", lat))° N, \(String(format: "%.4f", abs(lng)))° W)"
-                return "Find 5 exceptional spots for \(selection.occasion) near \(location)\(coordLine), within \(String(format: "%.1f", selection.radiusMiles)) miles."
+                return "Find up to \(maxRecommendations) exceptional spots for \(selection.occasion) near \(location)\(coordLine), within \(String(format: "%.1f", selection.radiusMiles)) miles."
             }
-            return "Find 5 exceptional spots for \(selection.occasion) in the greater \(location) area."
+            return "Find up to \(maxRecommendations) exceptional spots for \(selection.occasion) in the greater \(location) area."
         }()
 
         // --- Mission lines (replaces both USER CONTEXT and Discovery Logic) ---
@@ -180,9 +182,10 @@ enum PromptBuilder {
         // --- Task ---
         let taskBlock = """
 
-        Return up to 5 results as JSON: { "recommendations": [{ "name": "", "dish": "", "explanation": "", "mapsUrl": "" }] }
-        Fewer than 5 is fine. If nothing fits, return { "recommendations": [] }. Always respond with JSON only — never refuse, never apologize, never write prose.
+        Return up to \(maxRecommendations) results as JSON: { "recommendations": [{ "name": "", "dish": "", "explanation": "", "mapsUrl": "", "parking": "" }] }
+        Aim for \(maxRecommendations) distinct matching spots when available. Return fewer when there aren't enough suitable places; never invent places or repeat a restaurant to fill the list. If nothing fits, return { "recommendations": [] }. Always respond with JSON only — never refuse, never apologize, never write prose.
         Each explanation should name the vibe and why the spot fits.
+        For each parking value, use concise verified guidance such as "Private lot", "Valet parking", "Street parking nearby", or "No dedicated parking". If parking cannot be verified, use "Not confirmed"; never guess.
         """
 
         return """

@@ -5,7 +5,10 @@
 
 import Foundation
 
-struct VibeSelection: Codable {
+/// A plain value model used by UI and persistence. Keep its Codable
+/// conformance independent of the app target's default MainActor isolation so
+/// SwiftData can encode and decode it from model accessors safely.
+nonisolated struct VibeSelection: Codable {
     var occasion: String
     /// v3 "Key question" selection (single-select).
     var keyQuestionAnswer: String

@@ -1,9 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { fetchPhotoUri } from "../_shared/places.ts";
+import {
+  consumePaidAPIQuota,
+  paidAPIAccessErrorResponse,
+  quotaHeaders,
+  quotaPolicy,
+  requireAuthenticatedUser,
+} from "../_shared/paid_api_guard.ts";
+
+const PAID_API_QUOTA = quotaPolicy("place_photos", "PLACE_PHOTOS", 40, 300, 10_000);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Expose-Headers": "retry-after, x-ratelimit-remaining, x-daily-budget-remaining, x-global-daily-budget-remaining",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -23,6 +33,7 @@ serve(async (req: Request) => {
   }
 
   try {
+    const user = await requireAuthenticatedUser(req);
     const placesApiKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
     if (!placesApiKey) {
       return new Response(JSON.stringify({ error: "GOOGLE_PLACES_API_KEY not configured" }), {
@@ -48,7 +59,6 @@ serve(async (req: Request) => {
       {
         headers: {
           "apikey": SUPABASE_SERVICE_ROLE_KEY,
-          "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
       }
     );
@@ -71,7 +81,7 @@ serve(async (req: Request) => {
     }
 
     // Refs[0] is the hero (already resolved during enrich) — resolve the rest at 800px
-    const galleryRefs = rows[0].photo_refs.slice(1);
+    const galleryRefs = rows[0].photo_refs.slice(1, 11);
     if (!galleryRefs.length) {
       return new Response(JSON.stringify({ photos: [] }), {
         status: 200,
@@ -81,6 +91,12 @@ serve(async (req: Request) => {
 
     console.log(logTag, "Resolving", galleryRefs.length, "gallery refs at 800px");
 
+    const quota = await consumePaidAPIQuota(
+      user.id,
+      PAID_API_QUOTA,
+      galleryRefs.length,
+    );
+
     const photos = (
       await Promise.all(galleryRefs.map((ref) => fetchPhotoUri(ref, placesApiKey, logTag, 800)))
     ).filter((u): u is string => !!u);
@@ -89,9 +105,15 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ photos }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        ...quotaHeaders(quota),
+        "Content-Type": "application/json",
+      },
     });
   } catch (err) {
+    const accessResponse = paidAPIAccessErrorResponse(err, corsHeaders);
+    if (accessResponse) return accessResponse;
     const message = err instanceof Error ? err.message : String(err);
     console.error("[photos] 500:", message);
     return new Response(JSON.stringify({ error: message }), {

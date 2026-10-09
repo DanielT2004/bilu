@@ -2,39 +2,37 @@
 //  PersistenceController.swift
 //  bilu
 //
-//  Single place that builds the SwiftData ModelContainer. A bare `try!` here
-//  would hard-crash the app on every launch if the on-disk store is ever
-//  corrupted or a schema migration fails — this recovers by resetting the
-//  store once instead of crash-looping the user forever.
+//  Single place that builds the SwiftData ModelContainer. A persistent-store
+//  failure must never erase the user's saved places. The original store stays
+//  untouched while the app falls back to a temporary in-memory container.
 //
 
 import Foundation
+import OSLog
 import SwiftData
 
 enum PersistenceController {
     static let schema = Schema([SavedPlace.self, SavedVibe.self])
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.simonsoloman.bilu",
+        category: "Persistence"
+    )
 
     /// The real, persisted container used at app launch.
     static func makeContainer() -> ModelContainer {
         let config = ModelConfiguration(schema: schema)
-        if let container = try? ModelContainer(for: schema, configurations: [config]) {
+        do {
+            let container = try ModelContainer(for: schema, configurations: [config])
             return container
+        } catch {
+            logger.fault(
+                "Persistent store could not be opened; preserving it and using an in-memory fallback. Error: \(error.localizedDescription, privacy: .public)"
+            )
         }
 
-        // Store is corrupted or the schema migration failed — remove the store
-        // and start fresh rather than crashing on every future launch too.
-        if let storeURL = config.url as URL?, storeURL.isFileURL {
-            for suffix in ["", "-wal", "-shm"] {
-                try? FileManager.default.removeItem(atPath: storeURL.path + suffix)
-            }
-        }
-        if let container = try? ModelContainer(for: schema, configurations: [config]) {
-            return container
-        }
-
-        // Environment can't support on-disk persistence at all (e.g. disk full,
-        // sandbox permissions). Fall back to in-memory so the app still launches
-        // in a degraded state instead of hard-crashing.
+        // The persistent files remain in place for recovery by a future app update.
+        // Saves made during this degraded session are intentionally temporary so a
+        // second database never diverges from the preserved source of truth.
         guard let inMemory = try? ModelContainer(
             for: schema,
             configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]

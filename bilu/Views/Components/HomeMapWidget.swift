@@ -49,20 +49,14 @@ private final class CenterPinView: MKAnnotationView {
         dot.layer.shadowRadius = 3
         dot.layer.shadowOffset = CGSize(width: 0, height: 1)
         addSubview(dot)
-        applyColors()
+        ring.backgroundColor = UIColor { traits in
+            mapAccent(dark: traits.userInterfaceStyle == .dark, alpha: 0.18)
+        }
+        dot.backgroundColor = UIColor { traits in
+            mapAccent(dark: traits.userInterfaceStyle == .dark, alpha: 1)
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
-
-    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
-        super.traitCollectionDidChange(previous)
-        if traitCollection.hasDifferentColorAppearance(comparedTo: previous) { applyColors() }
-    }
-
-    private func applyColors() {
-        let dark = traitCollection.userInterfaceStyle == .dark
-        ring.backgroundColor = mapAccent(dark: dark, alpha: 0.18)
-        dot.backgroundColor  = mapAccent(dark: dark, alpha: 1)
-    }
 }
 
 // MARK: - Arc handle view

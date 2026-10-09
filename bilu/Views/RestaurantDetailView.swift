@@ -798,40 +798,40 @@ struct RestaurantDetailView: View {
     // MARK: - Visit section
 
     private var visitSection: some View {
-        Group {
-            if rec.address != nil || rec.isOpen != nil || rec.phone != nil {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Visit")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.2)
-                        .textCase(.uppercase)
-                        .foregroundStyle(AppTheme.muted)
-                    if let address = rec.address {
-                        Button(action: openMaps) {
-                            Text(address)
-                                .font(.system(size: 14))
-                                .foregroundStyle(Color(hex: "45483e"))
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if let open = rec.isOpen {
-                        Text(open ? "Open now" : "Currently closed")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(open ? AppTheme.openGreen : AppTheme.destructive)
-                    }
-                    if let phone = rec.phone {
-                        Button(action: { dialPhone(phone) }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "phone.fill").font(.system(size: 13))
-                                Text(phone).font(.system(size: 14))
-                            }
-                            .foregroundStyle(AppTheme.muted)
-                        }
-                        .buttonStyle(.plain)
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Visit")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(AppTheme.muted)
+            if let address = rec.address {
+                Button(action: openMaps) {
+                    Text(address)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(hex: "45483e"))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(.plain)
+            }
+            if let open = rec.isOpen {
+                Text(open ? "Open now" : "Currently closed")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(open ? AppTheme.openGreen : AppTheme.destructive)
+            }
+            Label(rec.parkingDisplayText, systemImage: "parkingsign.circle.fill")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(AppTheme.muted)
+                .accessibilityLabel("Parking: \(rec.parkingDisplayText)")
+            if let phone = rec.phone {
+                Button(action: { dialPhone(phone) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "phone.fill").font(.system(size: 13))
+                        Text(phone).font(.system(size: 14))
+                    }
+                    .foregroundStyle(AppTheme.muted)
+                }
+                .buttonStyle(.plain)
             }
         }
     }

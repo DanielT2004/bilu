@@ -79,10 +79,10 @@ Each UI choice maps to a sentence. For example, picking the "🔥 Trending" vibe
 
 The final prompt has four parts:
 
-1. **Opening line** — "Find 5 exceptional spots for *[occasion]* in *[location]*" (or "within *N* miles" if the user used the radius map widget).
+1. **Opening line** — "Find up to 6 exceptional spots for *[occasion]* in *[location]*" (or "within *N* miles" if the user used the radius map widget).
 2. **Mission lines** — occasion + key question + food feelings + vibe.
 3. **Constraints** — only added if the user opened the fine-tune sheet (price, party size, open now, parking, accessibility).
-4. **Task block** — "Return up to 5 results as JSON: …".
+4. **Task block** — "Return up to 6 results as JSON: …". Aim for six distinct matches when available, with fewer results when suitable places are scarce.
 
 The prompt is intentionally small and human-readable. We do **not** send a JSON schema in the user prompt; we lean on Gemini's `responseMimeType: application/json` plus a tight system instruction.
 
@@ -102,20 +102,18 @@ The `relaxed: true` flag travels back up to the iOS client. If Layer 3 was used,
 
 - Temperature 0.1 is great when Gemini knows the area well. When it doesn't, it sometimes returns `{"recommendations": []}` rather than guess — which is technically correct but useless to the user.
 - Temperature 0.7 reshuffles which grounding chunks Gemini reaches for. About 5–10% of strict-empty calls succeed at this layer.
-- Temperature 0.4 + a relaxed prompt is the safety net. We strip the user's vibe/occasion constraints and ask for "5 popular, highly-rated spots". Almost nothing fails here.
+- Temperature 0.4 + a relaxed prompt is the safety net. We strip the user's vibe/occasion constraints and ask for "up to 6 popular, highly-rated spots", allowing fewer when suitable places are scarce.
 
 The retry ladder is loosening *creativity* (temperature) at Layer 2 and loosening *the prompt itself* at Layer 3. They are different knobs.
 
-### 3.4 Two-phase result reveal
+### 3.4 Two-phase results and live verification
 
-Gemini gives us names and explanations, but no photos, ratings, hours, or coordinates. We could fetch all of that before showing anything, but that would mean the user stares at a spinner for 5–7 seconds.
+Gemini gives us names and explanations, while Places provides photos, ratings, opening status, and coordinates. The response is split into two phases:
 
-Instead, we split the response into two phases:
+- **Phase 1 — `/recommendations`:** Returns up to 6 candidates with name, dish, explanation, and a `mapsUrl`. The server caps model output at six, including fallback results.
+- **Phase 2 — `/enrich`:** [GeminiService.swift](bilu/Services/GeminiService.swift) sends the candidates to [enrich/index.ts](supabase/functions/enrich/index.ts), which looks them up concurrently in Google Places and returns the verified results.
 
-- **Phase 1 — `/recommendations` (≈2s):** Returns 5 cards with name, dish, explanation, and a `mapsUrl`. The UI flips to the `.reveal` step the moment this returns.
-- **Phase 2 — `/enrich` (≈3–5s, in parallel):** [GeminiService.swift](bilu/Services/GeminiService.swift) kicks off a second request that hits [enrich/index.ts](supabase/functions/enrich/index.ts), which fans out to Google Places. As enrichment completes, photos and ratings stream into the cards.
-
-This is the same pattern airlines use: show the flight list first, fill in seat counts second. The user never waits longer than they have to.
+The current client additionally waits for Places to confirm that a restaurant is open before showing it. Closed or unverified candidates are removed, so the final list can contain fewer than six options. `/enrich` accepts at most six candidates and charges quota per candidate; its existing per-user and global budgets remain unchanged. Deploy both `recommendations` and `enrich` before releasing the updated client.
 
 ---
 
@@ -408,6 +406,8 @@ The key insight: **a partial result is almost always better than no result.** A 
 These are rough estimates. Confirm with current Google / Apify pricing before making business decisions.
 
 ### 8.1 Vibe Search (Home tab)
+
+The estimates below describe the historical five-candidate search, not current pricing. The six-candidate limit can increase per-search Places work by 20%: on a cold cache, up to six text searches, six detail lookups, and six hero-photo requests; on a warm cache, up to six live opening-status checks and six hero-photo requests. Gemini still makes one call on success and at most three attempts; each attempt is capped at 2,048 output tokens. Retry counts, cache behavior, timeouts, and paid API budgets are unchanged. Re-measure latency and consult current provider pricing before using these historical costs for planning.
 
 | Component | Calls | Unit cost | Cost |
 |-----------|------:|----------:|-----:|

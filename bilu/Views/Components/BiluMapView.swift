@@ -78,7 +78,7 @@ struct BiluMapView: View {
                 }
             }
             .onAppear { mapPosition = .region(region) }
-            .onChange(of: annotated.count) { _ in mapPosition = .region(region) }
+            .onChange(of: annotated.count) { mapPosition = .region(region) }
             .task(id: annotated.count) { await runPinStagger() }
             .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

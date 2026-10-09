@@ -11,6 +11,8 @@ struct biluApp: App {
     let container: ModelContainer
     @StateObject private var savedStore: SavedPlacesStore
     @StateObject private var coordinator = ProfileCoordinator()
+    @StateObject private var discoveryAllowance = DiscoveryAllowance.shared
+    @StateObject private var rewardedAds = RewardedAdService.shared
 
     init() {
         // Default URLCache.shared is far too small to hold the food-photo icons,
@@ -19,6 +21,7 @@ struct biluApp: App {
         // long-lived Cache-Control headers, so a bigger cache is enough to make
         // repeat loads come from disk instead of the network.
         URLCache.shared = URLCache(memoryCapacity: 20 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024)
+        AppDiagnosticsReporter.shared.startIfConsented()
 
         let container = PersistenceController.makeContainer()
         self.container = container
@@ -30,6 +33,9 @@ struct biluApp: App {
             RootTabView()
                 .environmentObject(savedStore)
                 .environmentObject(coordinator)
+                .environmentObject(discoveryAllowance)
+                .environmentObject(rewardedAds)
+                .task { await rewardedAds.configure() }
         }
         .modelContainer(container)
     }

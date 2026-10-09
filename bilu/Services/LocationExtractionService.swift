@@ -34,8 +34,7 @@ enum LocationExtractionService {
         latitude: Double? = nil,
         longitude: Double? = nil
     ) async -> LocationExtractionResult {
-        guard !videos.isEmpty,
-              let url = URL(string: "\(Config.apiBaseURL)/tiktok-locations") else {
+        guard !videos.isEmpty else {
             return LocationExtractionResult(locations: [], unresolvedVideoIds: videos.map { $0.videoId })
         }
 
@@ -76,16 +75,9 @@ enum LocationExtractionService {
             return LocationExtractionResult(locations: [], unresolvedVideoIds: videos.map { $0.videoId })
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if !Config.supabaseAnonKey.isEmpty {
-            request.setValue("Bearer \(Config.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        }
-        request.timeoutInterval = 30
-        request.httpBody = httpBody
-
         do {
+            var request = try await AuthenticatedAPIRequest.post(path: "tiktok-locations", timeout: 30)
+            request.httpBody = httpBody
             let (data, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
 
