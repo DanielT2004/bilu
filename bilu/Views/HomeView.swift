@@ -24,6 +24,8 @@ struct HomeView: View {
     /// Bound from RootTabView so the tab bar can slide off-screen during survey
     /// steps and slide back at .occasion / .reveal. Single owner: HomeView.
     @Binding var hideTabBar: Bool
+    /// Bumped by RootTabView when Explore is tapped while already selected.
+    var reselectCount = 0
     @StateObject private var viewModel = HomeViewModel()
     @EnvironmentObject private var savedStore: SavedPlacesStore
     @EnvironmentObject private var coordinator: ProfileCoordinator
@@ -114,10 +116,8 @@ struct HomeView: View {
         .onChange(of: coordinator.pendingVibeToken) {
             consumePendingVibeIfNeeded()
         }
-        .onDisappear {
-            // If the user switches to Search/Profile mid-survey, restore the tab
-            // bar so the destination view shows it normally.
-            hideTabBar = false
+        .onChange(of: reselectCount) {
+            viewModel.reset()
         }
         .onChange(of: reduceMotion) { _, newValue in
             viewModel.reduceMotionPreference = newValue

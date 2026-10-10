@@ -7,6 +7,8 @@ import SwiftUI
 import SwiftData
 
 struct UserView: View {
+    /// RootTabView keeps this view alive while hidden; refresh when it is shown again.
+    var isActive = true
     @EnvironmentObject private var store: SavedPlacesStore
     @EnvironmentObject private var coordinator: ProfileCoordinator
     @EnvironmentObject private var discoveryAllowance: DiscoveryAllowance
@@ -84,6 +86,9 @@ struct UserView: View {
                 .environmentObject(store)
         }
         .onAppear { viewModel.refreshPendingShares() }
+        .onChange(of: isActive) { _, active in
+            if active { viewModel.refreshPendingShares() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { viewModel.refreshPendingShares() }
         }
