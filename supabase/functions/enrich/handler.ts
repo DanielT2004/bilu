@@ -105,8 +105,8 @@ export async function handleEnrichment(
     console.log(
       "[enrich] Enriching",
       body.recommendations.length,
-      "recommendations for",
-      searchArea,
+      "recommendations; hasSearchArea:",
+      searchArea.length > 0,
     );
 
     const results = await Promise.all(

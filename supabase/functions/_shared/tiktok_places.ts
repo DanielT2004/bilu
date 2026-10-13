@@ -198,23 +198,15 @@ ${JSON.stringify(payload, null, 2)}`;
   console.log("[tiktok-places] ── GEMINI CALL ──");
   console.log("[tiktok-places] Model:", GEMINI_MODEL);
   console.log("[tiktok-places] Videos:", videos.length);
-  console.log("[tiktok-places] Query:", searchQuery);
+  // Owner decision 4: log lengths and counts only — never the query, caption,
+  // transcript or prompt text.
+  console.log("[tiktok-places] Query length:", searchQuery.length);
   console.log("[tiktok-places] Prompt size:", prompt.length, "chars");
   for (let i = 0; i < videos.length; i++) {
-    const v = videos[i];
     const t = transcripts[i] || "";
-    const transcriptPreview = t
-      ? `"${t.slice(0, 120)}${t.length > 120 ? "..." : ""}"`
-      : "MISSING";
     console.log(
-      `  [${
-        v.videoId.slice(0, 12)
-      }] desc(${v.desc.length}) transcript(${t.length})`,
+      `  [video ${i}] desc(${videos[i].desc.length}) transcript(${t.length})`,
     );
-    console.log(
-      `           desc: "${v.desc.slice(0, 80).replace(/\n/g, " ")}"`,
-    );
-    console.log(`           transcript: ${transcriptPreview}`);
   }
 
   const emptyFallback = (): GeminiResponse => ({
@@ -283,7 +275,6 @@ ${JSON.stringify(payload, null, 2)}`;
   const rawText = response.text ?? "";
   console.log("[tiktok-places] ── GEMINI RAW RESPONSE ──");
   console.log("[tiktok-places] Raw text length:", rawText.length);
-  console.log("[tiktok-places] Raw text:", rawText.slice(0, 3000));
 
   if (!rawText.trim()) {
     console.warn("[tiktok-places] Gemini returned empty text");
@@ -299,22 +290,20 @@ ${JSON.stringify(payload, null, 2)}`;
     if (!parsed || !Array.isArray(parsed.videos)) {
       throw new Error("Response missing 'videos' array");
     }
-    console.log(`[tiktok-places] queryCity: ${parsed.queryCity ?? "null"}`);
-    for (const v of parsed.videos) {
-      const summary = v.places?.length
-        ? v.places.map((p) =>
-          `${p.name}${p.area ? ` (${p.area})` : ""}[${p.confidence}]`
-        ).join("; ")
-        : "[]";
-      console.log(`  [${v.videoId?.slice(0, 10)}] places: ${summary}`);
-    }
+    console.log(
+      `[tiktok-places] queryCity present: ${Boolean(parsed.queryCity?.trim())}`,
+    );
+    parsed.videos.forEach((v, i) => {
+      console.log(`  [video ${i}] places: ${v.places?.length ?? 0}`);
+    });
     return parsed;
   } catch (e) {
+    // Error name only: V8 JSON.parse messages quote the input text.
     console.error(
       "[tiktok-places] Gemini JSON parse failed:",
-      e,
-      "snippet:",
-      cleaned.slice(0, 400),
+      e instanceof Error ? e.name : typeof e,
+      "length:",
+      cleaned.length,
     );
     return emptyFallback();
   }
@@ -355,7 +344,7 @@ async function geocodePlace(
   // 1. Resolve placeId — name cache or textSearch
   let placeId = await getCachedPlaceIdByName(nameKey);
   if (placeId) {
-    console.log(`[cache] hit name_key="${nameKey}" → ${placeId}`);
+    console.log("[cache] name_key hit");
   } else {
     const searchArea = area ? `${area} ${queryCity}` : queryCity;
     placeId = await resolvePlaceIdByTextSearch(
@@ -372,7 +361,7 @@ async function geocodePlace(
   // 2. Resolve metadata — places_cache or Place Details
   const cached = await getCachedPlace(placeId);
   if (cached) {
-    console.log(`[cache] hit place_id=${placeId}`);
+    console.log("[cache] place_id hit");
     if (cached.latitude == null || cached.longitude == null) return null;
     return {
       placeId,
@@ -556,7 +545,7 @@ function applyPerVideoSoloCap(tallies: NameTally[]): NameTally[] {
   }
 
   const keptSolos: NameTally[] = [];
-  for (const [videoId, solos] of soloByVideo) {
+  for (const solos of soloByVideo.values()) {
     solos.sort((a, b) => {
       const cmp = confidenceRank(b.bestConfidence) -
         confidenceRank(a.bestConfidence);
@@ -565,9 +554,9 @@ function applyPerVideoSoloCap(tallies: NameTally[]): NameTally[] {
     const kept = Math.min(solos.length, PER_VIDEO_SOLO_CAP);
     if (solos.length > PER_VIDEO_SOLO_CAP) {
       console.log(
-        `[tiktok-places] cap: video=${
-          videoId.slice(0, 12)
-        } solos=${solos.length} kept=${kept} dropped=${solos.length - kept}`,
+        `[tiktok-places] cap: solos=${solos.length} kept=${kept} dropped=${
+          solos.length - kept
+        }`,
       );
     }
     keptSolos.push(...solos.slice(0, kept));
@@ -648,7 +637,7 @@ export async function locatePlaces(
   );
   if (!cityCoord) {
     console.warn(
-      `[tiktok-places] Could not geocode queryCity="${queryCity}", proceeding without bias`,
+      `[tiktok-places] Could not geocode queryCity (length ${queryCity.length}), proceeding without bias`,
     );
   }
   const cityBias: LocationBias = {
@@ -665,19 +654,15 @@ export async function locatePlaces(
   console.log(
     `[tiktok-places] Tally: ${totalRaw} unique names; after per-video cap: ${capped.length}; geocoding top ${toGeocode.length}`,
   );
-  for (const t of toGeocode) {
-    const voteSummary = t.areaVotes.size === 0
-      ? ""
-      : ` votes={${
-        Array.from(t.areaVotes.entries()).map(([k, v]) => `${k}:${v.count}`)
-          .join(",")
-      }}`;
+  toGeocode.forEach((t, i) => {
     console.log(
-      `  → "${t.name}"${t.area ? ` (${t.area})` : ""}${voteSummary} preScore=${
+      `  → #${i} hasArea=${
+        Boolean(t.area)
+      } areaVotes=${t.areaVotes.size} preScore=${
         t.preScore.toFixed(2)
       } views=${t.totalViews} videos=${t.videoIds.size}`,
     );
-  }
+  });
 
   // 6. Geocode in parallel through the two-layer cache
   const geocodeStart = Date.now();
@@ -762,11 +747,9 @@ export async function locatePlaces(
   );
   for (const l of locations) {
     console.log(
-      `  #${
-        l.rank + 1
-      }. ${l.placeName} | views=${l.totalViews} videos=${l.videoCount} rating=${
+      `  #${l.rank + 1}. views=${l.totalViews} videos=${l.videoCount} rating=${
         l.rating ?? "?"
-      } score=${l.score} | ${l.neighborhood ?? "(no nbhd)"}`,
+      } score=${l.score} hasNeighborhood=${Boolean(l.neighborhood)}`,
     );
   }
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

@@ -100,9 +100,10 @@ export async function handleTikTokLocations(
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("[tiktok-locations] INCOMING REQUEST");
     console.log(`  videos:     ${body.videos.length}`);
-    console.log(`  searchQuery: "${body.searchQuery}"`);
+    // Owner decision 4: lengths and booleans only, never the query or coords.
+    console.log(`  searchQuery length: ${body.searchQuery?.length ?? 0}`);
     console.log(
-      `  coords:     ${body.latitude ?? "?"}, ${body.longitude ?? "?"}`,
+      `  hasCoords:  ${body.latitude != null && body.longitude != null}`,
     );
 
     const result = await locatePlaces(body, geminiApiKey, placesApiKey);

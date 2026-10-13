@@ -183,7 +183,7 @@ export async function geocodeCityToCoord(
   apiKey: string,
   logTag: string,
 ): Promise<{ lat: number; lng: number } | null> {
-  logPlaces(logTag, "geocodeCity: request", { city });
+  logPlaces(logTag, "geocodeCity: request", { cityLength: city.length });
 
   const res = await fetch(
     "https://places.googleapis.com/v1/places:searchText",
@@ -218,15 +218,11 @@ export async function geocodeCityToCoord(
 
   const loc = data?.places?.[0]?.location;
   if (loc?.latitude === undefined || loc?.longitude === undefined) {
-    logPlacesWarn(logTag, "geocodeCity: no location returned for", city);
+    logPlacesWarn(logTag, "geocodeCity: no location returned");
     return null;
   }
 
-  logPlaces(logTag, "geocodeCity: resolved", {
-    city,
-    lat: loc.latitude,
-    lng: loc.longitude,
-  });
+  logPlaces(logTag, "geocodeCity: resolved");
   return { lat: loc.latitude, lng: loc.longitude };
 }
 
@@ -244,27 +240,19 @@ export function parsePlaceIdFromMapsUrl(
     decoded = mapsUrl;
   }
 
-  logPlaces(
-    logTag,
-    "parsePlaceId: raw mapsUrl (truncated)",
-    mapsUrl.slice(0, 200),
-  );
+  logPlaces(logTag, "parsePlaceId: mapsUrl length", mapsUrl.length);
 
   const queryMatch = decoded.match(
     /(?:query_place_id|place_id)=([A-Za-z0-9_-]{27,})/,
   );
   if (queryMatch) {
-    logPlaces(
-      logTag,
-      "parsePlaceId: matched query_place_id / place_id",
-      queryMatch[1],
-    );
+    logPlaces(logTag, "parsePlaceId: matched query_place_id / place_id");
     return queryMatch[1];
   }
 
   const chijMatch = decoded.match(/ChIJ[A-Za-z0-9_-]{20,}/);
   if (chijMatch) {
-    logPlaces(logTag, "parsePlaceId: matched ChIJ token", chijMatch[0]);
+    logPlaces(logTag, "parsePlaceId: matched ChIJ token");
     return chijMatch[0];
   }
 
@@ -312,7 +300,7 @@ export async function resolvePlaceIdByTextSearch(
   if (includedType) requestBody.includedType = includedType;
 
   logPlaces(logTag, "textSearch: request", {
-    textQuery,
+    textQueryLength: textQuery.length,
     hasBias: !!locationBias,
     includedType: includedType ?? "(none)",
   });
@@ -343,7 +331,9 @@ export async function resolvePlaceIdByTextSearch(
   try {
     data = JSON.parse(bodyText);
   } catch {
-    logPlacesWarn(logTag, "textSearch: invalid JSON", bodyText.slice(0, 300));
+    logPlacesWarn(logTag, "textSearch: invalid JSON", {
+      bodyLength: bodyText.length,
+    });
     return null;
   }
 
@@ -356,7 +346,7 @@ export async function resolvePlaceIdByTextSearch(
   }
 
   const placeId = rawId.startsWith("places/") ? rawId.slice(7) : rawId;
-  logPlaces(logTag, "textSearch: resolved place id", { rawId, placeId });
+  logPlaces(logTag, "textSearch: resolved place id");
   return placeId;
 }
 
@@ -368,7 +358,7 @@ export async function fetchPlaceDetails(
   const url = `https://places.googleapis.com/v1/places/${
     encodeURIComponent(placeId)
   }`;
-  logPlaces(logTag, "placeDetails: GET", url);
+  logPlaces(logTag, "placeDetails: GET");
 
   const res = await fetch(url, {
     headers: {
@@ -400,7 +390,6 @@ export async function fetchPlaceDetails(
   if (!res.ok) {
     logPlacesWarn(logTag, "placeDetails: HTTP error", {
       status: res.status,
-      placeId,
       bodySnippet: bodyText.slice(0, 500),
     });
     return empty;
@@ -430,7 +419,9 @@ export async function fetchPlaceDetails(
   try {
     data = JSON.parse(bodyText);
   } catch {
-    logPlacesWarn(logTag, "placeDetails: invalid JSON", bodyText.slice(0, 300));
+    logPlacesWarn(logTag, "placeDetails: invalid JSON", {
+      bodyLength: bodyText.length,
+    });
     return empty;
   }
 
@@ -471,13 +462,15 @@ export async function fetchPlaceDetails(
     }))
     .filter((r) => r.text.length > 0);
 
-  logPlaces(logTag, "placeDetails: location", { latitude, longitude });
+  logPlaces(logTag, "placeDetails: hasLocation", {
+    hasLocation: latitude !== undefined && longitude !== undefined,
+  });
   logPlaces(logTag, "placeDetails: rating/reviews/open", {
     rating,
     reviewCount,
     isOpen,
   });
-  logPlaces(logTag, "placeDetails: neighborhood", neighborhood ?? "(none)");
+  logPlaces(logTag, "placeDetails: hasNeighborhood", Boolean(neighborhood));
   logPlaces(logTag, "placeDetails: review count fetched", reviews.length);
 
   return {
@@ -520,7 +513,6 @@ export async function fetchCurrentOpenStatus(
   if (!res.ok) {
     logPlacesWarn(logTag, "openStatus: HTTP error", {
       status: res.status,
-      placeId,
       bodySnippet: bodyText.slice(0, 300),
     });
     return undefined;
@@ -531,10 +523,12 @@ export async function fetchCurrentOpenStatus(
       regularOpeningHours?: { openNow?: boolean };
     };
     const isOpen = data.regularOpeningHours?.openNow;
-    logPlaces(logTag, "openStatus: live", { placeId, isOpen });
+    logPlaces(logTag, "openStatus: live", { isOpen });
     return isOpen;
   } catch {
-    logPlacesWarn(logTag, "openStatus: invalid JSON", bodyText.slice(0, 300));
+    logPlacesWarn(logTag, "openStatus: invalid JSON", {
+      bodyLength: bodyText.length,
+    });
     return undefined;
   }
 }
@@ -550,7 +544,7 @@ export async function fetchPhotoUri(
     : `${photoName}/media`;
   const mediaUrl =
     `https://places.googleapis.com/v1/${resource}?maxWidthPx=${maxWidthPx}&skipHttpRedirect=true`;
-  logPlaces(logTag, "photoMedia: GET (truncated)", mediaUrl.slice(0, 180));
+  logPlaces(logTag, "photoMedia: GET", { maxWidthPx });
 
   const res = await fetch(mediaUrl, { headers: { "X-Goog-Api-Key": apiKey } });
 
@@ -567,21 +561,21 @@ export async function fetchPhotoUri(
   try {
     data = JSON.parse(bodyText);
   } catch {
-    logPlacesWarn(logTag, "photoMedia: invalid JSON", bodyText.slice(0, 300));
+    logPlacesWarn(logTag, "photoMedia: invalid JSON", {
+      bodyLength: bodyText.length,
+    });
     return null;
   }
 
   const photoUri = data?.photoUri ?? null;
   if (!photoUri) {
-    logPlacesWarn(logTag, "photoMedia: missing photoUri", data);
+    logPlacesWarn(logTag, "photoMedia: missing photoUri");
     return null;
   }
 
-  logPlaces(
-    logTag,
-    "photoMedia: got photoUri (truncated)",
-    photoUri.slice(0, 120) + "…",
-  );
+  logPlaces(logTag, "photoMedia: got photoUri", {
+    photoUriLength: photoUri.length,
+  });
   return photoUri;
 }
 
@@ -592,11 +586,11 @@ export async function enrichRecommendation(
   searchArea: string,
   groundingPlaces: GroundingPlace[],
 ): Promise<{ rec: Recommendation; error: string | null }> {
-  const logTag = `[#${index} "${rec.name}"]`;
+  const logTag = `[#${index}]`;
 
   logPlaces(logTag, "── enrich start ──", {
     mapsUrlLen: rec.mapsUrl?.length ?? 0,
-    searchArea,
+    hasSearchArea: searchArea.length > 0,
   });
 
   // ── 1. Resolve place ID ───────────────────────────────────────────────────
@@ -605,7 +599,7 @@ export async function enrichRecommendation(
   if (!placeId) {
     placeId = findPlaceIdFromGrounding(rec.name, groundingPlaces);
     if (placeId) {
-      logPlaces(logTag, "placeId resolved from grounding chunks:", placeId);
+      logPlaces(logTag, "placeId resolved from grounding chunks");
     }
   }
 
@@ -629,7 +623,7 @@ export async function enrichRecommendation(
   const cached = await getCachedPlace(placeId);
 
   if (cached) {
-    logPlaces(logTag, "CACHE HIT", placeId);
+    logPlaces(logTag, "CACHE HIT");
 
     // Cached is_open reflects the instant this metadata row was written and can
     // be days old. Feed eligibility always requires a live status check.
@@ -692,7 +686,7 @@ export async function enrichRecommendation(
   }
 
   // ── 3. Cache miss — fetch from Google Places ──────────────────────────────
-  logPlaces(logTag, "CACHE MISS — fetching from Places API", placeId);
+  logPlaces(logTag, "CACHE MISS — fetching from Places API");
 
   const {
     photoNames,
@@ -724,7 +718,7 @@ export async function enrichRecommendation(
 
   if (photoNames.length === 0) {
     const msg =
-      `${logTag} ENRICHMENT_FAILED: Place Details returned no photo names (placeId=${placeId})`;
+      `${logTag} ENRICHMENT_FAILED: Place Details returned no photo names`;
     logPlacesWarn(msg);
     // Still write metadata to cache even without photos
     await upsertCachedPlace({
@@ -748,8 +742,7 @@ export async function enrichRecommendation(
   const heroUri = await fetchPhotoUri(photoNames[0], placesApiKey, logTag, 400);
 
   if (!heroUri) {
-    const msg =
-      `${logTag} ENRICHMENT_FAILED: hero photo fetch failed (placeId=${placeId})`;
+    const msg = `${logTag} ENRICHMENT_FAILED: hero photo fetch failed`;
     logPlacesWarn(msg);
     return { rec: recWithMeta, error: msg };
   }
@@ -773,7 +766,7 @@ export async function enrichRecommendation(
   });
 
   logPlaces(logTag, "ENRICHMENT_OK", {
-    heroUri: heroUri.slice(0, 80),
+    heroUriLength: heroUri.length,
     remainingRefs: remainingRefs.length,
   });
 

@@ -62,7 +62,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const logTag = `[photos/${placeId.slice(0, 12)}]`;
+    const logTag = "[photos]";
     console.log(logTag, "Fetching gallery photos");
 
     // Look up photo_refs from cache (skip index 0 — that's the hero)
