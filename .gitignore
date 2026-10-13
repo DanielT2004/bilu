@@ -20,3 +20,9 @@ load-tests/*-summary.json
 
 # Local App Review captures and legacy mockups
 /AppStore/review-assets/*.png
+
+# Local scratch and backups (not part of the app)
+/downloads/
+/_claude_backup/
+/11.txt
+__pycache__/
