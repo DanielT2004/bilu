@@ -98,6 +98,26 @@ struct SearchView: View {
             }
         }
         .background(C.surface.ignoresSafeArea())
+        .sheet(isPresented: $viewModel.showingPurchaseGate) {
+            PurchaseView(intent: .tiktok) { triggerSearch() }
+        }
+        .confirmationDialog(
+            "Run a new TikTok search?",
+            isPresented: Binding(
+                get: { viewModel.pendingSort != nil },
+                set: { if !$0 { viewModel.cancelSortChange() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(viewModel.sortChangeActionTitle) {
+                Task { await viewModel.confirmSortChange() }
+            }
+            Button("Keep current results", role: .cancel) {
+                viewModel.cancelSortChange()
+            }
+        } message: {
+            Text(viewModel.sortChangeMessage)
+        }
         .fullScreenCover(item: $feedViewModel) { vm in
             VideoFeedView(viewModel: vm)
         }
@@ -261,7 +281,7 @@ struct SearchView: View {
         let isActive = viewModel.sort == option
         return Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            Task { await viewModel.setSort(option) }
+            viewModel.setSort(option)
         } label: {
             Text(option.label)
                 .font(.system(size: 12, weight: .medium))
@@ -330,7 +350,7 @@ struct SearchView: View {
             Button {
                 triggerSearch()
             } label: {
-                Text("Try Again")
+                Text(error == .pendingDiscovery ? "Check discovery" : "Try Again")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.white)
                     .padding(.horizontal, 22)

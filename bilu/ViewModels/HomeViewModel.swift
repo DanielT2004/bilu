@@ -156,12 +156,14 @@ final class HomeViewModel: ObservableObject {
     @Published var selection: VibeSelection
     @Published var recommendations: [Recommendation] = []
     @Published var showingRewardGate = false
+    /// Explains a reopened reward gate when the backend rejected a reward the
+    /// user just earned, so the gate never reappears without a reason.
+    @Published private(set) var rewardGateNotice: String?
+    @Published var showingPurchaseGate = false
     /// "Trending Now" row on the Home screen — separate from `recommendations`
     /// so it survives independently of whatever the survey flow is doing.
     @Published var trendingRecommendations: [Recommendation] = []
     @Published var isLoadingTrending: Bool = false
-    private var trendingLocationKey: String?
-    private var lastAnchoredTrendingSelection: VibeSelection?
     @Published var lastSearchFailure: SearchFailure? = nil
     @Published var lastSearchWasRelaxed: Bool = false
     @Published var isEnriching: Bool = false
@@ -191,6 +193,16 @@ final class HomeViewModel: ObservableObject {
 
     /// Tracks the active search so it can be cancelled when the user exits mid-search.
     private var searchTask: Task<Void, Never>?
+    private var enrichmentTask: Task<[Recommendation], Never>?
+    private var activeDiscoveryID: UUID?
+    private var latestDiscoveryID: UUID?
+    private var isRewardUnlockPending = false
+    let loadingAds: LoadingAdController
+    private let allowance: DiscoveryAllowance
+    private let commerceEnabled: () -> Bool
+    private let fetchRecommendations: (VibeSelection, String?) async -> VibeFetchOutcome
+    private let enrich: ([Recommendation], [GroundingPlace], String) async -> [Recommendation]
+    private let readinessTimeout: TimeInterval
 
     static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "Brunch", "Late Night"]
     static let drinksOccasions:  Set<String> = ["Cafe", "Bakery", "Dessert", "Drinks"]
@@ -204,8 +216,23 @@ final class HomeViewModel: ObservableObject {
         ("🇪🇹", "Ethiopian"), ("🇵🇪", "Peruvian")
     ]
 
-    init() {
+    init(loadingAds: LoadingAdController? = nil,
+         allowance: DiscoveryAllowance? = nil,
+         commerceEnabled: (() -> Bool)? = nil,
+         fetchRecommendations: @escaping (VibeSelection, String?) async -> VibeFetchOutcome = {
+             await GeminiService.getVibeRecommendations(selection: $0, rewardedAccessToken: $1)
+         },
+         enrich: @escaping ([Recommendation], [GroundingPlace], String) async -> [Recommendation] = {
+             await GeminiService.enrichRecommendations($0, groundingPlaces: $1, location: $2)
+         },
+         readinessTimeout: TimeInterval = 8) {
         self.selection = VibeSelection()
+        self.loadingAds = loadingAds ?? LoadingAdController()
+        self.allowance = allowance ?? .shared
+        self.commerceEnabled = commerceEnabled ?? { PurchaseConfiguration.current.commerceEnabled }
+        self.fetchRecommendations = fetchRecommendations
+        self.enrich = enrich
+        self.readinessTimeout = max(0, readinessTimeout)
     }
 
     // MARK: - Navigation
@@ -249,6 +276,7 @@ final class HomeViewModel: ObservableObject {
     }
 
     func goBack() {
+        searchTask?.cancel()
         switch step {
         case .keyQuestion:    step = .occasion
         case .drinksSubFlow:  step = .occasion
@@ -341,7 +369,7 @@ final class HomeViewModel: ObservableObject {
         guard canContinue else { return }
         selection.cuisineMode = cuisineMode == .country ? "country" : "vibe"
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 260_000_000)
+            do { try await Task.sleep(nanoseconds: 260_000_000) } catch { return }
             await submitSurvey()
         }
     }
@@ -471,9 +499,20 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    func reset() {
+    func cancelDiscovery() {
+        loadingAds.finish(.cancelled)
+        activeDiscoveryID = nil
+        latestDiscoveryID = nil
         searchTask?.cancel()
         searchTask = nil
+        enrichmentTask?.cancel()
+        enrichmentTask = nil
+        isEnriching = false
+        if step == .loading { step = .foodFeeling }
+    }
+
+    func reset() {
+        cancelDiscovery()
         step = .occasion
         selection = VibeSelection()
         recommendations = []
@@ -499,6 +538,7 @@ final class HomeViewModel: ObservableObject {
 
     /// Restore a saved vibe (from the Profile re-run flow) and kick the search.
     func restore(_ selection: VibeSelection) {
+        cancelDiscovery()
         self.selection = selection
         cuisineMode = selection.cuisineMode == "country" ? .country : .vibe
         selectedVibe = selection.selectedVibe
@@ -527,11 +567,31 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
+    var discoveryLoadingSummary: String {
+        [selection.occasion, selection.foodFeelings.joined(separator: ", "),
+         selection.pricePoints.joined(separator: " · "), effectiveLocation]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     // MARK: - Survey Submit
 
+    /// Records an earned reward; the discovery starts from `rewardGateDismissed`
+    /// so a fast backend rejection can reopen the gate after it has fully closed.
+    func rewardUnlocked() {
+        isRewardUnlockPending = true
+        rewardGateNotice = nil
+    }
+
+    func rewardGateDismissed() async {
+        guard isRewardUnlockPending else { return }
+        isRewardUnlockPending = false
+        await submitSurvey()
+    }
+
     func submitSurvey() async {
-        let allowance = DiscoveryAllowance.shared
-        guard allowance.canRunDiscovery else {
+        guard !Task.isCancelled, activeDiscoveryID == nil else { return }
+        guard commerceEnabled() || allowance.canRunDiscovery else {
+            rewardGateNotice = nil
             showingRewardGate = true
             return
         }
@@ -539,26 +599,50 @@ final class HomeViewModel: ObservableObject {
             ? nil
             : allowance.rewardedAccessToken
         let submissionStep = step
+        let id = UUID()
+        enrichmentTask?.cancel()
+        enrichmentTask = nil
+        isEnriching = false
+        activeDiscoveryID = id
+        latestDiscoveryID = id
+        step = .loading
+        loadingAds.begin(id: id, allowAds: rewardToken == nil)
+        let task = Task { await performDiscovery(id: id, rewardToken: rewardToken, submissionStep: submissionStep) }
+        searchTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if activeDiscoveryID == id {
+            if Task.isCancelled { cancelDiscovery() }
+            activeDiscoveryID = nil
+            searchTask = nil
+        }
+    }
 
+    private func performDiscovery(id: UUID, rewardToken: String?, submissionStep: Step) async {
+        guard !Task.isCancelled, activeDiscoveryID == id else { return }
         step = .loading
         lastSearchFailure = nil
         lastSearchWasRelaxed = false
         let messages = [
-            "Scanning the streets\nfor your vibe...",
-            "Reading the TikTok\nbuzz near you...",
-            "Checking OpenTable\navailability...",
+            "Finding your next\nfavorite spot...",
+            "Matching places to\nyour cravings...",
+            "Looking for your\nkind of atmosphere...",
             "Curating your\nperfect shortlist..."
         ]
         loadingPhase = messages[0]
 
-        Task {
+        let ticker = Task {
             var idx = 0
-            while step == .loading {
-                try? await Task.sleep(nanoseconds: 900_000_000)
+            while activeDiscoveryID == id && step == .loading {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
                 idx = (idx + 1) % messages.count
-                if step == .loading { loadingPhase = messages[idx] }
+                if activeDiscoveryID == id && step == .loading { loadingPhase = messages[idx] }
             }
         }
+        defer { ticker.cancel() }
 
         // handleOccasion resets selection.location on each occasion tap — restore from
         // the geocoded city name before building the prompt.
@@ -568,21 +652,29 @@ final class HomeViewModel: ObservableObject {
         }
 
         // Phase 1: Gemini results — show cards immediately
-        let outcome = await GeminiService.getVibeRecommendations(
-            selection: selection,
-            rewardedAccessToken: rewardToken
-        )
+        let outcome = await fetchRecommendations(selection, rewardToken)
         // If the user exited mid-search (reset/back), don't transition to results.
-        guard step == .loading else { return }
+        guard !Task.isCancelled, activeDiscoveryID == id, step == .loading else { return }
+
+        if outcome.failure == .purchaseRequired {
+            loadingAds.finish(.failed)
+            step = submissionStep
+            showingPurchaseGate = true
+            return
+        }
 
         if outcome.failure == .rewardRequired {
+            loadingAds.finish(.failed)
             allowance.reconcileRewardRequired()
             step = submissionStep
+            rewardGateNotice = rewardToken == nil
+                ? nil
+                : "We couldn't verify your ad reward. Watch another ad to try again."
             showingRewardGate = true
             return
         }
 
-        if outcome.failure == nil || outcome.failure == .noMatches {
+        if !commerceEnabled() && (outcome.failure == nil || outcome.failure == .noMatches) {
             allowance.recordDiscovery(usedRewardToken: rewardToken)
         }
 
@@ -593,14 +685,27 @@ final class HomeViewModel: ObservableObject {
         let groundingPlaces = outcome.result.groundingPlaces ?? []
         let canEnrich = outcome.failure != .transportError && !initial.isEmpty
 
+        if commerceEnabled() {
+            // The wallet endpoint returns only final verified results and already
+            // settled the allowance. Never enrich or debit them a second time.
+            recommendations = initial.verifiedOpenRecommendations
+            isEnriching = false
+            loadingAds.finish(outcome.failure == nil || outcome.failure == .noMatches ? .completed : .failed)
+            step = .reveal
+            revealPhase = .sealed
+            await stageReveal(id: id, reduceMotion: reduceMotionPreference)
+            return
+        }
+
         // Raw Gemini results do not contain a trustworthy live opening status.
         // Never reveal them before Places verification, including when Reduce
         // Motion is enabled.
         if !canEnrich {
             recommendations = []
+            loadingAds.finish(outcome.failure == nil || outcome.failure == .noMatches ? .completed : .failed)
             step = .reveal
             revealPhase = .sealed
-            await stageReveal(reduceMotion: reduceMotionPreference)
+            await stageReveal(id: id, reduceMotion: reduceMotionPreference)
             return
         }
 
@@ -610,53 +715,56 @@ final class HomeViewModel: ObservableObject {
 
         // Kick off the single shared enrichment task. We'll either await it (if it
         // beats the cap) or hand it off as a background fallback (if it doesn't).
+        let enrich = self.enrich
+        let enrichmentLocation = effectiveLocation
         let enrichTask = Task<[Recommendation], Never> {
-            await GeminiService.enrichRecommendations(
-                initial,
-                groundingPlaces: groundingPlaces,
-                location: effectiveLocation
-            )
+            await enrich(initial, groundingPlaces, enrichmentLocation)
         }
+        enrichmentTask = enrichTask
 
-        let outcome2 = await raceEnrichmentAgainstCap(
-            enrichTask: enrichTask,
-            initial: initial
-        )
-        guard step == .loading else {
+        let outcome2 = await withTaskCancellationHandler {
+            await raceEnrichmentAgainstCap(enrichTask: enrichTask, initial: initial)
+        } onCancel: {
+            enrichTask.cancel()
+        }
+        guard !Task.isCancelled, activeDiscoveryID == id, step == .loading else {
             enrichTask.cancel()
             return
         }
 
         recommendations = outcome2.recs
+        loadingAds.finish(.completed)
         step = .reveal
         revealPhase = .sealed
 
         if outcome2.isEnriched {
             // Synchronized happy path — everything in hand before reveal animates.
+            enrichmentTask = nil
             isEnriching = false
-            await stageReveal(reduceMotion: reduceMotionPreference)
+            await stageReveal(id: id, reduceMotion: reduceMotionPreference)
         } else {
-            // Cap fired before enrichment finished. Reveal now on Phase-1 data and
-            // let enrichment land in the background — old behavior as a safety net.
+            // End loading at the cap, keeping unverified cards hidden while the
+            // existing provider task finishes for this results screen.
             isEnriching = true
             Task { [weak self] in
                 let enriched = await enrichTask.value
-                guard let self else { return }
+                guard !enrichTask.isCancelled, let self else { return }
                 await MainActor.run {
+                    guard self.latestDiscoveryID == id else { return }
+                    self.enrichmentTask = nil
                     if self.step == .reveal {
                         self.recommendations = enriched.verifiedOpenRecommendations
                     }
                     self.isEnriching = false
                 }
             }
-            await stageReveal(reduceMotion: reduceMotionPreference)
+            await stageReveal(id: id, reduceMotion: reduceMotionPreference)
         }
     }
 
     /// Holds on the loading screen while enrichment + image prefetch run, capped
-    /// at `revealReadinessCapNanos` so a slow Places API can't strand the user.
+    /// at `readinessTimeout` so a slow Places API can't strand the user.
     /// Returns the recs to reveal with and whether enrichment beat the cap.
-    private static let revealReadinessCapNanos: UInt64 = 8_000_000_000  // 8s
     private static let prefetchTimeout: TimeInterval = 1.2
 
     private struct ReadinessOutcome {
@@ -667,6 +775,27 @@ final class HomeViewModel: ObservableObject {
     private enum EnrichmentRaceResult {
         case finished([Recommendation])
         case timedOut
+        case cancelled
+    }
+
+    /// Main-actor serialization ensures exactly one observer resumes the waiter,
+    /// including cancellation before its continuation has been installed.
+    @MainActor
+    private final class EnrichmentReadinessGate {
+        private var result: EnrichmentRaceResult?
+        private var continuation: CheckedContinuation<EnrichmentRaceResult, Never>?
+
+        func value() async -> EnrichmentRaceResult {
+            if let result { return result }
+            return await withCheckedContinuation { continuation = $0 }
+        }
+
+        func resolve(_ result: EnrichmentRaceResult) {
+            guard self.result == nil else { return }
+            self.result = result
+            continuation?.resume(returning: result)
+            continuation = nil
+        }
     }
 
     @MainActor
@@ -679,19 +808,28 @@ final class HomeViewModel: ObservableObject {
         // Warm Phase-1 image cache in parallel with the enrichment race.
         async let _ = ImagePrefetcher.warm(urls: phase1URLs, timeout: Self.prefetchTimeout)
 
-        // Race the enrichment task against the cap timer.
-        let raceResult = await withTaskGroup(of: EnrichmentRaceResult.self) { group in
-            group.addTask {
-                let recs = await enrichTask.value
-                return .finished(recs)
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: Self.revealReadinessCapNanos)
-                return .timedOut
-            }
-            let first = (await group.next()) ?? .timedOut
-            group.cancelAll()
-            return first
+        // A task group waits for every child when leaving its scope, including
+        // one awaiting this independent provider task. Resume on the first result
+        // instead, so the readiness cap does not wait for the losing observer.
+        let gate = EnrichmentReadinessGate()
+        let observer = Task {
+            let recs = await enrichTask.value
+            guard !Task.isCancelled else { return }
+            gate.resolve(.finished(recs))
+        }
+        let timer = Task {
+            do { try await Task.sleep(for: .seconds(readinessTimeout)) } catch { return }
+            gate.resolve(.timedOut)
+        }
+        defer {
+            observer.cancel()
+            timer.cancel()
+        }
+        let raceResult = await withTaskCancellationHandler {
+            await gate.value()
+        } onCancel: {
+            enrichTask.cancel()
+            Task { @MainActor in gate.resolve(.cancelled) }
         }
 
         guard case .finished(let enriched) = raceResult else {
@@ -713,7 +851,8 @@ final class HomeViewModel: ObservableObject {
     /// Three beats: header → map → cards, each with an escalating haptic.
     /// Short-circuits to a single `.cardsIn` jump (with one success haptic) when reduceMotion is on,
     /// or when results are empty (the staging beats only make sense when there's a list to reveal).
-    private func stageReveal(reduceMotion: Bool) async {
+    private func stageReveal(id: UUID, reduceMotion: Bool) async {
+        guard !Task.isCancelled, latestDiscoveryID == id, step == .reveal else { return }
         if reduceMotion || recommendations.isEmpty {
             Haptics.success()
             revealPhase = .cardsIn
@@ -723,14 +862,14 @@ final class HomeViewModel: ObservableObject {
         withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
             revealPhase = .headerIn
         }
-        try? await Task.sleep(nanoseconds: 280_000_000)
-        guard step == .reveal else { return }
+        do { try await Task.sleep(nanoseconds: 280_000_000) } catch { return }
+        guard !Task.isCancelled, latestDiscoveryID == id, step == .reveal else { return }
         Haptics.light()
         withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
             revealPhase = .mapIn
         }
-        try? await Task.sleep(nanoseconds: 320_000_000)
-        guard step == .reveal else { return }
+        do { try await Task.sleep(nanoseconds: 320_000_000) } catch { return }
+        guard !Task.isCancelled, latestDiscoveryID == id, step == .reveal else { return }
         Haptics.rigid()
         withAnimation(AnimationProfile.listReveal.animation(reduceMotion: false)) {
             revealPhase = .cardsIn
@@ -748,116 +887,15 @@ final class HomeViewModel: ObservableObject {
         return sel
     }
 
-    private static let cityWideTrendingRadiusMiles = 30.0
-
-    /// Loads Trending Now for the currently displayed location. A location change
-    /// replaces the old city's recommendations rather than reusing stale results.
-    func loadTrendingIfNeeded() async {
-        let requestedLocation = effectiveLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isUsableTrendingLocation(requestedLocation) else { return }
-
-        let locationKey = requestedLocation.lowercased()
-        guard trendingLocationKey != locationKey || trendingRecommendations.isEmpty else { return }
-
-        trendingLocationKey = locationKey
-        trendingRecommendations = []
-        isLoadingTrending = true
-        defer {
-            if trendingLocationKey == locationKey { isLoadingTrending = false }
-        }
-
-        let trending = await anchoredTrendingSelection(for: requestedLocation)
-        guard !Task.isCancelled, trendingLocationKey == locationKey else { return }
-        lastAnchoredTrendingSelection = trending
-
-        let outcome = await GeminiService.getVibeRecommendations(selection: trending)
-        guard !Task.isCancelled, trendingLocationKey == locationKey else { return }
-        let initial = outcome.result.recommendations
-        guard !initial.isEmpty else { return }
-
-        // Do not publish raw Gemini results: opening status is only trustworthy
-        // after the Places enrichment request completes.
-        let enriched = await GeminiService.enrichRecommendations(
-            initial,
-            groundingPlaces: outcome.result.groundingPlaces ?? [],
-            location: trending.location
-        )
-        guard !Task.isCancelled, trendingLocationKey == locationKey else { return }
-
-        // Maps grounding improves relevance but is not a hard boundary. Only show
-        // places whose resolved coordinates can be verified near the selected city
-        // or user pin; unverifiable and out-of-area results are discarded.
-        let verified = recommendations(
-            enriched.verifiedOpenRecommendations,
-            within: trending
-        )
-        trendingRecommendations = Array(verified.prefix(6))
-    }
-
-    private func isUsableTrendingLocation(_ location: String) -> Bool {
-        !location.isEmpty
-            && location.caseInsensitiveCompare("your area") != .orderedSame
-            && location.caseInsensitiveCompare("Set your location") != .orderedSame
-    }
-
-    private func anchoredTrendingSelection(for location: String) async -> VibeSelection {
-        var trending = trendingSelection()
-        trending.location = location
-
-        if selection.useRadiusSearch,
-           let latitude = selection.latitude,
-           let longitude = selection.longitude {
-            trending.latitude = latitude
-            trending.longitude = longitude
-            trending.radiusMiles = selection.radiusMiles
-            trending.useRadiusSearch = true
-            return trending
-        }
-
-        if let coordinate = initialMapCenter,
-           let resolvedUserLocationLabel,
-           resolvedUserLocationLabel.caseInsensitiveCompare(location) == .orderedSame {
-            trending.latitude = coordinate.latitude
-            trending.longitude = coordinate.longitude
-            trending.radiusMiles = Self.cityWideTrendingRadiusMiles
-            trending.useRadiusSearch = true
-            return trending
-        }
-
-        if let placemark = try? await CLGeocoder().geocodeAddressString(location).first,
-           let coordinate = placemark.location?.coordinate {
-            trending.latitude = coordinate.latitude
-            trending.longitude = coordinate.longitude
-            trending.radiusMiles = Self.cityWideTrendingRadiusMiles
-            trending.useRadiusSearch = true
-        }
-        return trending
-    }
-
-    private func recommendations(
-        _ recommendations: [Recommendation],
-        within selection: VibeSelection
-    ) -> [Recommendation] {
-        guard selection.useRadiusSearch,
-              let latitude = selection.latitude,
-              let longitude = selection.longitude else {
-            return recommendations
-        }
-
-        let center = CLLocation(latitude: latitude, longitude: longitude)
-        let maximumDistance = selection.radiusMiles * 1_609.344
-        return recommendations.filter { recommendation in
-            guard let latitude = recommendation.latitude,
-                  let longitude = recommendation.longitude else { return false }
-            let place = CLLocation(latitude: latitude, longitude: longitude)
-            return center.distance(from: place) <= maximumDistance
-        }
-    }
+    /// There is no separate, allowance-free Trending endpoint. Opening Explore
+    /// must not call /recommendations, which spends a UTC discovery server-side.
+    /// An explicit "View all" continues through the normal allowance gate.
+    func loadTrendingIfNeeded() async { }
 
     /// "View all" on the Trending Now row — runs the same search as the row itself
     /// through the normal loading → reveal flow so the user sees the full list.
     func viewAllTrending() {
-        selection = lastAnchoredTrendingSelection ?? trendingSelection()
+        selection = trendingSelection()
         searchTask = Task { await submitSurvey() }
     }
 

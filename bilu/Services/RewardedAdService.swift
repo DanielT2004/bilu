@@ -1,7 +1,6 @@
 import Foundation
 import Combine
 import GoogleMobileAds
-import UserMessagingPlatform
 
 @MainActor
 final class RewardedAdService: NSObject, ObservableObject {
@@ -15,65 +14,71 @@ final class RewardedAdService: NSObject, ObservableObject {
 
     private var rewardedAd: RewardedAd?
     private var isConfiguring = false
-    private var didStartSDK = false
-    private var didApplyDebugConsentReset = false
+    private let privacy = AdPrivacyService.shared
+    private var privacySubscription: AnyCancellable?
+    private var adLoadGeneration = UUID()
     private var rewardHandler: ((String) -> Void)?
     private var activeSession: RewardSession?
     private var didEarnActiveReward = false
     private var didDismissActiveAd = false
     private var verifiedRewardToken: String?
+    private static let adUnavailableMessage = "An ad isn't available right now. Please try again."
+
+    override init() {
+        super.init()
+        privacy.$privacyOptionsRequired.assign(to: &$privacyOptionsRequired)
+        privacySubscription = privacy.$canRequestAds.sink { [weak self] allowed in
+            if !allowed { self?.invalidateCachedAd() }
+        }
+    }
 
     func configure() async {
         guard !isConfiguring else { return }
+        isConfiguring = true
+        defer { isConfiguring = false }
+        await privacy.configure()
         guard Config.rewardedAdsAreConfigured else {
             message = "Rewarded ads need a production AdMob ID before release."
             return
         }
-        isConfiguring = true
-        defer { isConfiguring = false }
-
-        do {
-            try await updateConsent()
-        } catch {
-            // UMP permits using the last-known consent state after an update
-            // error. Never request an ad unless canRequestAds confirms it.
-            message = "Privacy choices could not be refreshed."
+        guard privacy.canRequestAds else {
+            message = privacy.message
+            return
         }
-
-        privacyOptionsRequired = ConsentInformation.shared
-            .privacyOptionsRequirementStatus == .required
-        guard ConsentInformation.shared.canRequestAds else { return }
-        startSDKIfNeeded()
         await loadAd()
     }
 
     func loadAd() async {
         guard let adUnitID = Config.rewardedAdUnitID,
-              ConsentInformation.shared.canRequestAds,
+              privacy.canRequestAds,
               rewardedAd == nil,
               !isLoadingAd else { return }
         isLoadingAd = true
-        defer { isLoadingAd = false }
+        let generation = adLoadGeneration
+        defer {
+            if generation == adLoadGeneration { isLoadingAd = false }
+        }
         do {
-            let request = Request()
-            let extras = Extras()
-            // Bilu uses privacy-first contextual rewarded ads. Do not request
-            // personalized ads or depend on ATT/IDFA for monetization.
-            extras.additionalParameters = ["npa": "1"]
-            request.register(extras)
-            let ad = try await RewardedAd.load(with: adUnitID, request: request)
+            let ad = try await RewardedAd.load(
+                with: adUnitID,
+                request: AdPrivacyService.contextualRequest()
+            )
+            guard generation == adLoadGeneration, privacy.canRequestAds else { return }
             ad.fullScreenContentDelegate = self
             rewardedAd = ad
             isReady = true
-            message = nil
+            // Only clear this load's own error; a reward outcome shown after
+            // the previous ad closed must survive the automatic reload.
+            if message == Self.adUnavailableMessage { message = nil }
         } catch {
+            guard generation == adLoadGeneration else { return }
             isReady = false
-            message = "An ad isn't available right now. Please try again."
+            message = Self.adUnavailableMessage
         }
     }
 
     func showRewardedDiscovery(onReward: @escaping (String) -> Void) async {
-        guard !isBusy, !isLoadingAd else { return }
+        guard !isBusy, !isLoadingAd, privacy.canRequestAds else { return }
         guard let ad = rewardedAd else {
             await loadAd()
             guard rewardedAd != nil else { return }
@@ -81,8 +86,14 @@ final class RewardedAdService: NSObject, ObservableObject {
         }
 
         isBusy = true
+        message = nil
+        let generation = adLoadGeneration
         do {
             let session = try await RewardSessionAPI.create()
+            guard generation == adLoadGeneration, privacy.canRequestAds else {
+                isBusy = false
+                return
+            }
             activeSession = session
             rewardHandler = onReward
             didEarnActiveReward = false
@@ -97,7 +108,7 @@ final class RewardedAdService: NSObject, ObservableObject {
                 guard let self else { return }
                 self.didEarnActiveReward = true
                 #if DEBUG
-                self.markRewardVerified(token: session.token)
+                Task { await self.verifyDebugReward(session: session) }
                 #else
                 Task { await self.waitForServerVerification(session: session) }
                 #endif
@@ -111,64 +122,19 @@ final class RewardedAdService: NSObject, ObservableObject {
     func presentPrivacyOptions() async {
         guard !isBusy else { return }
         do {
-            try await ConsentForm.presentPrivacyOptionsForm(from: nil)
-            privacyOptionsRequired = ConsentInformation.shared
-                .privacyOptionsRequirementStatus == .required
-            // A cached ad may have been requested under the previous consent
-            // state. Discard it and make the next request with the new choices.
-            rewardedAd = nil
-            isReady = false
-            if ConsentInformation.shared.canRequestAds {
-                startSDKIfNeeded()
-                await loadAd()
-            }
+            try await privacy.presentPrivacyOptions()
+            await loadAd()
         } catch {
             message = "Privacy choices are unavailable right now."
         }
     }
 
-    private func updateConsent() async throws {
-        let parameters = RequestParameters()
-        #if DEBUG
-        // Allows deterministic testing of the published AdMob privacy messages
-        // without changing production geography. Simulators are automatically
-        // accepted as UMP test devices.
-        if let geography = ProcessInfo.processInfo.environment["BILU_TEST_UMP_GEOGRAPHY"] {
-            let debugSettings = DebugSettings()
-            switch geography.lowercased() {
-            case "eea": debugSettings.geography = .EEA
-            case "us": debugSettings.geography = .regulatedUSState
-            default: debugSettings.geography = .other
-            }
-            parameters.debugSettings = debugSettings
-            if !didApplyDebugConsentReset {
-                ConsentInformation.shared.reset()
-                didApplyDebugConsentReset = true
-            }
-        }
-        #endif
-        try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Void, Error>) in
-            ConsentInformation.shared.requestConsentInfoUpdate(with: parameters) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
-        try await ConsentForm.loadAndPresentIfRequired(from: nil)
-    }
-
-    private func startSDKIfNeeded() {
-        guard !didStartSDK else { return }
-        didStartSDK = true
-        // Bilu does not use Google's cross-app publisher first-party identifier.
-        // Keep rewarded ads contextual/consent-driven and minimize identifiers
-        // before the SDK starts.
-        MobileAds.shared.requestConfiguration
-            .setPublisherFirstPartyIDEnabled(false)
-        MobileAds.shared.start()
+    private func invalidateCachedAd() {
+        adLoadGeneration = UUID()
+        if !isBusy { rewardedAd?.fullScreenContentDelegate = nil }
+        rewardedAd = nil
+        isReady = false
+        isLoadingAd = false
     }
 
     private func waitForServerVerification(session: RewardSession) async {
@@ -185,8 +151,25 @@ final class RewardedAdService: NSObject, ObservableObject {
                 return
             }
         }
+        abandonActiveReward(message: "Your ad finished, but verification is delayed. Please try again shortly.")
+    }
+
+    #if DEBUG
+    private func verifyDebugReward(session: RewardSession) async {
+        do {
+            try await RewardSessionAPI.debugVerify(token: session.token)
+            markRewardVerified(token: session.token)
+        } catch {
+            print("[RewardedAdService] debug reward rejected; add \(session.userID) to REWARD_DEBUG_USER_IDS")
+            guard activeSession?.token == session.token else { return }
+            abandonActiveReward(message: "Debug rewards aren't enabled for this account.")
+        }
+    }
+    #endif
+
+    private func abandonActiveReward(message: String) {
         isBusy = false
-        message = "Your ad finished, but verification is delayed. Please try again shortly."
+        self.message = message
         activeSession = nil
         rewardHandler = nil
         didEarnActiveReward = false
@@ -261,11 +244,6 @@ private struct RewardSession: Decodable {
 
 private enum RewardSessionAPI {
     static func create() async throws -> RewardSession {
-        #if DEBUG
-        // Google's sample ad unit has no configurable SSV callback. Debug still
-        // exercises consent, loading and presentation with a one-time test token.
-        return RewardSession(token: UUID().uuidString, userID: "debug-test-user")
-        #else
         var request = try await AuthenticatedAPIRequest.post(
             path: "rewarded-access",
             timeout: 10
@@ -279,8 +257,26 @@ private enum RewardSessionAPI {
             throw SupabaseAuthError.invalidResponse
         }
         return try JSONDecoder().decode(RewardSession.self, from: data)
-        #endif
     }
+
+    #if DEBUG
+    /// Google's sample ad unit has no SSV callback, so Debug asks the backend to
+    /// verify the session. Only accounts in REWARD_DEBUG_USER_IDS succeed.
+    static func debugVerify(token: String) async throws {
+        var request = try await AuthenticatedAPIRequest.post(
+            path: "rewarded-access",
+            timeout: 10
+        )
+        request.httpBody = try JSONSerialization.data(
+            withJSONObject: ["action": "debug-verify", "token": token]
+        )
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode) else {
+            throw SupabaseAuthError.invalidResponse
+        }
+    }
+    #endif
 
     static func isVerified(token: String) async throws -> Bool {
         var request = try await AuthenticatedAPIRequest.post(

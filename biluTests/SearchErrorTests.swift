@@ -53,4 +53,46 @@ final class SearchErrorTests: XCTestCase {
         XCTAssertNil(viewModel.searchError)
         XCTAssertFalse(viewModel.hasSearched)
     }
+
+    func testChangingSortRequiresConfirmationBeforeRunningAnotherTikTokSearch() async {
+        var calls: [(String, Int)] = []
+        let video = TikTokVideo(
+            videoId: "1",
+            shareUrl: "https://www.tiktok.com/@bilu/video/1",
+            videoUrl: "https://example.com/video.mp4",
+            thumbnailUrl: "https://example.com/image.jpg",
+            author: TikTokAuthor(name: "Bilu", avatar: ""),
+            desc: "Ramen in Los Angeles",
+            diggCount: 1,
+            commentCount: 1,
+            viewCount: 1,
+            transcriptUrl: nil,
+            debug: nil
+        )
+        let viewModel = SearchViewModel(
+            usesWalletDiscovery: false,
+            locationExtractor: { _, _ in
+                LocationExtractionResult(locations: [], unresolvedVideoIds: [])
+            },
+            fetchVideos: { query, _, sort in
+                calls.append((query, sort))
+                return [video]
+            }
+        )
+        viewModel.query = "ramen in Los Angeles"
+        await viewModel.search()
+
+        viewModel.setSort(.mostLiked)
+
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(viewModel.sort, .relevant)
+        XCTAssertEqual(viewModel.pendingSort, .mostLiked)
+
+        await viewModel.confirmSortChange()
+
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls[1].1, SearchSort.mostLiked.rawValue)
+        XCTAssertEqual(viewModel.sort, .mostLiked)
+        XCTAssertNil(viewModel.pendingSort)
+    }
 }

@@ -38,6 +38,8 @@ struct RestaurantDetailView: View {
     @State private var showingAllPhotos = false
     @State private var galleryPhotos: [String] = []
     @State private var isFetchingAllPhotos = false
+    @State private var didRequestGalleryPhotos = false
+    @State private var didRequestTikTok = false
     @State private var vibeCheckVisible: Bool = false
     @State private var bookmarkPhase: BookmarkPhase = .idle
     @State private var bookmarkSaved: Bool = false
@@ -88,24 +90,9 @@ struct RestaurantDetailView: View {
             wantToGoSaved = store.isSaved(rec, in: .wantToGo)
             ivenBeenHere = VisitedPlacesStore.isVisited(rec.identityKey)
         }
-        .task {
-            guard let placeId = rec.placeId, galleryPhotos.isEmpty else { return }
-            isFetchingAllPhotos = true
-            let fetched = await GeminiService.fetchGalleryPhotos(placeId: placeId)
-            galleryPhotos = fetched
-            isFetchingAllPhotos = false
-        }
-        .task {
-            guard tikTokVideos.isEmpty else { return }
-            isFetchingTikTok = true
-            let fetched = await fetchTikToks()
-            tikTokVideos = fetched
-            isFetchingTikTok = false
-            // Pre-warm the player pool so the first tap on a video reveals an
-            // already-buffered AVPlayer (3-player sliding window starts at 0).
-            if !fetched.isEmpty {
-                prewarmedFeedViewModel = VideoFeedViewModel(videos: fetched, startIndex: 0)
-            }
+        .onChange(of: selectedTab) { _, tab in
+            guard tab == .media || tab == .insights else { return }
+            Task { await loadTikToksIfNeeded() }
         }
         .task {
             guard let lat = rec.latitude, let lng = rec.longitude else { return }
@@ -533,9 +520,13 @@ struct RestaurantDetailView: View {
             vibeCheckCard
             if !galleryPhotos.isEmpty {
                 photoRowSection
+            } else if rec.placeId != nil {
+                loadPhotosCard
             }
             if !tikTokVideos.isEmpty {
                 tikTokThumbnailsSection
+            } else {
+                loadTikToksCard
             }
             proTipsSection
             visitSection
@@ -702,6 +693,34 @@ struct RestaurantDetailView: View {
         }
     }
 
+    private var loadPhotosCard: some View {
+        Button {
+            Haptics.light()
+            Task { await loadGalleryPhotosIfNeeded() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isFetchingAllPhotos ? "photo.on.rectangle.angled" : "photo.stack")
+                    .font(.system(size: 18, weight: .medium))
+                Text(isFetchingAllPhotos ? "Loading more photos…" : "Load more photos")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                if !isFetchingAllPhotos {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+            }
+            .foregroundStyle(AppTheme.sage)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .padding(.horizontal, 16)
+            .background(AppTheme.white)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: AppTheme.shadowColor, radius: 8, x: 0, y: 3)
+        }
+        .buttonStyle(.plain)
+        .disabled(isFetchingAllPhotos || didRequestGalleryPhotos)
+        .accessibilityLabel("Load more restaurant photos")
+    }
+
     // MARK: - Community Moments
 
     private var tikTokThumbnailsSection: some View {
@@ -733,6 +752,33 @@ struct RestaurantDetailView: View {
                 }
             }
         }
+    }
+
+    private var loadTikToksCard: some View {
+        Button {
+            Haptics.light()
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                selectedTab = .media
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "play.rectangle")
+                    .font(.system(size: 18, weight: .medium))
+                Text("See TikTok clips")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(AppTheme.sage)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .padding(.horizontal, 16)
+            .background(AppTheme.white)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: AppTheme.shadowColor, radius: 8, x: 0, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Load TikTok clips")
     }
 
     private func tikTokThumb(video: TikTokVideo, index: Int) -> some View {
@@ -880,7 +926,12 @@ struct RestaurantDetailView: View {
             if isFetchingTikTok && tikTokVideos.isEmpty {
                 stubCard(icon: "sparkles", message: "Reading the TikTok\nbuzz…")
             } else if tikTokVideos.isEmpty {
-                stubCard(icon: "sparkles", message: "Not enough TikTok mentions\nyet to summarize")
+                stubCard(
+                    icon: "sparkles",
+                    message: didRequestTikTok
+                        ? "Not enough TikTok mentions\nyet to summarize"
+                        : "Open the Media tab to\nload TikTok insights"
+                )
             } else {
                 HStack(spacing: 10) {
                     insightStat(icon: "video.fill", value: formatCount(tikTokVideos.count), label: "Clips")
@@ -947,7 +998,12 @@ struct RestaurantDetailView: View {
     private var mediaTab: some View {
         VStack(alignment: .leading, spacing: 28) {
             if tikTokVideos.isEmpty {
-                stubCard(icon: "video.slash", message: "Loading TikTok clips…")
+                stubCard(
+                    icon: "video.slash",
+                    message: isFetchingTikTok
+                        ? "Loading TikTok clips…"
+                        : "No TikTok clips found yet"
+                )
             } else {
                 // Featured hero video
                 featuredVideoCard(tikTokVideos[0], index: 0)
@@ -1209,7 +1265,22 @@ struct RestaurantDetailView: View {
                     reviewCard(review)
                 }
             } else {
-                stubCard(icon: "quote.bubble", message: "No guest reviews yet")
+                VStack(spacing: 14) {
+                    stubCard(icon: "quote.bubble", message: "Read the latest guest reviews in Maps")
+                    if let url = URL(string: rec.mapsUrl) {
+                        Button {
+                            openURL(url)
+                        } label: {
+                            Label("Open in Maps", systemImage: "map")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(AppTheme.sage)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
         .padding(.horizontal, 24)
@@ -1279,6 +1350,29 @@ struct RestaurantDetailView: View {
     private func openMaps() {
         Haptics.light()
         showMapsChoice = true
+    }
+
+    private func loadGalleryPhotosIfNeeded() async {
+        guard let placeId = rec.placeId,
+              galleryPhotos.isEmpty,
+              !isFetchingAllPhotos,
+              !didRequestGalleryPhotos else { return }
+        didRequestGalleryPhotos = true
+        isFetchingAllPhotos = true
+        galleryPhotos = await GeminiService.fetchGalleryPhotos(placeId: placeId)
+        isFetchingAllPhotos = false
+    }
+
+    private func loadTikToksIfNeeded() async {
+        guard tikTokVideos.isEmpty, !isFetchingTikTok, !didRequestTikTok else { return }
+        didRequestTikTok = true
+        isFetchingTikTok = true
+        let fetched = await fetchTikToks()
+        tikTokVideos = fetched
+        isFetchingTikTok = false
+        if !fetched.isEmpty {
+            prewarmedFeedViewModel = VideoFeedViewModel(videos: fetched, startIndex: 0)
+        }
     }
 }
 

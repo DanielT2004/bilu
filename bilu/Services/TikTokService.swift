@@ -22,11 +22,13 @@ enum TikTokServiceError: Error, Equatable {
     case serverUnavailable
     case invalidResponse
     case requestFailed
+    case pendingDiscovery
 
     var title: String {
         switch self {
         case .offline: return "You're offline"
         case .timedOut: return "Search took too long"
+        case .pendingDiscovery: return "Your search is still finishing"
         case .unauthorized: return "Couldn't start search"
         case .rateLimited: return "Too many searches"
         case .serverUnavailable: return "Search is unavailable"
@@ -36,6 +38,8 @@ enum TikTokServiceError: Error, Equatable {
 
     var message: String {
         switch self {
+        case .pendingDiscovery:
+            return "Try this search again to recover its result without using another search."
         case .offline:
             return "Check your internet connection and try again."
         case .timedOut:
@@ -76,9 +80,9 @@ enum TikTokServiceError: Error, Equatable {
 
         if let authError = error as? SupabaseAuthError {
             switch authError {
-            case .requestFailed(let statusCode):
+            case .requestFailed(let statusCode), .rejected(let statusCode, _):
                 return fromHTTPStatus(statusCode)
-            case .invalidResponse, .missingSession, .keychain:
+            case .invalidResponse, .missingSession, .accountMismatch, .keychain:
                 return .unauthorized
             }
         }
@@ -102,6 +106,11 @@ enum TikTokService {
     /// ScrapTik sortType values:
     /// 0 = relevance, 1 = most liked, 2 = most recent
     static func fetchVideos(query: String, maxResults: Int = 10, sortType: Int = 0) async throws -> [TikTokVideo] {
+        // Commerce searches use DiscoveryJobService to include extraction and
+        // settle one complete result. Detail screens must not start an unmetered scrape.
+        guard !PurchaseConfiguration.current.commerceEnabled else {
+            throw TikTokServiceError.serverUnavailable
+        }
         let body: [String: Any] = [
             "query": query,
             "maxResults": maxResults,

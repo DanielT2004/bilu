@@ -2,10 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BILUCommerceEnabled</key>
+	<false/>
+	<key>BILUProEnabled</key>
+	<false/>
+	<key>SKIncludeConsumableInAppPurchaseHistory</key>
+	<true/>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-2845173126212624~6002912892</string>
 	<key>BILURewardedAdUnitIdentifier</key>
 	<string>ca-app-pub-2845173126212624/6016275205</string>
+	<!-- Explore Loading Banner; automatic refresh is disabled in AdMob. -->
+	<key>BILULoadingBannerAdUnitIdentifier</key>
+	<string>ca-app-pub-2845173126212624/8124864538</string>
 	<key>SKAdNetworkItems</key>
 	<array>
 		<dict><key>SKAdNetworkIdentifier</key><string>cstr6suwn9.skadnetwork</string></dict>

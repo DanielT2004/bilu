@@ -5,6 +5,7 @@ struct RewardedDiscoveryView: View {
     @EnvironmentObject private var rewardedAds: RewardedAdService
     @Environment(\.dismiss) private var dismiss
 
+    var notice: String? = nil
     var onUnlocked: () -> Void = {}
 
     var body: some View {
@@ -37,8 +38,8 @@ struct RewardedDiscoveryView: View {
                         await rewardedAds.showRewardedDiscovery { token in
                             allowance.grantReward(token: token)
                             Haptics.success()
-                            dismiss()
                             onUnlocked()
+                            dismiss()
                         }
                     }
                 } label: {
@@ -61,7 +62,7 @@ struct RewardedDiscoveryView: View {
                 .accessibilityIdentifier("rewarded-ad-button")
                 .accessibilityHint("Plays a rewarded ad and unlocks one discovery")
 
-                if let message = rewardedAds.message {
+                if let message = rewardedAds.message ?? notice {
                     Text(message)
                         .font(.system(size: 13))
                         .foregroundStyle(AppTheme.muted)

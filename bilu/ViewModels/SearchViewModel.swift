@@ -55,6 +55,7 @@ private let kSuggestedCities = ["Los Angeles", "New York", "San Francisco", "Chi
 @MainActor
 final class SearchViewModel: ObservableObject {
     typealias VideoSearch = (_ query: String, _ maxResults: Int, _ sortType: Int) async throws -> [TikTokVideo]
+    typealias LocationExtractor = (_ videos: [TikTokVideo], _ query: String) async -> LocationExtractionResult
 
     @Published var query = ""
     @Published var videos: [TikTokVideo] = []
@@ -62,6 +63,10 @@ final class SearchViewModel: ObservableObject {
     @Published var hasSearched = false
     @Published var sort: SearchSort = .relevant
     @Published var searchError: TikTokServiceError?
+    @Published var showingPurchaseGate = false
+    /// Selecting a new sort is intentionally a two-step action after results exist:
+    /// it changes the server search and can consume a TikTok discovery allowance.
+    @Published private(set) var pendingSort: SearchSort?
 
     // Phase 2: locations + map
     @Published var locations: [SearchLocation] = []
@@ -98,10 +103,20 @@ final class SearchViewModel: ObservableObject {
 
     private var locationTask: Task<Void, Never>?
     private let fetchVideos: VideoSearch
+    private let extractLocations: LocationExtractor
+    private let usesWalletDiscovery: Bool
 
-    init(fetchVideos: @escaping VideoSearch = { query, maxResults, sortType in
+    init(
+        usesWalletDiscovery: Bool? = nil,
+        locationExtractor: @escaping LocationExtractor = { videos, query in
+            await LocationExtractionService.extractLocations(videos: videos, searchQuery: query)
+        },
+        fetchVideos: @escaping VideoSearch = { query, maxResults, sortType in
         try await TikTokService.fetchVideos(query: query, maxResults: maxResults, sortType: sortType)
-    }) {
+    }
+    ) {
+        self.usesWalletDiscovery = usesWalletDiscovery ?? PurchaseConfiguration.current.commerceEnabled
+        self.extractLocations = locationExtractor
         #if DEBUG
         if let simulatedError = Self.simulatedErrorForUITesting() {
             self.fetchVideos = { _, _, _ in throw simulatedError }
@@ -133,7 +148,7 @@ final class SearchViewModel: ObservableObject {
 
     func search() async {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, !isLoading else { return }
 
         // Client-side fast path: if no city hint, prompt user without burning any backend calls.
         if !hasCityHint(in: trimmed) {
@@ -144,6 +159,11 @@ final class SearchViewModel: ObservableObject {
             videos = []
             locations = []
             unresolvedVideoIds = []
+            return
+        }
+
+        if usesWalletDiscovery {
+            await searchWithWallet(query: trimmed)
             return
         }
 
@@ -174,6 +194,33 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
+    private func searchWithWallet(query: String) async {
+        needsCity = false
+        searchError = nil
+        isLoading = true
+        hasSearched = true
+        locationTask?.cancel()
+        defer { isLoading = false }
+        do {
+            let result = try await DiscoveryJobService.shared.tiktok(query: query, sortType: sort.rawValue)
+            videos = result.videos
+            locations = result.locations
+            unresolvedVideoIds = result.unresolved
+            openNowOnly = false
+            selectedNeighborhoods = []
+        } catch DiscoveryJobError.allowanceRequired {
+            // Keep the last useful results and current query behind the sheet.
+            showingPurchaseGate = true
+        } catch DiscoveryJobError.missingCity {
+            needsCity = true
+            suggestedCities = kSuggestedCities
+        } catch DiscoveryJobError.pending {
+            searchError = .pendingDiscovery
+        } catch {
+            searchError = TikTokServiceError.from(error)
+        }
+    }
+
     /// User picked a city chip — append it to the current query and re-run.
     func appendCityAndSearch(_ city: String) async {
         let base = query.trimmingCharacters(in: .whitespaces)
@@ -185,12 +232,34 @@ final class SearchViewModel: ObservableObject {
         await search()
     }
 
-    func setSort(_ newSort: SearchSort) async {
-        guard newSort != sort else { return }
-        sort = newSort
-        if hasSearched && !query.trimmingCharacters(in: .whitespaces).isEmpty {
-            await search()
+    func setSort(_ newSort: SearchSort) {
+        guard newSort != sort, !isLoading else { return }
+        guard hasSearched, !videos.isEmpty, !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            sort = newSort
+            return
         }
+        pendingSort = newSort
+    }
+
+    func confirmSortChange() async {
+        guard let pendingSort else { return }
+        self.pendingSort = nil
+        sort = pendingSort
+        await search()
+    }
+
+    func cancelSortChange() {
+        pendingSort = nil
+    }
+
+    var sortChangeActionTitle: String {
+        usesWalletDiscovery ? "Use 1 TikTok discovery" : "Run new search"
+    }
+
+    var sortChangeMessage: String {
+        usesWalletDiscovery
+            ? "Changing sort runs a new TikTok discovery and uses one allowance."
+            : "Changing sort runs a new TikTok search."
     }
 
     func clear() {
@@ -204,6 +273,7 @@ final class SearchViewModel: ObservableObject {
         locations = []
         unresolvedVideoIds = []
         viewMode = .list
+        pendingSort = nil
         locationTask?.cancel()
     }
 
@@ -213,10 +283,7 @@ final class SearchViewModel: ObservableObject {
         isLoadingLocations = true
         defer { isLoadingLocations = false }
 
-        let result = await LocationExtractionService.extractLocations(
-            videos: videos,
-            searchQuery: searchQuery
-        )
+        let result = await extractLocations(videos, searchQuery)
 
         if Task.isCancelled { return }
 

@@ -25,6 +25,9 @@ struct UserView: View {
     @State private var selectedList: SavedListType = .saved
     @State private var selectedPlace: SavedPlace? = nil
     @State private var showingRewardGate = false
+    @State private var showingPurchases = false
+    @ObservedObject private var purchases = PurchaseStore.shared
+    @ObservedObject private var account = AccountViewModel.shared
     @AppStorage(AppDiagnosticsReporter.consentDefaultsKey)
     private var sharesDiagnostics = false
 
@@ -76,6 +79,7 @@ struct UserView: View {
         .sheet(isPresented: $viewModel.showingDietaryEditor) {
             DietaryPreferencesView(viewModel: viewModel)
         }
+        .sheet(isPresented: $showingPurchases) { PurchaseView() }
         .sheet(isPresented: $showingRewardGate) {
             RewardedDiscoveryView()
                 .environmentObject(discoveryAllowance)
@@ -190,7 +194,25 @@ struct UserView: View {
 
     // MARK: - Discovery access
 
+    @ViewBuilder
     private var discoveryAccessSection: some View {
+        if purchases.configuration.commerceEnabled || account.isSignedIn || purchases.hasPendingSync || purchases.hasPendingApproval || purchases.hasPurchasesForAnotherAccount {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionLabel("Discoveries")
+                ProfileSettingsRow(
+                    icon: "sparkles",
+                    title: "Discoveries & account",
+                    value: purchases.wallet.map { "\($0.remainingExplore) Explore · \($0.remainingTikTok) TikTok" } ?? "View your balance",
+                    onTap: { Haptics.light(); showingPurchases = true }
+                )
+                .padding(.horizontal, 20)
+                .accessibilityIdentifier("profile-discoveries")
+            }
+        }
+        if !purchases.configuration.commerceEnabled { legacyDiscoveryAccessSection }
+    }
+
+    private var legacyDiscoveryAccessSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel("Discoveries")
 
@@ -258,7 +280,7 @@ struct UserView: View {
                         Text("Share Diagnostics")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(AppTheme.onSurface)
-                        Text("Send crash and performance reports to help improve Bilu")
+                        Text("Share crash, performance, discovery, and ad metrics")
                             .font(.system(size: 12))
                             .foregroundStyle(AppTheme.muted)
                     }
@@ -291,6 +313,17 @@ struct UserView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens Bilu's privacy policy")
+
+                if let supportURL = Config.supportURL {
+                    Link(destination: supportURL) {
+                        Label("Report an advertisement", systemImage: "flag")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.onSurface)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .padding(.horizontal, 16)
+                    }
+                    .accessibilityHint("Opens Bilu support to report an inappropriate ad")
+                }
 
                 if rewardedAds.privacyOptionsRequired {
                     Divider()

@@ -29,6 +29,9 @@ nonisolated final class AppDiagnosticsReporter: NSObject, MXMetricManagerSubscri
     }
 
     func setCollectionEnabled(_ isEnabled: Bool) {
+        Task { @MainActor in
+            DiscoveryAnalytics.shared.setCollectionEnabled(isEnabled)
+        }
         if isEnabled {
             start()
         } else {

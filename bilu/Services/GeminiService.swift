@@ -7,6 +7,8 @@ import Foundation
 enum SearchFailure: Equatable {
     case noMatches       // server returned an empty result
     case rewardRequired  // server has no free or verified rewarded access left
+    case purchaseRequired // server monthly and purchased balances are exhausted
+    case pendingDiscovery // recover this job before starting paid work again
     case capacityUnavailable // upstream quota/spending cap is exhausted
     case usageLimitExceeded // per-user or global paid API budget is exhausted
     case timedOut        // the search exceeded the user-facing latency budget
@@ -20,7 +22,11 @@ struct VibeFetchOutcome {
 
 enum GeminiService {
     private static let emptyResult = VibeResult(recommendations: [], groundingPlaces: [], relaxed: nil)
-    private static let recommendationTimeout: TimeInterval = 15
+    // Must outlast the server's access checks plus its 19 s Gemini deadline
+    // (RECOMMENDATIONS_DEADLINE_MS). If the client gives up first, the server
+    // can still succeed and spend the discovery while the results are lost;
+    // the server's own timeout refunds it instead.
+    private static let recommendationTimeout: TimeInterval = 30
     private static let enrichmentTimeout: TimeInterval = 8
 
     // Phase 1 — fast: Gemini recommendations only (no Places enrichment)
@@ -42,6 +48,19 @@ enum GeminiService {
             body["radiusMiles"] = selection.radiusMiles
             if let lat = selection.latitude  { body["latitude"]  = lat }
             if let lng = selection.longitude { body["longitude"] = lng }
+        }
+
+        if PurchaseConfiguration.current.commerceEnabled {
+            do {
+                let result = try await DiscoveryJobService.shared.explore(input: body)
+                return VibeFetchOutcome(result: result, failure: result.recommendations.isEmpty ? .noMatches : nil)
+            } catch DiscoveryJobError.allowanceRequired {
+                return VibeFetchOutcome(result: emptyResult, failure: .purchaseRequired)
+            } catch DiscoveryJobError.pending {
+                return VibeFetchOutcome(result: emptyResult, failure: .pendingDiscovery)
+            } catch {
+                return VibeFetchOutcome(result: emptyResult, failure: isTimeout(error) ? .timedOut : .transportError)
+            }
         }
 
         do {

@@ -1,0 +1,78 @@
+{
+  "identifier" : "854D6999-CB3E-48F4-85EB-66AF45EAFCD1",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "B3AADEDD-A1B5-4108-A630-D8982625CF04",
+      "localizations" : [
+        {
+          "description" : "Add 4 Explore discoveries and 1 TikTok discovery. Purchased discoveries do not expire.",
+          "displayName" : "Discovery Pass",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.simonsoloman.bilu.discovery_pass",
+      "referenceName" : "Discovery Pass",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "31B053B2-DAA0-44D4-AF15-43B38967EF7F",
+      "localizations" : [],
+      "name" : "Bilu Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "7.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "3A17C98B-1A97-4C6A-A36D-E49342789171",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "6 Explore discoveries and 1 TikTok discovery every service month. Auto-renews until cancelled.",
+              "displayName" : "Bilu Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.simonsoloman.bilu.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Bilu Pro Monthly",
+          "subscriptionGroupID" : "31B053B2-DAA0-44D4-AF15-43B38967EF7F",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "79.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C31C4D6B-1023-43E0-B84D-10DA64EE6A80",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "6 Explore discoveries and 1 TikTok discovery every service month. Auto-renews until cancelled.",
+              "displayName" : "Bilu Pro Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.simonsoloman.bilu.pro.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Bilu Pro Annual",
+          "subscriptionGroupID" : "31B053B2-DAA0-44D4-AF15-43B38967EF7F",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 3, "minor" : 0 }
+}

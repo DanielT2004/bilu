@@ -63,6 +63,7 @@ struct LoadingPulseView: View {
             value: breathScale
         )
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) {
                 outerAngle = 360
             }

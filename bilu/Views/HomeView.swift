@@ -42,6 +42,7 @@ struct HomeView: View {
     /// Set to a fresh UUID on each save commit so SwiftUI rebuilds the burst view.
     @State private var confettiBurstID: UUID? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,7 +65,7 @@ struct HomeView: View {
                 }
                 .scrollIndicators(.hidden)
                 .scrollDisabled(mapIsExpanded)
-                .animation(.spring(response: 0.38, dampingFraction: 0.86), value: viewModel.step)
+                .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86), value: viewModel.step)
                 .onChange(of: viewModel.step) {
                     proxy.scrollTo("top", anchor: .top)
                     expandedCategoryKey = nil
@@ -98,9 +99,16 @@ struct HomeView: View {
                 }
                 .environmentObject(savedStore)
         }
-        .sheet(isPresented: $viewModel.showingRewardGate) {
-            RewardedDiscoveryView {
+        .sheet(isPresented: $viewModel.showingPurchaseGate) {
+            PurchaseView(intent: .explore) {
                 Task { await viewModel.submitSurvey() }
+            }
+        }
+        .sheet(isPresented: $viewModel.showingRewardGate, onDismiss: {
+            Task { await viewModel.rewardGateDismissed() }
+        }) {
+            RewardedDiscoveryView(notice: viewModel.rewardGateNotice) {
+                viewModel.rewardUnlocked()
             }
             .environmentObject(discoveryAllowance)
             .environmentObject(rewardedAds)
@@ -118,6 +126,9 @@ struct HomeView: View {
         }
         .onChange(of: reselectCount) {
             viewModel.reset()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active && viewModel.step == .reveal { viewModel.loadingAds.resultsArrived() }
         }
         .onChange(of: reduceMotion) { _, newValue in
             viewModel.reduceMotionPreference = newValue
@@ -191,6 +202,7 @@ struct HomeView: View {
                 iconButton(systemName: "person", tint: C.onSurface) { }
             } else {
                 iconButton(systemName: "chevron.left", tint: C.onSurface) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); stepForward = false; viewModel.goBack() }
+                    .accessibilityLabel(viewModel.step == .loading ? "Cancel discovery" : "Back")
             }
             Spacer()
             Text("bilu")
@@ -201,6 +213,7 @@ struct HomeView: View {
                 iconButton(systemName: "bell", tint: C.onSurface) { }
             } else {
                 iconButton(systemName: "xmark", tint: C.muted) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.reset() }
+                    .accessibilityLabel(viewModel.step == .loading ? "Cancel discovery" : "Close")
             }
         }
         .padding(.horizontal, 20)
@@ -218,7 +231,9 @@ struct HomeView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(tint)
                 )
-                .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
+                .shadow(color: C.shadowColor, radius: 6, y: 2)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -1688,43 +1703,19 @@ struct HomeView: View {
     // MARK: - ══════════ LOADING STEP ══════════
 
     private var loadingStep: some View {
-        VStack(spacing: 0) {
-            LoadingPulseView()
-                .padding(.top, 80)
-                .padding(.bottom, 36)
-
-            Text(viewModel.loadingPhase)
-                .font(.custom("Georgia", size: 24))
-                .foregroundColor(C.onSurface)
-                .multilineTextAlignment(.center)
-                .lineSpacing(3)
-                .padding(.horizontal, 36)
-                .animation(.easeInOut(duration: 0.4), value: viewModel.loadingPhase)
-
-            Text("✦ Using AI to search...")
-                .font(.system(size: 13, weight: .light))
-                .foregroundColor(C.muted)
-                .padding(.top, 10)
-
-            HStack(spacing: 7) {
-                dotIndicator(color: C.sage)
-                dotIndicator(color: C.sageMd)
-                dotIndicator(color: C.sage.opacity(0.2))
-                dotIndicator(color: C.sage.opacity(0.2))
-            }
-            .padding(.top, 24)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func dotIndicator(color: Color) -> some View {
-        Circle().fill(color).frame(width: 8, height: 8)
+        DiscoveryLoadingView(phase: viewModel.loadingPhase,
+                             summary: viewModel.discoveryLoadingSummary,
+                             ads: viewModel.loadingAds)
     }
 
     // MARK: - ══════════ REVEAL STEP ══════════
 
     private var revealStep: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 0)
+                .onAppear {
+                    if scenePhase == .active { viewModel.loadingAds.resultsArrived() }
+                }
             // ── Header (gated on .headerIn) ──────────────────────────────
             if viewModel.revealPhase >= .headerIn {
                 VStack(alignment: .leading, spacing: 6) {
@@ -1884,7 +1875,9 @@ struct HomeView: View {
         let isCapacity = viewModel.lastSearchFailure == .capacityUnavailable
         let isUsageLimit = viewModel.lastSearchFailure == .usageLimitExceeded
         let isTimeout = viewModel.lastSearchFailure == .timedOut
-        let isServiceFailure = isTransport || isCapacity || isTimeout
+        let isPending = viewModel.lastSearchFailure == .pendingDiscovery
+        let needsPurchase = viewModel.lastSearchFailure == .purchaseRequired
+        let isServiceFailure = isTransport || isCapacity || isTimeout || isPending
         VStack(spacing: 14) {
             Image(systemName: isUsageLimit ? "gauge.with.dots.needle.67percent" : (isCapacity ? "hourglass" : (isTimeout ? "clock.arrow.circlepath" : (isTransport ? "wifi.exclamationmark" : "magnifyingglass"))))
                 .font(.system(size: 28, weight: .light))
@@ -1893,11 +1886,15 @@ struct HomeView: View {
                 .background(C.sageLt)
                 .clipShape(Circle())
 
-            Text(isUsageLimit ? "Search limit reached" : (isCapacity ? "Search is at capacity" : (isTimeout ? "Search took too long" : (isTransport ? "Couldn't reach us" : "Nothing matched, yet"))))
+            Text(isPending ? "Your discovery is still running" : needsPurchase ? "Ready for more discoveries?" : isUsageLimit ? "Search limit reached" : (isCapacity ? "Search is at capacity" : (isTimeout ? "Search took too long" : (isTransport ? "Couldn't reach us" : "Nothing matched, yet"))))
                 .font(.custom("Georgia", size: 22))
                 .foregroundStyle(C.onSurface)
 
-            Text(isUsageLimit
+            Text(isPending
+                 ? "Check again to pick up this discovery. Your allowance won’t be used twice."
+                 : needsPurchase
+                 ? "View your discovery balance or add a Discovery Pass. Your choices are saved here."
+                 : isUsageLimit
                  ? "This account has used its current search allowance. Please try again after the limit resets."
                  : (isCapacity
                     ? "Our search provider is temporarily at its limit. Give it a minute, then try again."
@@ -1912,14 +1909,15 @@ struct HomeView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
 
-            if isServiceFailure {
+            if isServiceFailure || needsPurchase {
                 Button {
                     Haptics.medium()
-                    Task { await viewModel.submitSurvey() }
+                    if needsPurchase { viewModel.showingPurchaseGate = true }
+                    else { Task { await viewModel.submitSurvey() } }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium))
-                        Text("Try again").font(.system(size: 15, weight: .medium))
+                        Text(needsPurchase ? "View discoveries" : isPending ? "Check discovery" : "Try again").font(.system(size: 15, weight: .medium))
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
