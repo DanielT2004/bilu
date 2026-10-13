@@ -199,7 +199,11 @@ struct HomeView: View {
     private var header: some View {
         HStack {
             if viewModel.step == .occasion {
-                iconButton(systemName: "person", tint: C.onSurface) { }
+                iconButton(systemName: "person.crop.circle", tint: C.onSurface) {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    coordinator.requestedTab = .profile
+                }
+                .accessibilityLabel("Profile")
             } else {
                 iconButton(systemName: "chevron.left", tint: C.onSurface) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); stepForward = false; viewModel.goBack() }
                     .accessibilityLabel(viewModel.step == .loading ? "Cancel discovery" : "Back")
@@ -210,14 +214,17 @@ struct HomeView: View {
                 .foregroundColor(C.sage)
             Spacer()
             if viewModel.step == .occasion {
-                iconButton(systemName: "bell", tint: C.onSurface) { }
+                // Keeps the wordmark centred now that the right slot is empty.
+                Color.clear
+                    .frame(width: 44, height: 44)
+                    .accessibilityHidden(true)
             } else {
                 iconButton(systemName: "xmark", tint: C.muted) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.reset() }
                     .accessibilityLabel(viewModel.step == .loading ? "Cancel discovery" : "Close")
             }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 28)
+        .padding(.top, 8)
         .padding(.bottom, 0)
     }
 
@@ -443,7 +450,7 @@ struct HomeView: View {
             .frame(height: 106)
             .background(C.white)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Color.black.opacity(0.06), radius: 14, x: 0, y: 5)
+            .shadow(color: C.shadowColor, radius: 14, x: 0, y: 5)
         }
         .buttonStyle(ScalePress())
     }
@@ -469,7 +476,7 @@ struct HomeView: View {
             .padding(.vertical, 12)
             .background(isDark ? C.darkSurface : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Color.black.opacity(isDark ? 0.2 : 0.06), radius: 8, x: 0, y: 3)
+            .shadow(color: C.shadowColor, radius: 8, x: 0, y: 3)
         }
         .buttonStyle(ScalePress())
     }
@@ -480,38 +487,32 @@ struct HomeView: View {
 
     @ViewBuilder
     private var trendingNowSection: some View {
-        if viewModel.isLoadingTrending || !viewModel.trendingRecommendations.isEmpty {
+        // loadTrendingIfNeeded() is still a stub, so hide the whole section,
+        // header included, until there is something to show.
+        if !viewModel.trendingRecommendations.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .bottom) {
                     (Text("Trending ").foregroundColor(C.onSurface) + Text("Now").foregroundColor(C.sage))
                         .font(.system(size: 26, weight: .black))
                         .tracking(-0.5)
                     Spacer()
-                    if !viewModel.trendingRecommendations.isEmpty {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            stepForward = true
-                            viewModel.viewAllTrending()
-                        } label: {
-                            Text("View all")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(C.sage)
-                        }
-                        .buttonStyle(.plain)
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        stepForward = true
+                        viewModel.viewAllTrending()
+                    } label: {
+                        Text("View all")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(C.sage)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
-                        if viewModel.isLoadingTrending {
-                            ForEach(0..<3, id: \.self) { i in
-                                trendingPlaceholderCard(trayColor: Self.trendingTrayColors[i % Self.trendingTrayColors.count])
-                            }
-                        } else {
-                            ForEach(Array(viewModel.trendingRecommendations.enumerated()), id: \.element.id) { index, rec in
-                                trendingCard(rec: rec, trayColor: Self.trendingTrayColors[index % Self.trendingTrayColors.count])
-                            }
+                        ForEach(Array(viewModel.trendingRecommendations.enumerated()), id: \.element.id) { index, rec in
+                            trendingCard(rec: rec, trayColor: Self.trendingTrayColors[index % Self.trendingTrayColors.count])
                         }
                     }
                     .padding(.horizontal, 20)
@@ -577,14 +578,6 @@ struct HomeView: View {
             .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 6)
         }
         .buttonStyle(ScalePress())
-    }
-
-    private func trendingPlaceholderCard(trayColor: Color) -> some View {
-        trayPlaceholder(trayColor)
-            .frame(width: 200, height: 260)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 6)
-            .redacted(reason: .placeholder)
     }
 
     private func trayPlaceholder(_ trayColor: Color) -> some View {

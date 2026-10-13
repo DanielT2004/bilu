@@ -32,20 +32,6 @@ struct TabBarView: View {
                 .font(.system(size: 18, weight: isActive ? .medium : .light))
             Text(label)
                 .font(.system(size: 10))
-            // The active dot uses matchedGeometryEffect so it slides between
-            // tabs instead of jump-cutting. Inactive slots render an invisible
-            // placeholder of equal size to preserve vertical layout.
-            ZStack {
-                Circle()
-                    .fill(Color.clear)
-                    .frame(width: 4, height: 4)
-                if isActive {
-                    Circle()
-                        .fill(C.sage)
-                        .frame(width: 4, height: 4)
-                        .matchedGeometryEffect(id: "tabDot", in: namespace)
-                }
-            }
         }
         .foregroundColor(isActive ? C.sage : C.subtle)
         .frame(maxWidth: .infinity)
