@@ -1,0 +1,20 @@
+# Apple's notification endpoint authenticates the signed Apple V2 payload itself.
+# All user-initiated payment and discovery endpoints also validate Supabase Auth
+# in their handler; a public anon project key never authorizes a purchase.
+[functions.app-store-notifications]
+verify_jwt = false
+
+[functions.purchase-verify]
+verify_jwt = true
+
+[functions.purchase-wallet]
+verify_jwt = true
+
+[functions.discovery]
+verify_jwt = true
+
+[functions.account-delete]
+verify_jwt = true
+
+[functions.discovery-telemetry]
+verify_jwt = true

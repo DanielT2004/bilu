@@ -52,6 +52,37 @@ serve(async (req: Request) => {
       });
     }
 
+    // Debug builds play Google's sample ad unit, which never sends an SSV
+    // callback. Accounts listed in REWARD_DEBUG_USER_IDS may verify their own
+    // session instead; it is then consumed exactly like a real reward. Unset
+    // means disabled, so production users can never reach this path.
+    if (body.action === "debug-verify" && isUUID(body.token)) {
+      if (!debugRewardUserIDs().has(user.id.toLowerCase())) {
+        return json(
+          { error: "Debug rewards are not enabled for this account" },
+          403,
+        );
+      }
+      const response = await database(
+        `rewarded_ad_sessions?token=eq.${body.token}&user_id=eq.${user.id}&verified_at=is.null&consumed_at=is.null&expires_at=gt.${encodeURIComponent(new Date().toISOString())}`,
+        {
+          method: "PATCH",
+          headers: { "Prefer": "return=representation" },
+          body: JSON.stringify({
+            verified_at: new Date().toISOString(),
+            transaction_id: `debug-${body.token}`,
+            reward_amount: 1,
+            ad_unit: "debug",
+          }),
+        },
+      );
+      if (!response.ok) throw new Error("debug reward update failed");
+      const updated = await response.json() as unknown[];
+      if (updated.length !== 1) return json({ error: "Unknown reward" }, 404);
+      console.log(JSON.stringify({ event: "rewarded_access_debug_verified" }));
+      return json({ verified: true });
+    }
+
     return json({ error: "Invalid action" }, 400);
   } catch (error) {
     const authResponse = paidAPIAccessErrorResponse(error, corsHeaders);
@@ -217,6 +248,15 @@ function asArrayBuffer(value: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(value.byteLength);
   copy.set(value);
   return copy.buffer;
+}
+
+function debugRewardUserIDs(): Set<string> {
+  return new Set(
+    (Deno.env.get("REWARD_DEBUG_USER_IDS") ?? "")
+      .split(",")
+      .map((id) => id.trim().toLowerCase())
+      .filter(isUUID),
+  );
 }
 
 function isUUID(value: string | null | undefined): value is string {
