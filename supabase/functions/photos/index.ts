@@ -8,16 +8,25 @@ import {
   requireAuthenticatedUser,
 } from "../_shared/paid_api_guard.ts";
 
-const PAID_API_QUOTA = quotaPolicy("place_photos", "PLACE_PHOTOS", 40, 300, 10_000);
+const PAID_API_QUOTA = quotaPolicy(
+  "place_photos",
+  "PLACE_PHOTOS",
+  40,
+  300,
+  10_000,
+);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Expose-Headers": "retry-after, x-ratelimit-remaining, x-daily-budget-remaining, x-global-daily-budget-remaining",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Expose-Headers":
+    "retry-after, x-ratelimit-remaining, x-daily-budget-remaining, x-global-daily-budget-remaining",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+  "";
 const CACHE_TABLE_URL = `${SUPABASE_URL}/rest/v1/places_cache`;
 
 serve(async (req: Request) => {
@@ -36,10 +45,13 @@ serve(async (req: Request) => {
     const user = await requireAuthenticatedUser(req);
     const placesApiKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
     if (!placesApiKey) {
-      return new Response(JSON.stringify({ error: "GOOGLE_PLACES_API_KEY not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "GOOGLE_PLACES_API_KEY not configured" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const { placeId }: { placeId?: string } = await req.json();
@@ -55,12 +67,14 @@ serve(async (req: Request) => {
 
     // Look up photo_refs from cache (skip index 0 — that's the hero)
     const res = await fetch(
-      `${CACHE_TABLE_URL}?place_id=eq.${encodeURIComponent(placeId)}&select=photo_refs&limit=1`,
+      `${CACHE_TABLE_URL}?place_id=eq.${
+        encodeURIComponent(placeId)
+      }&select=photo_refs&limit=1`,
       {
         headers: {
           "apikey": SUPABASE_SERVICE_ROLE_KEY,
         },
-      }
+      },
     );
 
     if (!res.ok) {
@@ -89,7 +103,12 @@ serve(async (req: Request) => {
       });
     }
 
-    console.log(logTag, "Resolving", galleryRefs.length, "gallery refs at 800px");
+    console.log(
+      logTag,
+      "Resolving",
+      galleryRefs.length,
+      "gallery refs at 800px",
+    );
 
     const quota = await consumePaidAPIQuota(
       user.id,
@@ -98,7 +117,9 @@ serve(async (req: Request) => {
     );
 
     const photos = (
-      await Promise.all(galleryRefs.map((ref) => fetchPhotoUri(ref, placesApiKey, logTag, 800)))
+      await Promise.all(
+        galleryRefs.map((ref) => fetchPhotoUri(ref, placesApiKey, logTag, 800)),
+      )
     ).filter((u): u is string => !!u);
 
     console.log(logTag, "Resolved", photos.length, "gallery photos");

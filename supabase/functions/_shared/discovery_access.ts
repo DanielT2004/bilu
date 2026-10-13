@@ -1,7 +1,8 @@
 import { PaidAPIAccessError } from "./paid_api_guard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+  "";
 
 export async function consumeDiscoveryAccess(
   userId: string,
@@ -93,7 +94,9 @@ export async function refundDiscoveryAccess(
     }
     return await response.json() === true;
   } catch {
-    console.error(JSON.stringify({ event: "discovery_access_refund_unavailable" }));
+    console.error(
+      JSON.stringify({ event: "discovery_access_refund_unavailable" }),
+    );
     return false;
   }
 }
