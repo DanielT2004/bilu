@@ -98,9 +98,28 @@ signature, ad unit, user, session expiry, and unique transaction ID. Consumption
 remains atomic and server-authorized. Passive banners never create, verify,
 grant, or consume reward tokens.
 
-Debug rewarded ads deliberately bypass live SSV because Google's sample unit
-cannot be assigned Bilu's callback. Debug tests do **not** verify production SSV.
-Use AdMob's SSV testing tool and a controlled TestFlight/device run before release.
+Debug rewarded ads can't use live SSV, because Google's sample unit can't be
+assigned Bilu's callback. Instead, Debug builds call `rewarded-access` with
+`action: "debug-verify"` after the ad finishes (`RewardedAdService.verifyDebugReward`,
+`#if DEBUG` only). The server accepts it only for accounts listed in the
+`REWARD_DEBUG_USER_IDS` secret (comma-separated account UUIDs); unset means
+disabled, which is the production setting. A debug-verified session is consumed
+exactly like a real reward: once, for its own account, before it expires
+(`supabase/functions/rewarded-access/handler_test.ts` covers each case).
+Debug tests do **not** verify production SSV. Use AdMob's SSV testing tool and a
+controlled TestFlight/device run before release.
+
+### Debug reward allowlist
+
+- If a Debug reward is refused, the Xcode console prints
+  `add <account UUID> to REWARD_DEBUG_USER_IDS`. Add that UUID to the secret.
+- The account UUID lives in the Keychain under a service chosen by the
+  Supabase project (`Config.supabase.sessionKeychainService`). From the code:
+  reinstalling the same build on the same device keeps the UUID, because
+  nothing clears the Keychain on first launch; pointing a build at a different
+  Supabase project, a new simulator, or erasing the device gives a new UUID,
+  which must be added again. (Read from the code, not yet confirmed on a
+  device.)
 
 The automatic Trending request was found to consume the legacy backend free
 allowance. It is now disabled; there is no separate allowance-free Trending

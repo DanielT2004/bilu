@@ -54,9 +54,12 @@ passes, and the only failing UI test is the known one in workstream A.
 
 ## Phase 1 — Parallel workstreams (start after W0)
 
-**A. Test-suite health.** Fix
-`AppLaunchUITests.testSearchKeepsKeyboardVisibleAfterEveryCharacter`: the search
-field measures 80 pt tall instead of 44. It fails without the tab change, so it
+**A. Test-suite health.** Re-check
+`AppLaunchUITests.testSearchKeepsKeyboardVisibleAfterEveryCharacter` before
+fixing anything: it passed 7 of 7 runs on iPhone 17 Pro / iOS 26.5 at d5f2c64
+and 1343565 (October 13). Run it on this workstream's iPhone 17 before closing
+the gate. The original failure: the search field measured 80 pt tall instead
+of 44. It fails without the tab change, so it
 probably comes from the uncommitted `SearchView.swift` edits. Decide whether the
 view or the test is wrong, using the 44 pt single-line contract. Then get every
 unit and UI test green on one run.

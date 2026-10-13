@@ -89,7 +89,9 @@ A candidate is ready only when all of the following are true:
 
 - [x] App launches with Explore, Search, and Profile navigation.
 - [x] Selected tab state follows navigation across all three destinations.
-- [x] Notifications opens and dismisses a meaningful sheet.
+- [x] Leaving a tab keeps its progress and search text (`testSearchQueryPersistsAcrossTabChanges`, b1be766).
+- [ ] Re-selecting Explore returns it to the start of the journey (b1be766; no automated test yet).
+- [x] The header profile button opens Profile. (The notifications bell was removed in 1343565 because it had no action, so the old "Notifications opens a sheet" check no longer applies.)
 - [x] Search field, sort state, and Profile edit action have accessible identities.
 - [x] Missing-city search presents city guidance and can be cleared.
 - [x] Profile edit and dietary sheets expose accessible controls.
@@ -157,9 +159,11 @@ A candidate is ready only when all of the following are true:
 - [x] Valid token returns 200 and every result satisfies the response contract.
 - [ ] Expired/revoked token triggers exactly one session refresh/recreation and one retry.
 - [ ] Multiple explicit discoveries in the same UTC day succeed without an ad or daily-free gate; authentication and paid-API abuse/spending protections still apply.
+  **Conflicts with the code:** the app ships one free discovery per UTC day (`DiscoveryAllowance.dailyFreeLimit = 1`) plus rewarded ads. Waiting on the owner's monetization decision; update this gate or the code to match.
 - [x] Per-user quota returns the documented 429 response and retry guidance.
 - [ ] Global budget/capacity protection returns documented 429/503 behavior without repeated paid calls.
 - [ ] Gemini timeout stays within the client latency budget and returns the documented 504 code.
+  Budget as built: the server gives Gemini 19 s (`RECOMMENDATIONS_DEADLINE_MS`) and refunds the discovery on timeout; the app waits 30 s (`GeminiService.recommendationTimeout`) so it never gives up before the server does.
 - [ ] Logs contain request IDs and capacity metrics but no access tokens, prompts containing personal data, or API keys.
 - [x] CORS preflight and content-type handling succeed for the intended clients.
 
@@ -217,3 +221,20 @@ xcodebuild -quiet clean test \
 
 supabase functions list --project-ref yysxjtexwlnvoptxcxlp --output json
 ```
+
+## Backend inventory (as of 1343565)
+
+Edge Functions in this checkout: `account-delete`, `app-store-notifications`,
+`discovery`, `discovery-telemetry`, `enrich`, `photos`, `privacy-policy`,
+`purchase-verify`, `purchase-wallet`, `recommendations`, `rewarded-access`,
+`support`, `telemetry`, `tiktok-locations`, `tiktok-search`.
+
+Migrations: `20260825000000_places_cache`, `20260914000000_paid_api_quotas`,
+`20260914010000_production_observability`, `20260915000000_diagnostic_retention`,
+`20260918000000_rewarded_discovery_access`, `20260923000000_refund_discovery_access`,
+`20261009000000_purchase_wallet`, `20261009010000_discovery_ad_diagnostics`.
+
+Which of these are deployed or applied hasn't been checked from this
+checkout. Before release, compare with `supabase functions list` and
+`supabase migration list` against the production project, and list the
+differences here.
