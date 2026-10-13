@@ -66,13 +66,16 @@ Input fields may use a ghost border on focus: `.overlay(RoundedRectangle(cornerR
 
 | Role | Font | Size | Weight | Notes |
 |---|---|---|---|---|
-| Display / brand | `Georgia` (target: Noto Serif) | 28–30pt | Regular | Tight line spacing |
-| Section headline | `Georgia` | 24–26pt | Regular | — |
-| UI labels/buttons | `.system` (target: Plus Jakarta Sans) | 13–15pt | `.medium` | — |
-| Body / description | `.system` | 13–15pt | `.light` | — |
-| Category tags | `.system` | 10–11pt | `.medium` | `.textCase(.uppercase)`, `.tracking(1.0)` |
+| Display / screen title | Noto Serif | 28–30pt | Regular | Tight line spacing; one per screen |
+| Section header (inline) | Plus Jakarta Sans | 15–17pt | `.semibold` | Never 34pt black mid-screen |
+| UI labels/buttons | Plus Jakarta Sans | 13–15pt | `.medium` | — |
+| Body / description | Plus Jakarta Sans | 13–15pt | Regular | — |
+| Category tags | Plus Jakarta Sans | 10–11pt | `.medium` | `.textCase(.uppercase)`, `.tracking(1.0)` |
 
-**Note:** Noto Serif and Plus Jakarta Sans are the target fonts per the design spec. Add them as project resources and update `AppTheme` when available. Until then, Georgia and SF Pro are the functional equivalents.
+Both fonts are SIL OFL licensed, bundled with the app, and used **only through `AppTheme` typography tokens** built with `Font.custom(_:size:relativeTo:)`, so Dynamic Type works. Never call `.custom("…")` or hard-code a font in a view. Until the fonts land (feedback-redesign workstream D1), leave existing `Georgia` call sites alone but add no new ones.
+
+### One title per screen
+Each screen has exactly one title, at the top. Sections below it use the inline section-header style above.
 
 ### Labels must be catalogue-style
 ```swift
@@ -98,6 +101,14 @@ Text("What's the occasion?")
 | Icon trays | 10–12pt | — |
 
 **Never use `cornerRadius: 0` (hard corners) on user-facing surfaces.**
+
+---
+
+## 4a. Cards — One Style
+
+There is one card style: `AppTheme.white` on `AppTheme.surface`, 18pt continuous corners, `AppTheme.shadowColor` shadow when it needs lift. Use the shared card component (`Views/Components/BiluCard.swift`, once added) instead of restyling cards per screen.
+
+**Never on cards:** colored accent bars, faint "ghost" background icons, or stacks of uppercase badges. These read as generic AI-template UI.
 
 ---
 
@@ -212,14 +223,12 @@ var body: some View {
 }
 ```
 
-### Navigation Bar Glass
-The bottom tab bar and sticky headers use `.ultraThinMaterial` for the frosted-glass effect — never a solid white/cream background with a hairline border.
-
-```swift
-// Bottom nav bar:
-.background(.ultraThinMaterial)
-// Remove any Rectangle() divider above it
-```
+### Native Navigation and Search
+- **Tab bar:** the native `TabView`, icons only (keep text labels for VoiceOver), no active-tab dot. Hide it with `.toolbar(.hidden, for: .tabBar)`. Do not build custom tab bars.
+- **Search:** native `.searchable`, not a custom `UITextField` wrapper.
+- **Sheets:** standard `.sheet` with `.presentationDetents([.medium, .large])` where a partial sheet fits.
+- **Liquid Glass:** native tab bars and sheets pick it up automatically on iOS 26 (deployment target stays 17.6). Any direct `glassEffect` call goes behind `if #available(iOS 26, *)` with an `.ultraThinMaterial` fallback.
+- **Sticky headers** use `.ultraThinMaterial` — never a solid white/cream background with a hairline border.
 
 ---
 
@@ -244,7 +253,9 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 - Embrace asymmetry — don't center everything
 - Use `sageLt` / `sageMd` for icon trays, not gray
 - Use `AppTheme.terracotta` for high-urgency CTAs ("Take Me There", "New Vibe")
-- Use `Georgia` for all display/headline text
+- Use the `AppTheme` typography tokens (Noto Serif display, Plus Jakarta Sans UI) for all text
+- Keep one title per screen, at the top
+- Use native `TabView`, `.searchable` and sheets
 - Use `.continuous` curve style on `RoundedRectangle` for a softer feel
 - Stagger list reveals with `.delay()` for a curated, editorial feel
 - Add `.shadow(color: AppTheme.shadowColor, radius: 16, y: 6)` to floating cards
@@ -256,6 +267,9 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 ### Don't
 - Use purple (`#8B5CF6`) anywhere
 - Use `Color.black` or `Color.gray` for shadows
+- Add accent bars, ghost icons or uppercase badge stacks to cards
+- Use one SF Symbol for two concepts, or two symbols for one concept
+- Ship a button with an empty action
 - Use `1px` stroke borders on cards or section dividers
 - Use hard corners (`cornerRadius: 0–4`) on cards
 - Use `NavigationStack` push transitions when a sheet would work
