@@ -101,6 +101,17 @@ actor SupabaseAuthSession {
 
     func cachedAccount() -> BiluAccount? { session?.user }
 
+    /// Marks a token the server rejected as expired so the next caller refreshes
+    /// it once. A token another caller already replaced is left alone, and the
+    /// identity is never discarded.
+    func invalidate(accessToken: String) async {
+        await acquire()
+        defer { release() }
+        guard let stored = session, stored.accessToken == accessToken else { return }
+        session = StoredSession(accessToken: stored.accessToken, refreshToken: stored.refreshToken,
+                                expiresAt: .distantPast, user: stored.user)
+    }
+
     /// Guest linking preserves its UUID. An Apple identity that already belongs
     /// to a Bilu account signs into that account; device-local saves are untouched.
     func signInWithApple(idToken: String, nonce: String, requireAccount: UUID? = nil, linkGuest: Bool = true) async throws -> BiluAccount {
