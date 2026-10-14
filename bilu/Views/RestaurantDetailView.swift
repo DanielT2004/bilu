@@ -123,14 +123,11 @@ struct RestaurantDetailView: View {
                 .italic()
                 .foregroundStyle(AppTheme.sage)
             Spacer()
-            HStack(spacing: 6) {
-                topBarIcon("magnifyingglass")
-                Button(action: tapWantToGo) {
-                    topBarIcon(wantToGoSaved ? "bookmark.fill" : "bookmark",
-                               tint: wantToGoSaved ? AppTheme.sage : AppTheme.onSurface)
-                }
-                .buttonStyle(.plain)
+            Button(action: tapWantToGo) {
+                topBarIcon(wantToGoSaved ? "bookmark.fill" : "bookmark",
+                           tint: wantToGoSaved ? AppTheme.sage : AppTheme.onSurface)
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

@@ -83,7 +83,6 @@ struct BiluMapView: View {
             .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: AppTheme.shadowColor, radius: 10, y: 4)
-            .onTapGesture { }
             .mapsChoiceDialog(item: $pendingMapsRec)
         }
     }
