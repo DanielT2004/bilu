@@ -10,13 +10,100 @@ import MapKit
 import SwiftUI
 
 enum Step: String, CaseIterable {
-    case occasion
+    /// Explore's entry: the feed plus the action button that opens the intent sheet.
+    case feed
     case keyQuestion
     case foodFeeling
-    case drinksSubFlow
     case location
     case loading
     case reveal
+}
+
+/// The six intents in the action-button sheet. Every intent goes through the
+/// same sheet and `HomeViewModel.applyIntent`; none skips a step the others get.
+enum FeedIntent: String, CaseIterable, Identifiable {
+    case cafe, food, drinks, lateNight, brunch, sweet
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cafe:      return "Café to lock in"
+        case .food:      return "Food"
+        case .drinks:    return "Drinks"
+        case .lateNight: return "Late night"
+        case .brunch:    return "Brunch"
+        case .sweet:     return "Something sweet"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .cafe:      return "cup.and.saucer.fill"
+        case .food:      return "fork.knife"
+        case .drinks:    return "wineglass.fill"
+        case .lateNight: return "moon.stars.fill"
+        case .brunch:    return "sun.horizon.fill"
+        case .sweet:     return "birthday.cake.fill"
+        }
+    }
+
+    var refinements: [IntentRefinement] {
+        switch self {
+        case .cafe:
+            return [IntentRefinement("Work or study"), IntentRefinement("Great coffee"),
+                    IntentRefinement("Catching up"), IntentRefinement("Coffee & food")]
+        case .food:
+            return [IntentRefinement("Quick bite", occasion: "Casual"),
+                    IntentRefinement("Sit down", occasion: "Sit Down")]
+        case .drinks:
+            return [IntentRefinement("Cocktail bar"), IntentRefinement("Wine bar"),
+                    IntentRefinement("Rooftop"), IntentRefinement("Low key bar")]
+        case .lateNight, .brunch:
+            return []
+        case .sweet:
+            return [IntentRefinement("Ice cream"), IntentRefinement("Cookies & baked"),
+                    IntentRefinement("Cake & fancy"),
+                    // The prompt table keys boba on the old sub-flow label.
+                    IntentRefinement("Boba", answer: "Boba & sweet drinks"),
+                    IntentRefinement("Fresh baked", occasion: "Bakery")]
+        }
+    }
+
+    /// Pre-selected refinement, if any. Intents with refinements but no default
+    /// need an explicit pick before "Find spots" enables.
+    var defaultRefinement: IntentRefinement? {
+        self == .cafe ? refinements.first : nil
+    }
+
+    /// "Late night" also works as a modifier on Drinks and Café.
+    var supportsLateNight: Bool { self == .drinks || self == .cafe }
+
+    /// True when the sheet submits the discovery directly; false when it hands
+    /// off to the existing food-feeling step.
+    var submitsDirectly: Bool {
+        switch self {
+        case .cafe, .drinks, .sweet:       return true
+        case .food, .lateNight, .brunch:   return false
+        }
+    }
+}
+
+/// A refinement chip under an intent. `answer` becomes `keyQuestionAnswer`;
+/// `occasion` overrides the intent's occasion (Food's Quick bite / Sit down,
+/// Something sweet's Fresh baked).
+struct IntentRefinement: Equatable, Hashable, Identifiable {
+    let label: String
+    let answer: String
+    let occasion: String?
+
+    var id: String { label }
+
+    init(_ label: String, answer: String? = nil, occasion: String? = nil) {
+        self.label = label
+        self.answer = answer ?? label
+        self.occasion = occasion
+    }
 }
 
 struct VibeOption {
@@ -152,7 +239,7 @@ enum RevealPhase: Int, Comparable {
 
 @MainActor
 final class HomeViewModel: ObservableObject {
-    @Published var step: Step = .occasion
+    @Published var step: Step = .feed
     @Published var selection: VibeSelection
     @Published var recommendations: [Recommendation] = []
     @Published var showingRewardGate = false
@@ -176,9 +263,11 @@ final class HomeViewModel: ObservableObject {
     private var resolvedUserLocationLabel: String?
     private var didRequestLocation = false
     @Published var cuisineMode: CuisineMode = .vibe
-    @Published var serviceCategory: String = "eat"
     @Published var selectedVibe: String = ""
-    @Published var drinksSubType: String = ""
+    /// Drives the intent sheet from the feed's action button and empty-state card.
+    @Published var isShowingIntentSheet = false
+    /// Places resolved from shared TikToks, read from local storage only.
+    @Published private(set) var tikTokPlaces: [FeedTikTokPlace] = []
     @Published var tikTokVideos: [String: [TikTokVideo]] = [:]
     @Published var revealPhase: RevealPhase = .sealed
     /// Mirrors `@Environment(\.accessibilityReduceMotion)`; the View writes it on appear/change
@@ -204,6 +293,7 @@ final class HomeViewModel: ObservableObject {
     private let fetchRecommendations: (VibeSelection, String?) async -> VibeFetchOutcome
     private let enrich: ([Recommendation], [GroundingPlace], String) async -> [Recommendation]
     private let readinessTimeout: TimeInterval
+    private let loadSharedPlaces: () -> [FeedTikTokPlace]
 
     static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "Brunch", "Late Night"]
     static let drinksOccasions:  Set<String> = ["Cafe", "Bakery", "Dessert", "Drinks"]
@@ -222,8 +312,10 @@ final class HomeViewModel: ObservableObject {
          commerceEnabled: (() -> Bool)? = nil,
          fetchRecommendations: ((VibeSelection, String?) async -> VibeFetchOutcome)? = nil,
          enrich: (([Recommendation], [GroundingPlace], String) async -> [Recommendation])? = nil,
-         readinessTimeout: TimeInterval = 8) {
+         readinessTimeout: TimeInterval = 8,
+         loadSharedPlaces: (() -> [FeedTikTokPlace])? = nil) {
         self.selection = VibeSelection()
+        self.loadSharedPlaces = loadSharedPlaces ?? FeedTikTokPlace.loadFromLocalShares
         #if DEBUG
         if fetchRecommendations == nil, let fixture = RecoveryFixture.current {
             // Deterministic UI-test seam: no provider calls, no ads, and a
@@ -258,52 +350,71 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Navigation
 
-    func handleOccasion(_ occasion: String) {
-        selection.occasion = occasion
-        selection.keyQuestionAnswer = ""
-        selection.keyQuestionTimeWindow = nil
-        selection.keyQuestionDate = nil
-        selection.foodFeelings = []
-        selection.selectedSubOptions = [:]
-        selection.selectedCountry = ""
-        selection.cuisineMode = "vibe"
+    /// Builds the `VibeSelection` for an intent-sheet choice and moves on: Café,
+    /// Drinks and Something sweet submit; Food, Late night and Brunch continue to
+    /// the food-feeling step. "Late night" on Drinks or Café only sets
+    /// `keyQuestionTimeWindow` (never `openNow`, which needs `fineTuneApplied`).
+    func applyIntent(_ intent: FeedIntent, refinement: IntentRefinement?, lateNight: Bool) {
+        cancelDiscovery()
+        isShowingIntentSheet = false
+        selection = Self.selection(for: intent, refinement: refinement, lateNight: lateNight, base: selection)
         cuisineMode = .vibe
-        selection.fineTuneApplied = false
-        selection.parking = []
-        selection.outdoorSeating = false
-        selection.petFriendly = false
-        selection.wheelchairAccess = false
-        selection.dateNight = false
-        selection.specialOccasion = false
-        selection.location = ""
-        selection.pricePoints = ["$$", "$$$"]
-        selection.partySize = 2
-        selection.openNow = false
-
-        if Self.drinksOccasions.contains(occasion) {
-            if occasion == "Bakery" {
-                selection.foodFeelings = ["Surprise me"]
-                searchTask = Task { await submitSurvey() }
-            } else {
-                step = .drinksSubFlow
-            }
-        } else if Self.newTimeOccasions.contains(occasion) {
-            selectedVibe = defaultVibe(for: occasion)
-            selection.selectedVibe = selectedVibe
-            step = .foodFeeling
+        selectedVibe = selection.selectedVibe
+        if intent.submitsDirectly {
+            searchTask = Task { await submitSurvey() }
         } else {
-            step = .keyQuestion
+            step = .foodFeeling
         }
     }
+
+    /// The intent table. Starts from a clean survey but keeps the map's search
+    /// area (radius, center, mode) from `base`.
+    static func selection(for intent: FeedIntent, refinement: IntentRefinement?,
+                          lateNight: Bool, base: VibeSelection = VibeSelection()) -> VibeSelection {
+        var next = VibeSelection()
+        next.radiusMiles = base.radiusMiles
+        next.latitude = base.latitude
+        next.longitude = base.longitude
+        next.useRadiusSearch = base.useRadiusSearch
+        let chip = refinement ?? intent.defaultRefinement
+        switch intent {
+        case .cafe:
+            next.occasion = "Cafe"
+            next.keyQuestionAnswer = chip?.answer ?? ""
+            next.foodFeelings = ["Surprise me"]
+        case .food:
+            next.occasion = chip?.occasion ?? "Casual"
+            next.selectedVibe = defaultVibe(for: next.occasion)
+        case .drinks:
+            next.occasion = "Drinks"
+            next.keyQuestionAnswer = chip?.answer ?? ""
+            next.foodFeelings = ["Surprise me"]
+        case .lateNight:
+            next.occasion = "Late Night"
+            next.selectedVibe = defaultVibe(for: next.occasion)
+        case .brunch:
+            next.occasion = "Brunch"
+            next.selectedVibe = defaultVibe(for: next.occasion)
+        case .sweet:
+            next.occasion = chip?.occasion ?? "Dessert"
+            next.keyQuestionAnswer = chip?.answer ?? ""
+            next.foodFeelings = ["Surprise me"]
+        }
+        if lateNight && intent.supportsLateNight {
+            next.keyQuestionTimeWindow = lateNightTimeWindow
+        }
+        return next
+    }
+
+    static let lateNightTimeWindow = "Late night, after 10pm"
 
     func goBack() {
         searchTask?.cancel()
         switch step {
-        case .keyQuestion:    step = .occasion
-        case .drinksSubFlow:  step = .occasion
+        case .keyQuestion:    step = .feed
         case .foodFeeling:
             if Self.newTimeOccasions.contains(selection.occasion) {
-                step = .occasion
+                step = .feed
             } else {
                 step = .keyQuestion
             }
@@ -534,16 +645,20 @@ final class HomeViewModel: ObservableObject {
 
     func reset() {
         cancelDiscovery()
-        step = .occasion
-        selection = VibeSelection()
+        step = .feed
+        // A new journey keeps the search area the user set on the location chip.
+        var fresh = VibeSelection()
+        fresh.radiusMiles = selection.radiusMiles
+        fresh.latitude = selection.latitude
+        fresh.longitude = selection.longitude
+        fresh.useRadiusSearch = selection.useRadiusSearch
+        selection = fresh
         recommendations = []
         lastSearchFailure = nil
         lastSearchWasRelaxed = false
         isEnriching = false
         cuisineMode = .vibe
-        serviceCategory = "eat"
         selectedVibe = ""
-        drinksSubType = ""
         tikTokVideos = [:]
         revealPhase = .sealed
     }
@@ -631,6 +746,8 @@ final class HomeViewModel: ObservableObject {
         lastSearchWasRelaxed = false
         revealPhase = .sealed
         step = surveySubmissionStep
+        // Searches started from the intent sheet adjust in the sheet.
+        if step == .feed { isShowingIntentSheet = true }
     }
 
     func rewardGateDismissed() async {
@@ -698,10 +815,11 @@ final class HomeViewModel: ObservableObject {
         }
         defer { ticker.cancel() }
 
-        // handleOccasion resets selection.location on each occasion tap — restore from
-        // the geocoded city name before building the prompt.
+        // applyIntent starts each journey with an empty selection.location — restore
+        // from the geocoded city name before building the prompt, but never send
+        // the "Set your location" placeholder as a place.
         if selection.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !detectedLocation.isEmpty {
+           hasResolvedLocationLabel {
             selection.location = detectedLocation
         }
 
@@ -1004,6 +1122,90 @@ final class HomeViewModel: ObservableObject {
         if detectedLocation.isEmpty { detectedLocation = "Set your location" }
     }
 
+    // MARK: - Feed
+
+    static let unsetLocationLabel = "Set your location"
+
+    /// True once GPS or the map has produced a real place name.
+    var hasResolvedLocationLabel: Bool {
+        !detectedLocation.isEmpty && detectedLocation != Self.unsetLocationLabel
+    }
+
+    /// True when a discovery has somewhere real to search.
+    var hasUsableLocation: Bool {
+        !selection.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || hasResolvedLocationLabel
+            || (selection.useRadiusSearch && selection.latitude != nil && selection.longitude != nil)
+    }
+
+    /// The location chip: "Near you · 2 mi" in radius mode, else the city name.
+    var locationChipLabel: String {
+        if selection.useRadiusSearch {
+            return "Near you · \(Self.formattedMiles(selection.radiusMiles))"
+        }
+        let typed = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty { return typed }
+        return hasResolvedLocationLabel ? detectedLocation : "Set location"
+    }
+
+    static func formattedMiles(_ miles: Double) -> String {
+        let rounded = (miles * 10).rounded() / 10
+        return rounded == rounded.rounded()
+            ? "\(Int(rounded)) mi"
+            : String(format: "%.1f mi", rounded)
+    }
+
+    /// The allowance line shown wherever a tap spends a discovery (the intent
+    /// sheet and Run it back). Nil when purchases replace the free allowance.
+    var discoveryAllowanceStatus: String? {
+        guard !commerceEnabled() else { return nil }
+        let remaining = allowance.remainingFreeDiscoveries
+        if remaining > 0 { return "\(remaining) free today" }
+        return allowance.hasRewardedDiscovery ? "1 unlocked with an ad" : "Watch an ad for another"
+    }
+
+    /// Where "near you" is measured from: the map's pin in radius mode, else GPS.
+    var feedOrigin: CLLocationCoordinate2D? {
+        if selection.useRadiusSearch, let lat = selection.latitude, let lng = selection.longitude {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        return initialMapCenter
+    }
+
+    /// Re-reads feed data that lives on the device. No network.
+    func refreshFeed() {
+        tikTokPlaces = loadSharedPlaces()
+    }
+
+    /// Up to `limit` Want to Go places, nearest first when a location is known;
+    /// places without coordinates (or with no origin) follow, newest first.
+    static func nearestWantToGo(_ places: [SavedPlace], from origin: CLLocationCoordinate2D?,
+                                limit: Int = 6) -> [SavedPlace] {
+        let wantToGo = places.filter { $0.listType == .wantToGo }
+        let originLocation = origin.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        func distance(_ place: SavedPlace) -> CLLocationDistance? {
+            guard let originLocation, let lat = place.latitude, let lng = place.longitude else { return nil }
+            return originLocation.distance(from: CLLocation(latitude: lat, longitude: lng))
+        }
+        let sorted = wantToGo.sorted { lhs, rhs in
+            switch (distance(lhs), distance(rhs)) {
+            case let (l?, r?): return l < r
+            case (.some, .none): return true
+            case (.none, .some): return false
+            case (.none, .none): return lhs.dateSaved > rhs.dateSaved
+            }
+        }
+        return Array(sorted.prefix(limit))
+    }
+
+    /// Miles from `origin` to a coordinate, for the feed cards.
+    static func milesLabel(from origin: CLLocationCoordinate2D?, latitude: Double?, longitude: Double?) -> String? {
+        guard let origin, let latitude, let longitude else { return nil }
+        let meters = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+            .distance(from: CLLocation(latitude: latitude, longitude: longitude))
+        return String(format: "%.1f mi", meters / 1609.34)
+    }
+
     // MARK: - Map label
 
     var mapLocationLabel: String {
@@ -1064,9 +1266,8 @@ final class HomeViewModel: ObservableObject {
 
     var progressStepIndex: Int? {
         switch step {
-        case .occasion:              return nil
+        case .feed:                  return nil
         case .keyQuestion:           return 1
-        case .drinksSubFlow:         return nil
         case .foodFeeling:
             // New time-based occasions skip keyQuestion — don't show a misleading step count
             if Self.newTimeOccasions.contains(selection.occasion) { return nil }
@@ -1076,16 +1277,9 @@ final class HomeViewModel: ObservableObject {
         }
     }
 
-    static let stepsForProgress: [(id: Step, label: String)] = [
-        (.occasion, "OCCASION"),
-        (.keyQuestion, "KEY Q"),
-        (.foodFeeling, "FOOD FEEL"),
-        (.location, "DETAILS")
-    ]
-
     // MARK: - Vibe (new time-based flow)
 
-    func defaultVibe(for occasion: String) -> String {
+    static func defaultVibe(for occasion: String) -> String {
         switch occasion {
         case "Casual", "Late Night": return "🔥 Trending"
         case "Sit Down", "Brunch":   return "⭐ Best rated"
@@ -1116,35 +1310,6 @@ final class HomeViewModel: ObservableObject {
     func toggleSpecialOccasion() {
         selection.specialOccasion.toggle()
         if selection.specialOccasion { selection.dateNight = false }
-    }
-
-    func selectDrinksSubType(_ subType: String) {
-        drinksSubType = subType
-        selection.keyQuestionAnswer = subType
-        selection.foodFeelings = ["Surprise me"]
-        searchTask = Task { await submitSurvey() }
-    }
-
-    var drinksSubFlowOptions: [(emoji: String, title: String, sub: String)] {
-        switch selection.occasion {
-        case "Cafe":
-            return [("☕", "Great coffee",     "Specialty, matcha, quality first"),
-                    ("💻", "Work or study",    "Wifi, quiet, long stay ok"),
-                    ("💬", "Catching up",      "Relaxed, conversational"),
-                    ("🥐", "Coffee & food",    "Want a proper bite too")]
-        case "Dessert":
-            return [("🍦", "Ice cream",         "Scoops, gelato, soft serve"),
-                    ("🍪", "Cookies & baked",   "Fresh, warm, out the oven"),
-                    ("🎂", "Cake & fancy",       "Patisserie, plated dessert"),
-                    ("🧋", "Boba & sweet drinks","Drinks that count as dessert")]
-        case "Drinks":
-            return [("🍹", "Cocktail bar",  "Craft, aesthetic, worth posting"),
-                    ("🍷", "Wine bar",       "Natural wine, grazing, chill"),
-                    ("🌇", "Rooftop",        "Views, outdoor, elevated"),
-                    ("🍺", "Low key bar",    "Cheap, no pretense, chill")]
-        default:
-            return []
-        }
     }
 
     // MARK: - Food Categories (new time-based flow)
@@ -1424,6 +1589,44 @@ final class HomeViewModel: ObservableObject {
     }
 }
 
+/// A place from a shared TikTok, as the feed shows it. Built from the share
+/// records B1b stores after resolving, so the feed never resolves anything.
+struct FeedTikTokPlace: Identifiable, Equatable {
+    let place: ResolvedSharePlace
+    let caption: String?
+
+    var id: String { place.placeId }
+    var recommendation: Recommendation { place.recommendation(caption: caption) }
+
+    /// Flattens resolved shares (newest first), one entry per Places id.
+    static func from(_ shares: [PendingTikTokShare]) -> [FeedTikTokPlace] {
+        var seen = Set<String>()
+        var result: [FeedTikTokPlace] = []
+        for share in shares.sorted(by: { $0.dateAdded > $1.dateAdded }) {
+            guard case let .resolved(video, places) = share.resolution else { continue }
+            for place in places where seen.insert(place.placeId).inserted {
+                result.append(FeedTikTokPlace(place: place, caption: video.caption))
+            }
+        }
+        return result
+    }
+
+    /// Reads the App Group queue and stored resolutions. Local only.
+    static func loadFromLocalShares() -> [FeedTikTokPlace] {
+        #if DEBUG
+        if PendingSharesModel.fixtureRequested { return from(PendingSharesModel.fixture().shares) }
+        #endif
+        let storage = AppGroupPendingShareStorage()
+        let resolutions = storage.loadResolutions()
+        let shares = storage.fetchQueued().map { share -> PendingTikTokShare in
+            var share = share
+            share.resolution = resolutions[share.id] ?? .pending
+            return share
+        }
+        return from(shares)
+    }
+}
+
 #if DEBUG
 /// `BILU_UI_TEST_RECOVERY=<scenario>` starts Explore on a fixture search whose
 /// first response fails with that scenario and whose retry succeeds. It is not
@@ -1475,6 +1678,41 @@ final class RecoveryFixture {
             rating: nil, reviewCount: nil, isOpen: true, photos: nil, address: nil, phone: nil,
             website: nil, parking: "Not confirmed", placeId: "fixture-recovered", photoRefs: nil, reviews: nil)
         return VibeFetchOutcome(result: VibeResult(recommendations: [place], groundingPlaces: [], relaxed: false), failure: nil)
+    }
+}
+#endif
+
+#if DEBUG
+extension HomeViewModel {
+    /// Launch with `-FeedFixture YES` to seed Want to Go places and a saved vibe
+    /// into the local store, centred on Los Angeles, for feed screenshots. No
+    /// network, no discovery. Seeding is idempotent (places are keyed by id).
+    static var feedFixtureRequested: Bool {
+        UserDefaults.standard.bool(forKey: "FeedFixture")
+    }
+
+    func seedFeedFixtureIfRequested(store: SavedPlacesStore) {
+        guard Self.feedFixtureRequested else { return }
+        didRequestLocation = true
+        showLocationPrompt = false
+        initialMapCenter = CLLocationCoordinate2D(latitude: 34.0522, longitude: -118.2437)
+        detectedLocation = "Los Angeles"
+        let places: [(String, String, String, Double, Double, [String])] = [
+            ("fixture-tsujita", "Tsujita LA Artisan Noodle", "2057 Sawtelle Blvd, Los Angeles, CA", 34.0395, -118.4425, ["Ramen"]),
+            ("fixture-bestia", "Bestia", "2121 E 7th Pl, Los Angeles, CA", 34.0336, -118.2292, ["Italian & pizza"]),
+            ("fixture-grandcentral", "Grand Central Market", "317 S Broadway, Los Angeles, CA", 34.0508, -118.2489, [])
+        ]
+        for (id, name, address, lat, lng, tags) in places {
+            let rec = Recommendation(name: name, dish: "", image: nil, explanation: "Fixture place",
+                mapsUrl: "", latitude: lat, longitude: lng, rating: 4.6, reviewCount: nil, isOpen: nil,
+                photos: nil, address: address, phone: nil, website: nil, parking: nil, placeId: id,
+                photoRefs: nil, reviews: nil)
+            store.add(rec, list: .wantToGo, tags: tags)
+        }
+        let vibe = VibeSelection(occasion: "Late Night", foodFeelings: ["Handheld"], location: "Los Angeles",
+                                 selectedVibe: "🔥 Trending")
+        if !store.isVibeSaved(vibe) { store.toggleVibe(vibe) }
+        savedVibes = store.savedVibeSelections()
     }
 }
 #endif

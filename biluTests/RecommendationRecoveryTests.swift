@@ -82,7 +82,7 @@ final class RecommendationRecoveryTests: XCTestCase {
         XCTAssertEqual(allowance.remainingFreeDiscoveries, 1, "The server refunds access when its quota rejects")
 
         await model.performRecoveryAction()
-        XCTAssertEqual(model.step, .occasion)
+        XCTAssertEqual(model.step, .feed)
         XCTAssertEqual(model.selection.occasion, "")
         XCTAssertNil(model.lastSearchFailure)
         XCTAssertEqual(ai.calls.count, 1)

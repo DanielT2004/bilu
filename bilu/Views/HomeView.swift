@@ -22,7 +22,7 @@ struct ScalePress: ButtonStyle {
 
 struct HomeView: View {
     /// Bound from RootTabView so the tab bar can slide off-screen during survey
-    /// steps and slide back at .occasion / .reveal. Single owner: HomeView.
+    /// steps and slide back at .feed / .reveal. Single owner: HomeView.
     @Binding var hideTabBar: Bool
     /// Bumped by RootTabView when Explore is tapped while already selected.
     var reselectCount = 0
@@ -34,7 +34,8 @@ struct HomeView: View {
     @FocusState private var locationFieldFocused: Bool
     @State private var selectedRestaurant: Recommendation? = nil
     @State private var stepForward = true
-    @State private var mapIsExpanded = false
+    /// Taste tags for a place opened from the feed (results use the survey's).
+    @State private var selectedPlaceTags: [String]? = nil
     @State private var expandedCategoryKey: String? = nil
     @State private var subOptionRevealTrigger: Int = 0
     @State private var displayedRecommendationCount: Int = 0
@@ -61,10 +62,9 @@ struct HomeView: View {
                                 removal:   .move(edge: stepForward ? .leading  : .trailing).combined(with: .opacity)
                             ))
                     }
-                    .padding(.bottom, viewModel.step == .occasion ? 20 : 100)
+                    .padding(.bottom, 100)
                 }
                 .scrollIndicators(.hidden)
-                .scrollDisabled(mapIsExpanded)
                 .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86), value: viewModel.step)
                 .onChange(of: viewModel.step) {
                     proxy.scrollTo("top", anchor: .top)
@@ -76,6 +76,12 @@ struct HomeView: View {
 
         }
         .background(C.surface)
+        .overlay(alignment: .bottomTrailing) {
+            if viewModel.step == .feed {
+                actionButton
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+            }
+        }
         .overlay {
             if viewModel.showLocationPrompt {
                 LocationPermissionCard(
@@ -90,16 +96,18 @@ struct HomeView: View {
         .task {
             await viewModel.primeLocationIfNeeded()
         }
-        .task(id: viewModel.effectiveLocation) {
-            await viewModel.loadTrendingIfNeeded()
+        .sheet(isPresented: $viewModel.isShowingIntentSheet) {
+            IntentSheet(viewModel: viewModel)
+                .environmentObject(discoveryAllowance)
+                .environmentObject(savedStore)
         }
         .sheet(item: $selectedRestaurant) { rec in
             // Places opened from survey results carry the survey's taste tags;
-            // trending cards aren't tied to a survey, so they save without tags.
+            // feed places carry their own.
             RestaurantDetailView(
                 rec: rec,
                 tags: viewModel.recommendations.contains { $0.id == rec.id }
-                    ? viewModel.selection.tasteTags : nil
+                    ? viewModel.selection.tasteTags : selectedPlaceTags
             ) {
                     await viewModel.fetchTikTokVideos(for: rec)
                 }
@@ -123,9 +131,12 @@ struct HomeView: View {
             viewModel.reduceMotionPreference = reduceMotion
             viewModel.attach(store: savedStore)
             // Sync the tab bar visibility on first appear so a hot-relaunch into
-            // a non-occasion step doesn't briefly flash the tab bar.
+            // a survey step doesn't briefly flash the tab bar.
             hideTabBar = shouldHideTabBar(for: viewModel.step)
             consumePendingVibeIfNeeded()
+            #if DEBUG
+            viewModel.seedFeedFixtureIfRequested(store: savedStore)
+            #endif
         }
         .onChange(of: coordinator.pendingVibeToken) {
             consumePendingVibeIfNeeded()
@@ -168,11 +179,11 @@ struct HomeView: View {
         }
     }
 
-    /// Tab bar shows on the entry step (.occasion) and the results step (.reveal),
-    /// hides during the survey itself so the user isn't tempted to bail mid-flow.
+    /// Tab bar shows on the feed and the results step (.reveal), hides during
+    /// the survey itself so the user isn't tempted to bail mid-flow.
     private func shouldHideTabBar(for step: Step) -> Bool {
         switch step {
-        case .occasion, .reveal: return false
+        case .feed, .reveal: return false
         default:                 return true
         }
     }
@@ -190,9 +201,8 @@ struct HomeView: View {
     @ViewBuilder
     private var stepContent: some View {
         switch viewModel.step {
-        case .occasion:       occasionStep
+        case .feed:           feedStep
         case .keyQuestion:    keyQuestionStep
-        case .drinksSubFlow:  drinksSubFlowStep
         case .foodFeeling:    foodFeelingStep
         case .location:       fineTuneStep
         case .loading:        loadingStep
@@ -204,7 +214,7 @@ struct HomeView: View {
 
     private var header: some View {
         HStack {
-            if viewModel.step == .occasion {
+            if viewModel.step == .feed {
                 iconButton(systemName: "person.crop.circle", tint: C.onSurface) {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     coordinator.requestedTab = .profile
@@ -216,10 +226,10 @@ struct HomeView: View {
             }
             Spacer()
             Text("bilu")
-                .font(.custom("Georgia", size: 22))
+                .font(AppTheme.title)
                 .foregroundColor(C.sage)
             Spacer()
-            if viewModel.step == .occasion {
+            if viewModel.step == .feed {
                 // Keeps the wordmark centred now that the right slot is empty.
                 Color.clear
                     .frame(width: 44, height: 44)
@@ -271,329 +281,42 @@ struct HomeView: View {
         .padding(.top, 14)
     }
 
-    // MARK: - ══════════ OCCASION STEP ══════════
+    // MARK: - ══════════ FEED STEP ══════════
 
-    private var occasionStep: some View {
-        VStack(alignment: .leading, spacing: 0) {
-
-            // Eat / Drinks & more tab switcher
-            eatDrinksTabSwitcher
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
-
-            HomeMapWidget(
-                locationLabel: viewModel.mapLocationLabel,
-                initialCenter: viewModel.initialMapCenter,
-                isExpanded: $mapIsExpanded,
-                onRadiusChanged: { miles, coord in
-                    viewModel.selection.radiusMiles = miles
-                    viewModel.selection.latitude = coord.latitude
-                    viewModel.selection.longitude = coord.longitude
-                    viewModel.selection.useRadiusSearch = true
-                },
-                onLocationResolved: { label in
-                    viewModel.detectedLocation = label
-                    viewModel.selection.location = label
-                },
-                onRadiusModeChanged: { isRadiusMode in
-                    viewModel.selection.useRadiusSearch = isRadiusMode
-                    if !isRadiusMode {
-                        viewModel.selection.latitude = nil
-                        viewModel.selection.longitude = nil
-                    }
-                }
-            )
-            .padding(.top, 10)
-
-            if viewModel.serviceCategory == "eat" {
-                eatOccasionContent
-            } else {
-                drinksOccasionContent
+    private var feedStep: some View {
+        FeedView(
+            viewModel: viewModel,
+            onSelectPlace: { rec, tags in
+                selectedPlaceTags = tags
+                selectedRestaurant = rec
+            },
+            onRunVibe: { vibe in
+                stepForward = true
+                viewModel.restore(vibe)
             }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.35)) { mapIsExpanded = false }
-        }
+        )
     }
 
-    // MARK: - Eat / Drinks tab switcher
-
-    private var eatDrinksTabSwitcher: some View {
-        ZStack {
-            Capsule().fill(C.neutralBg)
-            HStack(spacing: 0) {
-                tabSegment("Eat",           isActive: viewModel.serviceCategory == "eat")    { viewModel.serviceCategory = "eat" }
-                tabSegment("Drinks & more", isActive: viewModel.serviceCategory == "drinks") { viewModel.serviceCategory = "drinks" }
-            }
-            .clipShape(Capsule())
-        }
-        .frame(height: 44)
-    }
-
-    private func tabSegment(_ label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+    /// Opens the intent sheet. Bottom right, above the tab bar, feed only.
+    private var actionButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { action() }
+            Haptics.medium()
+            viewModel.isShowingIntentSheet = true
         } label: {
-            Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(isActive ? .white : C.muted)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(isActive ? C.sage : Color.clear)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Eat occasion content
-
-    private var eatOccasionContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                (Text("How much ").foregroundColor(C.onSurface) + Text("time").foregroundColor(C.sage))
-                    .font(.system(size: 34, weight: .black))
-                Text("do you have?")
-                    .font(.system(size: 34, weight: .black))
-                    .foregroundColor(C.onSurface)
-            }
-            .tracking(-0.5)
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-
-            VStack(spacing: 12) {
-                timeCard(occasion: "Casual",   icon: "bolt.fill",   label: "Grab & Go!",     sub: "Quick fuel for a busy day",        badge: "30M • FAST",      accentColor: C.sage)
-                timeCard(occasion: "Sit Down", icon: "fork.knife",  label: "Sit Down Vibes", sub: "Unwind with a proper meal",        badge: "1-2HR • RELAXED", accentColor: C.terracotta)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 18)
-
-            HStack(spacing: 10) {
-                occasionChip(occasion: "Brunch",     icon: "sun.and.horizon.fill", label: "Brunch",     isDark: false)
-                occasionChip(occasion: "Late Night", icon: "moon.stars.fill",      label: "Late Night", isDark: true)
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
-
-            trendingNowSection
-        }
-    }
-
-    // MARK: - Drinks occasion content
-
-    private var drinksOccasionContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                (Text("What are ").foregroundColor(C.onSurface) + Text("you").foregroundColor(C.sage))
-                    .font(.system(size: 34, weight: .black))
-                Text("after?")
-                    .font(.system(size: 34, weight: .black))
-                    .foregroundColor(C.onSurface)
-            }
-            .tracking(-0.5)
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-
-            VStack(spacing: 12) {
-                timeCard(occasion: "Cafe",    icon: "cup.and.saucer.fill", label: "Cafe Vibes",   sub: "Coffee, study, and good energy", badge: "ANYTIME",  accentColor: C.sage)
-                timeCard(occasion: "Bakery",  icon: "leaf.fill",            label: "Fresh Baked",  sub: "Pastries, bread, and morning joy", badge: "MORNING",  accentColor: C.terracotta)
-                timeCard(occasion: "Dessert", icon: "birthday.cake.fill",   label: "Sweet Tooth",  sub: "Ice cream, cake, dessert bars",   badge: "SWEET",    accentColor: C.sage)
-                timeCard(occasion: "Drinks",  icon: "wineglass.fill",       label: "Drinks Out",   sub: "Bars, cocktails, and good vibes",  badge: "EVENING",  accentColor: C.terracotta)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 18)
-            .padding(.bottom, 8)
-        }
-    }
-
-    // MARK: - Occasion card helpers
-
-    private func timeCard(occasion: String, icon: String, label: String, sub: String, badge: String, accentColor: Color) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            stepForward = true
-            viewModel.handleOccasion(occasion)
-        } label: {
-            HStack(spacing: 0) {
-                // Flush full-height left border bar
-                Rectangle()
-                    .fill(accentColor)
-                    .frame(width: 9)
-
-                // Content area
-                HStack(alignment: .center, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .black))
-                            .tracking(1.2)
-                            .foregroundColor(accentColor)
-                        Text(label)
-                            .font(.system(size: 22, weight: .heavy))
-                            .foregroundColor(C.onSurface)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                        Text(sub)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(C.muted)
-                            .lineLimit(1)
-                    }
-                    .padding(.leading, 16)
-                    .padding(.vertical, 18)
-
-                    Spacer()
-
-                    // Ghost icon — decorative background element
-                    Image(systemName: icon)
-                        .font(.system(size: 44, weight: .light))
-                        .foregroundColor(Color.black.opacity(0.07))
-                        .padding(.trailing, 16)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 106)
-            .background(C.white)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: C.shadowColor, radius: 14, x: 0, y: 5)
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 60, height: 60)
+                .background(C.sage)
+                .clipShape(Circle())
+                .shadow(color: C.sage.opacity(0.3), radius: 16, x: 0, y: 6)
         }
         .buttonStyle(ScalePress())
-    }
-
-    private func occasionChip(occasion: String, icon: String, label: String, isDark: Bool = false) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            stepForward = true
-            viewModel.handleOccasion(occasion)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(isDark ? .white : C.terracotta)
-                    .frame(width: 32, height: 32)
-                    .background(isDark ? Color.white.opacity(0.12) : C.terracotta.opacity(0.10))
-                    .clipShape(Circle())
-                Text(label)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(isDark ? .white : C.onSurface)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(isDark ? C.darkSurface : C.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: C.shadowColor, radius: 8, x: 0, y: 3)
-        }
-        .buttonStyle(ScalePress())
-    }
-
-    // MARK: - Trending Now section
-
-    private static let trendingTrayColors: [Color] = [C.traySlate, C.trayAmber, C.trayMoss, C.trayPeach]
-
-    @ViewBuilder
-    private var trendingNowSection: some View {
-        // loadTrendingIfNeeded() is still a stub, so hide the whole section,
-        // header included, until there is something to show.
-        if !viewModel.trendingRecommendations.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .bottom) {
-                    (Text("Trending ").foregroundColor(C.onSurface) + Text("Now").foregroundColor(C.sage))
-                        .font(.system(size: 26, weight: .black))
-                        .tracking(-0.5)
-                    Spacer()
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        stepForward = true
-                        viewModel.viewAllTrending()
-                    } label: {
-                        Text("View all")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(C.sage)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 20)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(Array(viewModel.trendingRecommendations.enumerated()), id: \.element.id) { index, rec in
-                            trendingCard(rec: rec, trayColor: Self.trendingTrayColors[index % Self.trendingTrayColors.count])
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 4)
-                }
-            }
-            .padding(.top, 20)
-            .padding(.bottom, 8)
-        }
-    }
-
-    private func trendingCard(rec: Recommendation, trayColor: Color) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            selectedRestaurant = rec
-        } label: {
-            ZStack(alignment: .bottom) {
-                if let urlString = rec.image, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        default:
-                            trayPlaceholder(trayColor)
-                        }
-                    }
-                } else {
-                    trayPlaceholder(trayColor)
-                }
-
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.55)],
-                    startPoint: .center,
-                    endPoint: .bottom
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    if let rating = rec.rating, rating >= 4.5 {
-                        Text("TOP RATED")
-                            .font(.system(size: 9, weight: .black))
-                            .tracking(0.8)
-                            .foregroundColor(C.mintBadgeText)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(C.mintBadge)
-                            .clipShape(Capsule())
-                    }
-                    Text(rec.name)
-                        .font(.system(size: 15, weight: .heavy))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    Text(rec.dish)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.75))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 14)
-            }
-            .frame(width: 200, height: 260)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Color.black.opacity(0.10), radius: 12, x: 0, y: 6)
-        }
-        .buttonStyle(ScalePress())
-    }
-
-    private func trayPlaceholder(_ trayColor: Color) -> some View {
-        Rectangle()
-            .fill(trayColor)
-            .overlay(
-                Image(systemName: "fork.knife")
-                    .font(.system(size: 28, weight: .light))
-                    .foregroundColor(C.subtle.opacity(0.5))
-            )
+        .accessibilityLabel("Find spots")
+        .accessibilityHint("Pick what you're after")
+        .accessibilityIdentifier("feed-action-button")
+        .padding(.trailing, 20)
+        .padding(.bottom, 16)
     }
 
     // MARK: - ══════════ KEY QUESTION STEP ══════════
@@ -610,7 +333,7 @@ struct HomeView: View {
                     .padding(.top, 18)
 
                 Text(kq.question)
-                    .font(.custom("Georgia", size: 30))
+                    .font(AppTheme.display)
                     .foregroundColor(C.onSurface)
                     .lineSpacing(2)
                     .padding(.horizontal, 20)
@@ -783,7 +506,7 @@ struct HomeView: View {
                 .padding(.top, 18)
 
             Text("What are you feeling?")
-                .font(.custom("Georgia", size: 30))
+                .font(AppTheme.display)
                 .foregroundColor(C.onSurface)
                 .lineSpacing(2)
                 .padding(.horizontal, 20)
@@ -1214,77 +937,6 @@ struct HomeView: View {
         .buttonStyle(ScalePress())
     }
 
-    // MARK: - ══════════ DRINKS SUB-FLOW STEP ══════════
-
-    private var drinksSubFlowStep: some View {
-        let occasion = viewModel.selection.occasion
-        let headline: String = {
-            switch occasion {
-            case "Cafe":    return "What brings you in?"
-            case "Dessert": return "What are you after?"
-            default:        return "What kind of spot?"
-            }
-        }()
-        let options = viewModel.drinksSubFlowOptions
-
-        return VStack(alignment: .leading, spacing: 0) {
-            Text(occasion.lowercased())
-                .font(.system(size: 10, weight: .medium))
-                .tracking(1.0)
-                .textCase(.uppercase)
-                .foregroundColor(C.muted)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-
-            Text(headline)
-                .font(.custom("Georgia", size: 30))
-                .foregroundColor(C.onSurface)
-                .lineSpacing(2)
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(options, id: \.title) { opt in
-                    drinksSubCard(emoji: opt.emoji, title: opt.title, sub: opt.sub)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 18)
-            .padding(.bottom, 32)
-        }
-    }
-
-    private func drinksSubCard(emoji: String, title: String, sub: String) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            stepForward = true
-            viewModel.selectDrinksSubType(title)
-        } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(emoji)
-                    .font(.system(size: 28))
-                    .padding(.bottom, 10)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(C.onSurface)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(sub)
-                    .font(.system(size: 11, weight: .light))
-                    .foregroundColor(C.muted)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(C.white)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
-        }
-        .buttonStyle(ScalePress())
-    }
-
     // MARK: - Legacy food feeling step (old occasions)
 
     private var legacyFoodFeelingStep: some View {
@@ -1304,7 +956,7 @@ struct HomeView: View {
             Text(viewModel.cuisineMode == .vibe
                  ? "How do you want\nthe food to feel?"
                  : "What cuisine\nare you craving?")
-                .font(.custom("Georgia", size: 30))
+                .font(AppTheme.display)
                 .foregroundColor(C.onSurface)
                 .lineSpacing(2)
                 .padding(.horizontal, 20)
@@ -1471,7 +1123,7 @@ struct HomeView: View {
                 .padding(.top, 18)
 
             Text("Fine-tune your\nsearch")
-                .font(.custom("Georgia", size: 30))
+                .font(AppTheme.display)
                 .foregroundColor(C.onSurface)
                 .lineSpacing(2)
                 .padding(.horizontal, 20)
@@ -1584,7 +1236,7 @@ struct HomeView: View {
                 Text(viewModel.selection.partySize < 10
                      ? "0\(viewModel.selection.partySize) people"
                      : "\(viewModel.selection.partySize) people")
-                    .font(.custom("Georgia", size: 22))
+                    .font(AppTheme.title)
                     .foregroundColor(C.sage)
                     .contentTransition(.numericText())
             }
@@ -1735,7 +1387,7 @@ struct HomeView: View {
                     }
 
                     Text("Results for '\(viewModel.selection.location.isEmpty ? "you" : viewModel.selection.location)'")
-                        .font(.custom("Georgia", size: 28))
+                        .font(AppTheme.display)
                         .foregroundStyle(C.onSurface)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
@@ -1791,6 +1443,7 @@ struct HomeView: View {
                         ForEach(Array(viewModel.recommendations.enumerated()), id: \.element.id) { index, rec in
                             RecommendationCard(rec: rec, onSelect: {
                                 Haptics.medium()
+                                selectedPlaceTags = nil
                                 selectedRestaurant = rec
                             })
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1904,7 +1557,7 @@ struct HomeView: View {
                 .accessibilityHidden(true)
 
             Text(recovery.title)
-                .font(.custom("Georgia", size: 22))
+                .font(AppTheme.title)
                 .foregroundStyle(C.onSurface)
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
