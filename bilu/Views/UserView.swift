@@ -163,6 +163,9 @@ struct UserView: View {
                             selectedPlace = place
                         }
                         .contextMenu { contextActions(for: place) }
+                        // VoiceOver users can't reach the long-press menu; offer
+                        // the same Move/Remove commands as rotor actions.
+                        .accessibilityActions { contextActions(for: place) }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -364,6 +367,7 @@ struct UserView: View {
             .foregroundStyle(AppTheme.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

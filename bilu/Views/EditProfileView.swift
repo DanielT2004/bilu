@@ -19,12 +19,14 @@ struct EditProfileView: View {
     var body: some View {
         VStack(spacing: 0) {
             grabber
+            topBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     avatarPreview
 
                     section("Your name") {
                         TextField("e.g. Daniel", text: $viewModel.draftName)
+                            .accessibilityLabel("Your name")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(AppTheme.onSurface)
                             .focused($nameFocused)
@@ -78,6 +80,28 @@ struct EditProfileView: View {
             .frame(width: 40, height: 5)
             .padding(.top, 10)
             .padding(.bottom, 4)
+            .accessibilityHidden(true)
+    }
+
+    /// A visible way out besides swiping down. "Done" keeps the edits, matching
+    /// the Save button; swiping down still discards them.
+    private var topBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                nameFocused = false
+                viewModel.commitProfile()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.sage)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Saves your name and avatar")
+        }
+        .padding(.horizontal, 16)
     }
 
     private var avatarPreview: some View {
@@ -90,6 +114,7 @@ struct EditProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 12)
+        .accessibilityHidden(true)
     }
 
     private func avatarButton(_ emoji: String) -> some View {
@@ -105,9 +130,21 @@ struct EditProfileView: View {
                 .frame(width: 46, height: 46)
                 .background(isSelected ? AppTheme.sageLt : AppTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                // Non-colour cue for the selected avatar (P1-4).
+                .overlay(alignment: .topTrailing) {
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white, AppTheme.sage)
+                            .offset(x: 5, y: -5)
+                            .accessibilityHidden(true)
+                    }
+                }
                 .scaleEffect(isSelected ? 1.08 : 1.0)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Avatar \(emoji)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var saveButton: some View {
@@ -133,6 +170,7 @@ struct EditProfileView: View {
                 .tracking(1.0)
                 .textCase(.uppercase)
                 .foregroundStyle(AppTheme.muted)
+                .accessibilityAddTraits(.isHeader)
             content()
         }
     }

@@ -47,6 +47,8 @@ struct ProfileStatsView: View {
                 .foregroundStyle(AppTheme.muted)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(value) \(label)")
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 10)
         .animation(
@@ -60,5 +62,6 @@ struct ProfileStatsView: View {
         Capsule()
             .fill(AppTheme.sageLt.opacity(0.6))
             .frame(width: 2, height: 28)
+            .accessibilityHidden(true)
     }
 }
