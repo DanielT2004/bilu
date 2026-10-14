@@ -72,7 +72,7 @@ Input fields may use a ghost border on focus: `.overlay(RoundedRectangle(cornerR
 | Body / description | Plus Jakarta Sans | 13–15pt | Regular | — |
 | Category tags | Plus Jakarta Sans | 10–11pt | `.medium` | `.textCase(.uppercase)`, `.tracking(1.0)` |
 
-Both fonts are SIL OFL licensed, bundled with the app, and used **only through `AppTheme` typography tokens** built with `Font.custom(_:size:relativeTo:)`, so Dynamic Type works. Never call `.custom("…")` or hard-code a font in a view. Until the fonts land (feedback-redesign workstream D1), leave existing `Georgia` call sites alone but add no new ones.
+Both fonts are SIL OFL licensed, bundled with the app, and used **only through `AppTheme` typography tokens** built with `Font.custom(_:size:relativeTo:)`, so Dynamic Type works. Never call `.custom("…")` or hard-code a font in a view. Tokens: `AppTheme.display`, `.title`, `.headline`, `.body`, `.label`, `.caption`. No italic faces are bundled, so don't use `.italic()` on them. Remaining `Georgia` and `.system(size:)` call sites are being migrated; add no new ones.
 
 ### One title per screen
 Each screen has exactly one title, at the top. Sections below it use the inline section-header style above.
@@ -106,7 +106,7 @@ Text("What's the occasion?")
 
 ## 4a. Cards — One Style
 
-There is one card style: `AppTheme.white` on `AppTheme.surface`, 18pt continuous corners, `AppTheme.shadowColor` shadow when it needs lift. Use the shared card component (`Views/Components/BiluCard.swift`, once added) instead of restyling cards per screen.
+There is one card style: `AppTheme.white` on `AppTheme.surface`, 18pt continuous corners, `AppTheme.shadowColor` shadow when it needs lift. Use the shared card component (`Views/Components/BiluCard.swift`) instead of restyling cards per screen.
 
 **Never on cards:** colored accent bars, faint "ghost" background icons, or stacks of uppercase badges. These read as generic AI-template UI.
 
@@ -268,7 +268,7 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 - Use purple (`#8B5CF6`) anywhere
 - Use `Color.black` or `Color.gray` for shadows
 - Add accent bars, ghost icons or uppercase badge stacks to cards
-- Use one SF Symbol for two concepts, or two symbols for one concept
+- Use one SF Symbol for two concepts, or two symbols for one concept (use `AppTheme.Icon`: `bookmark` = Saved, `signpost.right` = Want to Go, `sparkles` = saved vibe)
 - Ship a button with an empty action
 - Use `1px` stroke borders on cards or section dividers
 - Use hard corners (`cornerRadius: 0–4`) on cards
