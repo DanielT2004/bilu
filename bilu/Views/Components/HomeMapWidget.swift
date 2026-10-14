@@ -522,6 +522,8 @@ struct HomeMapWidget: View {
     /// GPS-resolved center from the ViewModel. Adopted once, then ignored.
     var initialCenter: CLLocationCoordinate2D? = nil
     @Binding var isExpanded: Bool
+    /// Sheet mode (the location chip): always expanded, never auto-collapses.
+    var staysExpanded: Bool = false
     var onRadiusChanged: (Double, CLLocationCoordinate2D) -> Void = { _, _ in }
     var onLocationResolved: (String) -> Void = { _ in }
     var onRadiusModeChanged: (Bool) -> Void = { _ in }
@@ -542,6 +544,28 @@ struct HomeMapWidget: View {
     /// Specific neighborhood label (e.g. "University Park") — shown in radius mode.
     @State private var specificLabel = ""
 
+    /// `initialRadiusMiles` / `initialUseRadius` restore the search area the user
+    /// already chose, so reopening the sheet doesn't reset it.
+    init(locationLabel: String,
+         initialCenter: CLLocationCoordinate2D? = nil,
+         isExpanded: Binding<Bool>,
+         staysExpanded: Bool = false,
+         initialRadiusMiles: Double? = nil,
+         initialUseRadius: Bool? = nil,
+         onRadiusChanged: @escaping (Double, CLLocationCoordinate2D) -> Void = { _, _ in },
+         onLocationResolved: @escaping (String) -> Void = { _ in },
+         onRadiusModeChanged: @escaping (Bool) -> Void = { _ in }) {
+        self.locationLabel = locationLabel
+        self.initialCenter = initialCenter
+        self._isExpanded = isExpanded
+        self.staysExpanded = staysExpanded
+        self.onRadiusChanged = onRadiusChanged
+        self.onLocationResolved = onLocationResolved
+        self.onRadiusModeChanged = onRadiusModeChanged
+        self._radiusMiles = State(initialValue: initialRadiusMiles ?? 2.0)
+        self._useRadius = State(initialValue: initialUseRadius ?? false)
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             InteractiveMapView(
@@ -554,7 +578,7 @@ struct HomeMapWidget: View {
                     collapseTask?.cancel()
                     Haptics.soft()
                 },
-                onDragEnded: { scheduleAutoCollapse() },
+                onDragEnded: { if !staysExpanded { scheduleAutoCollapse() } },
                 onMapTapped: { handleMapTap() },
                 onCenterChanged: { newCenter in
                     userHasInteracted = true
@@ -602,7 +626,7 @@ struct HomeMapWidget: View {
                                 if newVal { onRadiusChanged(radiusMiles, mapCenter) }
                                 // Reset the auto-collapse timer so the user has a full
                                 // 3 seconds to start interacting after toggling.
-                                scheduleAutoCollapse()
+                                if !staysExpanded { scheduleAutoCollapse() }
                             }
                     }
                     .padding(.horizontal, 14)
@@ -629,14 +653,16 @@ struct HomeMapWidget: View {
                         }
                     }
                     Spacer()
-                    Button { expand() } label: {
-                        Text("Change")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(AppTheme.sage)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(AppTheme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    if !staysExpanded {
+                        Button { expand() } label: {
+                            Text("Change")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(AppTheme.sage)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(AppTheme.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
                     }
                 }
                 .padding(.horizontal, 14)
@@ -644,7 +670,7 @@ struct HomeMapWidget: View {
                 .background(AppTheme.surface.opacity(0.96))
             }
         }
-        .frame(height: isExpanded ? 290 : 180)
+        .frame(height: staysExpanded ? 440 : (isExpanded ? 290 : 180))
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .onTapGesture { if !isExpanded { handleMapTap() } }
@@ -682,7 +708,7 @@ struct HomeMapWidget: View {
     /// Adopts the GPS-resolved center exactly once, and only while the map is in its
     /// initial collapsed state and the user hasn't taken over.
     private func applyInitialCenterIfAppropriate(_ coord: CLLocationCoordinate2D?) {
-        guard let coord, !didApplyInitialCenter, !userHasInteracted, !isExpanded else { return }
+        guard let coord, !didApplyInitialCenter, !userHasInteracted, !isExpanded || staysExpanded else { return }
         didApplyInitialCenter = true
         mapCenter = coord
         Haptics.light()
@@ -715,6 +741,7 @@ struct HomeMapWidget: View {
     }
 
     private func handleMapTap() {
+        if staysExpanded { return }
         guard !isExpanded else { collapse(); return }
         withAnimation(.easeInOut(duration: 0.35)) { isExpanded = true }
         scheduleAutoCollapse()
