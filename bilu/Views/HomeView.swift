@@ -1870,63 +1870,74 @@ struct HomeView: View {
 
     @ViewBuilder
     private var emptyResultsState: some View {
-        let isTransport = viewModel.lastSearchFailure == .transportError
-        let isCapacity = viewModel.lastSearchFailure == .capacityUnavailable
-        let isUsageLimit = viewModel.lastSearchFailure == .usageLimitExceeded
-        let isTimeout = viewModel.lastSearchFailure == .timedOut
-        let isPending = viewModel.lastSearchFailure == .pendingDiscovery
-        let needsPurchase = viewModel.lastSearchFailure == .purchaseRequired
-        let isServiceFailure = isTransport || isCapacity || isTimeout || isPending
+        if viewModel.isEnriching {
+            // Results exist but are hidden until Places confirms they're open.
+            VStack(spacing: 14) {
+                ProgressView().tint(C.sage)
+                Text("Confirming which spots are open now…")
+                    .font(.system(size: 14, weight: .light))
+                    .foregroundStyle(C.muted)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("search-recovery-verifying")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .background(C.white)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: C.shadowColor, radius: 16, x: 0, y: 6)
+        } else {
+            recoveryCard
+        }
+    }
+
+    @ViewBuilder
+    private var recoveryCard: some View {
+        let recovery = viewModel.searchRecovery
+        let isPrimaryAction = recovery.action != .adjustVibe && recovery.action != .startOver
         VStack(spacing: 14) {
-            Image(systemName: isUsageLimit ? "gauge.with.dots.needle.67percent" : (isCapacity ? "hourglass" : (isTimeout ? "clock.arrow.circlepath" : (isTransport ? "wifi.exclamationmark" : "magnifyingglass"))))
+            Image(systemName: recovery.systemImage)
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(C.sage)
                 .frame(width: 56, height: 56)
                 .background(C.sageLt)
                 .clipShape(Circle())
+                .accessibilityHidden(true)
 
-            Text(isPending ? "Your discovery is still running" : needsPurchase ? "Ready for more discoveries?" : isUsageLimit ? "Search limit reached" : (isCapacity ? "Search is at capacity" : (isTimeout ? "Search took too long" : (isTransport ? "Couldn't reach us" : "Nothing matched, yet"))))
+            Text(recovery.title)
                 .font(.custom("Georgia", size: 22))
                 .foregroundStyle(C.onSurface)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("search-recovery-title")
 
-            Text(isPending
-                 ? "Check again to pick up this discovery. Your allowance won’t be used twice."
-                 : needsPurchase
-                 ? "View your discovery balance or add a Discovery Pass. Your choices are saved here."
-                 : isUsageLimit
-                 ? "This account has used its current search allowance. Please try again after the limit resets."
-                 : (isCapacity
-                    ? "Our search provider is temporarily at its limit. Give it a minute, then try again."
-                    : (isTimeout
-                       ? "We stopped waiting so you wouldn't be stuck here. Try again for a fresh search."
-                       : (isTransport
-                          ? "Something went wrong on our end. Tap retry — usually works the second time."
-                          : "Try a different vibe or widen your search — there's always something nearby worth trying."))))
+            Text(recovery.message)
                 .font(.system(size: 14, weight: .light))
                 .foregroundStyle(C.muted)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 24)
+                .accessibilityIdentifier("search-recovery-message")
 
-            if isServiceFailure || needsPurchase {
-                Button {
-                    Haptics.medium()
-                    if needsPurchase { viewModel.showingPurchaseGate = true }
-                    else { Task { await viewModel.submitSurvey() } }
-                } label: {
-                    HStack(spacing: 8) {
+            Button {
+                if isPrimaryAction { Haptics.medium() } else { Haptics.light() }
+                Task { await viewModel.performRecoveryAction() }
+            } label: {
+                HStack(spacing: 8) {
+                    if recovery.action == .retry || recovery.action == .checkDiscovery {
                         Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium))
-                        Text(needsPurchase ? "View discoveries" : isPending ? "Check discovery" : "Try again").font(.system(size: 15, weight: .medium))
+                            .accessibilityHidden(true)
                     }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(C.sage)
-                    .clipShape(Capsule())
+                    Text(recovery.actionTitle).font(.system(size: 15, weight: .medium))
                 }
-                .buttonStyle(ScalePress())
-                .padding(.top, 8)
+                .foregroundStyle(isPrimaryAction ? .white : C.sage)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, isPrimaryAction ? 6 : 0)
+                .background(isPrimaryAction ? C.sage : C.sageLt)
+                .clipShape(Capsule())
             }
+            .buttonStyle(ScalePress())
+            .padding(.top, 8)
+            .accessibilityIdentifier("search-recovery-action")
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)

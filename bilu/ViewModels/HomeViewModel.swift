@@ -197,6 +197,7 @@ final class HomeViewModel: ObservableObject {
     private var activeDiscoveryID: UUID?
     private var latestDiscoveryID: UUID?
     private var isRewardUnlockPending = false
+    private var surveySubmissionStep: Step = .foodFeeling
     let loadingAds: LoadingAdController
     private let allowance: DiscoveryAllowance
     private let commerceEnabled: () -> Bool
@@ -219,19 +220,39 @@ final class HomeViewModel: ObservableObject {
     init(loadingAds: LoadingAdController? = nil,
          allowance: DiscoveryAllowance? = nil,
          commerceEnabled: (() -> Bool)? = nil,
-         fetchRecommendations: @escaping (VibeSelection, String?) async -> VibeFetchOutcome = {
-             await GeminiService.getVibeRecommendations(selection: $0, rewardedAccessToken: $1)
-         },
-         enrich: @escaping ([Recommendation], [GroundingPlace], String) async -> [Recommendation] = {
-             await GeminiService.enrichRecommendations($0, groundingPlaces: $1, location: $2)
-         },
+         fetchRecommendations: ((VibeSelection, String?) async -> VibeFetchOutcome)? = nil,
+         enrich: (([Recommendation], [GroundingPlace], String) async -> [Recommendation])? = nil,
          readinessTimeout: TimeInterval = 8) {
         self.selection = VibeSelection()
+        #if DEBUG
+        if fetchRecommendations == nil, let fixture = RecoveryFixture.current {
+            // Deterministic UI-test seam: no provider calls, no ads, and a
+            // throwaway allowance so the device's real discovery is never spent.
+            self.loadingAds = LoadingAdController(frequency: LoadingAdFrequencyStore(defaults: fixture.defaults),
+                eligible: { false }, record: { _, _, _, _, _, _, _, _ in }, observeEnvironment: false)
+            self.allowance = fixture.allowance
+            self.commerceEnabled = { false }
+            self.fetchRecommendations = fixture.fetch
+            self.enrich = { recommendations, _, _ in recommendations }
+            self.readinessTimeout = 0
+            didRequestLocation = true
+            reduceMotionPreference = true
+            selection.occasion = "Bakery"
+            selection.foodFeelings = ["Surprise me"]
+            selection.location = "Los Angeles"
+            searchTask = Task { [weak self] in await self?.submitSurvey() }
+            return
+        }
+        #endif
         self.loadingAds = loadingAds ?? LoadingAdController()
         self.allowance = allowance ?? .shared
         self.commerceEnabled = commerceEnabled ?? { PurchaseConfiguration.current.commerceEnabled }
-        self.fetchRecommendations = fetchRecommendations
-        self.enrich = enrich
+        self.fetchRecommendations = fetchRecommendations ?? {
+            await GeminiService.getVibeRecommendations(selection: $0, rewardedAccessToken: $1)
+        }
+        self.enrich = enrich ?? {
+            await GeminiService.enrichRecommendations($0, groundingPlaces: $1, location: $2)
+        }
         self.readinessTimeout = max(0, readinessTimeout)
     }
 
@@ -582,6 +603,36 @@ final class HomeViewModel: ObservableObject {
         rewardGateNotice = nil
     }
 
+    /// Copy and action for the empty-results card.
+    var searchRecovery: SearchRecoveryCopy { SearchRecoveryCopy(failure: lastSearchFailure) }
+
+    func performRecoveryAction() async {
+        switch searchRecovery.action {
+        case .retry, .checkDiscovery:
+            await submitSurvey()
+        case .viewDiscoveries:
+            showingPurchaseGate = true
+        case .unlockWithAd:
+            rewardGateNotice = nil
+            showingRewardGate = true
+        case .adjustVibe:
+            adjustVibe()
+        case .startOver:
+            reset()
+        }
+    }
+
+    /// Returns to the step that submitted the search with every choice kept,
+    /// so the user can widen or change it.
+    func adjustVibe() {
+        cancelDiscovery()
+        recommendations = []
+        lastSearchFailure = nil
+        lastSearchWasRelaxed = false
+        revealPhase = .sealed
+        step = surveySubmissionStep
+    }
+
     func rewardGateDismissed() async {
         guard isRewardUnlockPending else { return }
         isRewardUnlockPending = false
@@ -598,7 +649,10 @@ final class HomeViewModel: ObservableObject {
         let rewardToken = allowance.remainingFreeDiscoveries > 0
             ? nil
             : allowance.rewardedAccessToken
-        let submissionStep = step
+        // A retry from the results card returns to the survey step that
+        // started the search, never to a stale results screen.
+        if step != .loading && step != .reveal { surveySubmissionStep = step }
+        let submissionStep = surveySubmissionStep
         let id = UUID()
         enrichmentTask?.cancel()
         enrichmentTask = nil
@@ -1369,3 +1423,58 @@ final class HomeViewModel: ObservableObject {
         }
     }
 }
+
+#if DEBUG
+/// `BILU_UI_TEST_RECOVERY=<scenario>` starts Explore on a fixture search whose
+/// first response fails with that scenario and whose retry succeeds. It is not
+/// compiled into Release builds.
+@MainActor
+final class RecoveryFixture {
+    static let current: RecoveryFixture? = {
+        guard let raw = ProcessInfo.processInfo.environment["BILU_UI_TEST_RECOVERY"],
+              let failure = failure(named: raw) else { return nil }
+        return RecoveryFixture(failure: failure)
+    }()
+
+    static func failure(named name: String) -> SearchFailure? {
+        switch name {
+        case "noMatches": return .noMatches
+        case "timedOut": return .timedOut
+        case "capacity": return .capacityUnavailable
+        case "offline": return .offline
+        case "usageLimit": return .usageLimitExceeded
+        case "sessionRejected": return .sessionRejected
+        case "transport": return .transportError
+        case "rewardRejected": return .rewardRequired
+        default: return nil
+        }
+    }
+
+    let defaults: UserDefaults
+    let allowance: DiscoveryAllowance
+    private let failure: SearchFailure
+    private var calls = 0
+
+    private init(failure: SearchFailure) {
+        self.failure = failure
+        defaults = UserDefaults(suiteName: "RecoveryFixture.\(UUID().uuidString)") ?? .standard
+        allowance = DiscoveryAllowance(defaults: defaults)
+        if failure == .rewardRequired {
+            allowance.recordDiscovery(usedRewardToken: nil)
+            allowance.grantReward(token: "fixture-unverified-reward")
+        }
+    }
+
+    func fetch(_ selection: VibeSelection, _ token: String?) async -> VibeFetchOutcome {
+        calls += 1
+        try? await Task.sleep(for: .milliseconds(300))
+        let empty = VibeResult(recommendations: [], groundingPlaces: [], relaxed: nil)
+        if calls == 1 { return VibeFetchOutcome(result: empty, failure: failure) }
+        let place = Recommendation(name: "Recovered Bakery", dish: "Croissant", image: nil,
+            explanation: "Fixture result after retry", mapsUrl: "", latitude: nil, longitude: nil,
+            rating: nil, reviewCount: nil, isOpen: true, photos: nil, address: nil, phone: nil,
+            website: nil, parking: "Not confirmed", placeId: "fixture-recovered", photoRefs: nil, reviews: nil)
+        return VibeFetchOutcome(result: VibeResult(recommendations: [place], groundingPlaces: [], relaxed: false), failure: nil)
+    }
+}
+#endif
