@@ -23,7 +23,7 @@ struct ProfileEmptyState: View {
             }
 
             Text(title)
-                .font(.custom("Georgia", size: 19))
+                .font(AppTheme.headline)
                 .italic()
                 .foregroundStyle(AppTheme.onSurface)
 

@@ -21,7 +21,7 @@ struct DietaryPreferencesView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Dietary preferences")
-                    .font(.custom("Georgia", size: 26))
+                    .font(AppTheme.display)
                     .foregroundStyle(AppTheme.onSurface)
                 Text("We'll keep these in mind for your recommendations.")
                     .font(.system(size: 13, weight: .light))

@@ -1815,7 +1815,7 @@ struct HomeView: View {
                             }
                         }) {
                             HStack(spacing: 7) {
-                                Image(systemName: viewModel.currentVibeIsSaved ? "checkmark" : "bookmark.fill")
+                                Image(systemName: viewModel.currentVibeIsSaved ? "checkmark" : AppTheme.Icon.vibe)
                                     .font(.system(size: 14))
                                 Text(viewModel.currentVibeIsSaved ? "Saved" : "Save this vibe")
                                     .font(.system(size: 14, weight: .semibold))

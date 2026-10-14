@@ -28,7 +28,7 @@ struct SavedVibesRowView: View {
             onSelect(vibe)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles")
+                Image(systemName: AppTheme.Icon.vibe)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AppTheme.terracotta)
                 Text(vibe.summary)

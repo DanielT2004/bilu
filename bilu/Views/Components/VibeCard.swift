@@ -31,15 +31,15 @@ struct VibeCard: View {
 
     private var bottomColor: Color {
         switch title {
-        case "Aesthetic": return Color(hex: "FED7AA")
-        case "Intimate": return Color(hex: "E9D5FF")
-        case "Trendy", "Trending": return Color(hex: "A5F3FC")
-        case "Authentic", "Local and authentic": return Color(hex: "E5E7EB")
-        default: return Color(hex: "F1F5F9")
+        case "Aesthetic": return AppTheme.trayPeach
+        case "Intimate": return AppTheme.sageLt
+        case "Trendy", "Trending": return AppTheme.trayAmber
+        case "Authentic", "Local and authentic": return AppTheme.traySlate
+        default: return AppTheme.neutralBg
         }
     }
 
-    private var bottomTextColor: Color { Color(hex: "0F172A") }
+    private var bottomTextColor: Color { AppTheme.onSurface }
 
     var body: some View {
         SurveyOptionCard(

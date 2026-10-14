@@ -51,7 +51,7 @@ struct ProfileHeaderView: View {
 
             VStack(spacing: 4) {
                 Text(hasName ? displayName : "Add your name")
-                    .font(.custom("Georgia", size: 28))
+                    .font(AppTheme.display)
                     .foregroundStyle(hasName ? AppTheme.onSurface : AppTheme.subtle)
 
                 Text(handle)

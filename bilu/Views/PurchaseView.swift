@@ -27,7 +27,7 @@ struct PurchaseView: View {
             VStack(alignment: .leading, spacing: 24) {
                 HStack {
                     Text("More delicious possibilities")
-                        .font(.custom("Georgia", size: 28, relativeTo: .title))
+                        .font(AppTheme.display)
                         .foregroundStyle(AppTheme.onSurface)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 8)
@@ -160,7 +160,7 @@ struct PurchaseView: View {
 
     private func balance(_ title: String, count: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(count.formatted()).font(.custom("Georgia", size: 36, relativeTo: .largeTitle)).foregroundStyle(AppTheme.sage)
+            Text(count.formatted()).font(AppTheme.display).foregroundStyle(AppTheme.sage)
             Text(title).font(.headline)
         }
         .accessibilityElement(children: .ignore)
@@ -170,7 +170,7 @@ struct PurchaseView: View {
     private var passCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Discovery Pass", systemImage: "sparkles")
-                .font(.custom("Georgia", size: 25, relativeTo: .title2))
+                .font(AppTheme.title)
             Text("4 Explore discoveries + 1 TikTok discovery")
                 .font(.headline)
             Text("A one-time purchase. Your purchased discoveries never expire. No subscription.")
@@ -201,7 +201,7 @@ struct PurchaseView: View {
     private var proCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Bilu Pro", systemImage: "crown.fill")
-                .font(.custom("Georgia", size: 25, relativeTo: .title2))
+                .font(AppTheme.title)
                 .foregroundStyle(AppTheme.sage)
             Text("6 Explore discoveries + 1 TikTok discovery every service month")
                 .font(.headline)

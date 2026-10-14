@@ -76,7 +76,7 @@ struct LocationVideosSheet: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(location.placeName)
-                    .font(.custom("Georgia", size: 20))
+                    .font(AppTheme.title)
                     .foregroundColor(C.onSurface)
                     .lineLimit(2)
                 if !location.address.isEmpty {

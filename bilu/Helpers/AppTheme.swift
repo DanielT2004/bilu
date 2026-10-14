@@ -74,6 +74,50 @@ enum AppTheme {
     /// "New Entry" badge text — design spec on-tertiary-fixed #005a3a
     static let mintBadgeText = Color(hex: "005a3a")
 
+    // MARK: - Typography
+    // Bundled SIL OFL fonts (bilu/Resources/Fonts, registered in Info.plist
+    // UIAppFonts). Every token scales with Dynamic Type via `relativeTo:`.
+
+    enum FontName {
+        static let serifRegular  = "NotoSerif-Regular"
+        static let serifMedium   = "NotoSerif-Medium"
+        static let serifSemiBold = "NotoSerif-SemiBold"
+        static let serifBold     = "NotoSerif-Bold"
+        static let sansRegular   = "PlusJakartaSans-Regular"
+        static let sansMedium    = "PlusJakartaSans-Medium"
+        static let sansSemiBold  = "PlusJakartaSans-SemiBold"
+        static let sansBold      = "PlusJakartaSans-Bold"
+
+        static let all = [serifRegular, serifMedium, serifSemiBold, serifBold,
+                          sansRegular, sansMedium, sansSemiBold, sansBold]
+    }
+
+    /// Screen title — Noto Serif 30. One per screen.
+    static let display  = Font.custom(FontName.serifRegular, size: 30, relativeTo: .largeTitle)
+    /// Secondary serif title — sheet titles, place names, the wordmark. Noto Serif 22.
+    static let title    = Font.custom(FontName.serifRegular, size: 22, relativeTo: .title2)
+    /// Inline section header — Plus Jakarta Sans SemiBold 17.
+    static let headline = Font.custom(FontName.sansSemiBold, size: 17, relativeTo: .headline)
+    /// Body / description — Plus Jakarta Sans Regular 15.
+    static let body     = Font.custom(FontName.sansRegular, size: 15, relativeTo: .body)
+    /// UI labels and buttons — Plus Jakarta Sans Medium 14.
+    static let label    = Font.custom(FontName.sansMedium, size: 14, relativeTo: .callout)
+    /// Category tags — Plus Jakarta Sans Medium 11; pair with uppercase + tracking(1.0).
+    static let caption  = Font.custom(FontName.sansMedium, size: 11, relativeTo: .caption)
+
+    // MARK: - Icons (one SF Symbol per meaning)
+
+    enum Icon {
+        /// Saved list (bookmark a place you love).
+        static let saved          = "bookmark"
+        static let savedFilled    = "bookmark.fill"
+        /// Want to Go list.
+        static let wantToGo       = "signpost.right"
+        static let wantToGoFilled = "signpost.right.fill"
+        /// A saved vibe (survey selection you can re-run).
+        static let vibe           = "sparkles"
+    }
+
     // MARK: - Convenience aliases
     static var primary: Color   { sage }        // FF3B30 Spicy Red
     static var secondary: Color { terracotta }  // FF9500 Mango Orange

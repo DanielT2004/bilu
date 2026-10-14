@@ -80,7 +80,7 @@ struct RecommendationCard: View {
                     // Name + rating
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         Text(rec.name)
-                            .font(.custom("Georgia", size: 22))
+                            .font(AppTheme.title)
                             .foregroundStyle(AppTheme.onSurface)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)

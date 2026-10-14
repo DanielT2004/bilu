@@ -43,7 +43,7 @@ struct LoadingAdPreview: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityIdentifier("loading-preview-cancel")
                 Spacer()
-                Text("bilu").font(.custom("Georgia", fixedSize: 28))
+                Text("bilu").font(.custom(AppTheme.FontName.serifRegular, fixedSize: 28))
                 Spacer()
                 Text("UI TEST").font(.system(size: 10))
             }

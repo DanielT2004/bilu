@@ -16,7 +16,7 @@ struct DiscoveryLoadingView: View {
 
             VStack(spacing: 10) {
                 Text(phase)
-                    .font(.custom("Georgia", size: 24, relativeTo: .title2))
+                    .font(AppTheme.title)
                     .foregroundStyle(AppTheme.onSurface)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("discovery-loading-title")
@@ -39,7 +39,7 @@ struct DiscoveryLoadingView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(AppTheme.sage)
                 Text("Make the most of your shortlist")
-                    .font(.custom("Georgia", size: 20, relativeTo: .headline))
+                    .font(AppTheme.title)
                     .foregroundStyle(AppTheme.onSurface)
                 Text("Start with the dish you're craving, then compare the atmosphere and price. For a group, look for a menu with something everyone can enjoy. Before heading out, check the restaurant's latest hours and reservation options.")
                     .font(.subheadline)

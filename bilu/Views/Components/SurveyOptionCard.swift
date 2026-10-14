@@ -35,7 +35,7 @@ struct SurveyOptionCard: View {
                     Circle()
                         .fill(AppTheme.white)
                         .frame(width: 44, height: 44)
-                        .shadow(color: Color.black.opacity(0.06), radius: 8, y: 4)
+                        .shadow(color: AppTheme.shadowColor, radius: 8, y: 4)
                         .overlay(
                             Image(systemName: systemImage)
                                 .font(.system(size: 20, weight: .semibold))
@@ -53,7 +53,7 @@ struct SurveyOptionCard: View {
 
                     if isSelected {
                         RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(Color.black.opacity(0.06))
+                            .fill(AppTheme.onSurface.opacity(0.06))
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -64,7 +64,7 @@ struct SurveyOptionCard: View {
                             lineWidth: isSelected ? 2.5 : 0
                         )
                 )
-                .shadow(color: Color.black.opacity(0.06), radius: 12, y: 6)
+                .shadow(color: AppTheme.shadowColor, radius: 12, y: 6)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
             }
             .aspectRatio(0.9, contentMode: .fit)

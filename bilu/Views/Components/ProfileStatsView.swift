@@ -38,7 +38,7 @@ struct ProfileStatsView: View {
     private func stat(value: Int, label: String, index: Int) -> some View {
         VStack(spacing: 6) {
             Text("\(value)")
-                .font(.custom("Georgia", size: 30))
+                .font(AppTheme.display)
                 .foregroundStyle(AppTheme.onSurface)
             Text(label)
                 .font(.system(size: 10, weight: .bold))

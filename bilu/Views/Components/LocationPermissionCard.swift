@@ -53,7 +53,7 @@ struct LocationPermissionCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             Text("Find spots near you")
-                .font(.custom("Georgia", size: 24))
+                .font(AppTheme.title)
                 .foregroundColor(AppTheme.onSurface)
                 .multilineTextAlignment(.center)
 

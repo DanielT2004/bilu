@@ -149,7 +149,7 @@ struct UserView: View {
 
             if visiblePlaces.isEmpty {
                 ProfileEmptyState(
-                    icon: selectedList == .saved ? "bookmark" : "airplane.departure",
+                    icon: selectedList == .saved ? AppTheme.Icon.saved : AppTheme.Icon.wantToGo,
                     title: selectedList == .saved ? "No saves yet" : "Nowhere on your list yet",
                     message: selectedList == .saved
                         ? "Tap the bookmark on a place you love and it'll land here."
@@ -176,13 +176,13 @@ struct UserView: View {
             Button {
                 store.move(place, to: .wantToGo)
             } label: {
-                Label("Move to Want to Go", systemImage: "airplane")
+                Label("Move to Want to Go", systemImage: AppTheme.Icon.wantToGo)
             }
         } else {
             Button {
                 store.move(place, to: .saved)
             } label: {
-                Label("Move to Saved", systemImage: "bookmark.fill")
+                Label("Move to Saved", systemImage: AppTheme.Icon.saved)
             }
         }
         Button(role: .destructive) {

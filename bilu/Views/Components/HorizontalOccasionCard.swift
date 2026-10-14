@@ -16,9 +16,9 @@ struct HorizontalOccasionCard: View {
         case amber, purple, teal
         var backgroundColor: Color {
             switch self {
-            case .amber: return Color(hex: "FEF9E8")
-            case .purple: return Color(hex: "F8F1FF")
-            case .teal: return Color(hex: "E8FDF9")
+            case .amber: return AppTheme.trayAmber
+            case .purple: return AppTheme.trayPeach
+            case .teal: return AppTheme.traySlate
             }
         }
         var iconName: String {
@@ -30,9 +30,9 @@ struct HorizontalOccasionCard: View {
         }
         var iconColor: Color {
             switch self {
-            case .amber: return Color(red: 245/255, green: 158/255, blue: 11/255)
-            case .purple: return Color(red: 168/255, green: 85/255, blue: 247/255)
-            case .teal: return Color(red: 20/255, green: 184/255, blue: 166/255)
+            case .amber: return AppTheme.terracotta
+            case .purple: return AppTheme.sage
+            case .teal: return AppTheme.darkSage
             }
         }
     }
@@ -49,25 +49,25 @@ struct HorizontalOccasionCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(title)
                             .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Color(hex: "0F172A"))
+                            .foregroundStyle(AppTheme.onSurface)
                         Text(time)
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color(hex: "8B5CF6"))
+                            .foregroundStyle(AppTheme.terracotta)
                     }
                     Text(desc)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "64748B"))
+                        .foregroundStyle(AppTheme.muted)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.forward")
                     .font(.system(size: 20))
-                    .foregroundStyle(Color(hex: "94A3B8"))
+                    .foregroundStyle(AppTheme.subtle)
             }
             .padding(34)
             .background(color.backgroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 22))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(.plain)
     }

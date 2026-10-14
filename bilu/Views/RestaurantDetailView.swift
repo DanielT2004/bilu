@@ -121,15 +121,16 @@ struct RestaurantDetailView: View {
             .buttonStyle(.plain)
             Spacer()
             Text("bilu")
-                .font(.custom("Georgia", size: 20))
+                .font(AppTheme.title)
                 .italic()
                 .foregroundStyle(AppTheme.sage)
             Spacer()
             Button(action: tapWantToGo) {
-                topBarIcon(wantToGoSaved ? "bookmark.fill" : "bookmark",
+                topBarIcon(wantToGoSaved ? AppTheme.Icon.wantToGoFilled : AppTheme.Icon.wantToGo,
                            tint: wantToGoSaved ? AppTheme.sage : AppTheme.onSurface)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(wantToGoSaved ? "Remove from Want to Go" : "Add to Want to Go")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -226,7 +227,7 @@ struct RestaurantDetailView: View {
                     .clipShape(Capsule())
 
                 Text(rec.name)
-                    .font(.custom("Georgia", size: 30))
+                    .font(AppTheme.display)
                     .fontWeight(.bold)
                     .italic()
                     .foregroundStyle(AppTheme.onSurface)
@@ -388,7 +389,7 @@ struct RestaurantDetailView: View {
                     Circle()
                         .fill(bookmarkSaved ? AppTheme.sageLt : AppTheme.neutralBg)
                         .frame(width: 52, height: 52)
-                    Image(systemName: bookmarkSaved ? "bookmark.fill" : "bookmark")
+                    Image(systemName: bookmarkSaved ? AppTheme.Icon.savedFilled : AppTheme.Icon.saved)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(bookmarkSaved ? AppTheme.sage : AppTheme.onSurface)
                         .scaleEffect(bookmarkPhase == .pressing ? 1.18 : 1.0)
@@ -397,6 +398,7 @@ struct RestaurantDetailView: View {
                            value: bookmarkSaved)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(bookmarkSaved ? "Remove from Saved" : "Save")
         }
     }
 
@@ -616,7 +618,7 @@ struct RestaurantDetailView: View {
     private var vibeCheckCard: some View {
         VStack(spacing: 10) {
             Text("\u{201C}\(rec.explanation)\u{201D}")
-                .font(.custom("Georgia", size: 16))
+                .font(AppTheme.body)
                 .italic()
                 .foregroundStyle(AppTheme.onSurface)
                 .multilineTextAlignment(.center)
@@ -660,7 +662,7 @@ struct RestaurantDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Photos")
-                    .font(.custom("Georgia", size: 18))
+                    .font(AppTheme.headline)
                     .foregroundStyle(AppTheme.onSurface)
                 Spacer()
                 Button {
@@ -734,7 +736,7 @@ struct RestaurantDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("TikToks")
-                    .font(.custom("Georgia", size: 18))
+                    .font(AppTheme.headline)
                     .foregroundStyle(AppTheme.onSurface)
                 Spacer()
                 Button {
@@ -823,7 +825,7 @@ struct RestaurantDetailView: View {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(AppTheme.terracotta)
                 Text("Pro Tips")
-                    .font(.custom("Georgia", size: 18))
+                    .font(AppTheme.headline)
                     .foregroundStyle(AppTheme.onSurface)
             }
             proTipRow("01", "Arrive early or book ahead — popular spots fill up fast on weekends.")
@@ -956,7 +958,7 @@ struct RestaurantDetailView: View {
                         ForEach(tikTokCaptionHighlights.prefix(5)) { video in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(video.desc)
-                                    .font(.custom("Georgia", size: 15))
+                                    .font(AppTheme.body)
                                     .foregroundStyle(AppTheme.onSurface)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text("— @\(video.author.name)")
@@ -1020,7 +1022,7 @@ struct RestaurantDetailView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(spacing: 8) {
                             Text("More Clips")
-                                .font(.custom("Georgia", size: 22))
+                                .font(AppTheme.headline)
                                 .foregroundStyle(AppTheme.onSurface)
                             Text("TikTok")
                                 .font(.system(size: 10, weight: .bold))
@@ -1336,7 +1338,7 @@ struct RestaurantDetailView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(AppTheme.sageMd)
             Text(message)
-                .font(.custom("Georgia", size: 16))
+                .font(AppTheme.body)
                 .italic()
                 .foregroundStyle(AppTheme.muted)
                 .multilineTextAlignment(.center)

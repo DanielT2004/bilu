@@ -39,19 +39,19 @@ struct HungerCard: View {
 
     private var bottomColor: Color {
         switch title {
-        case "Warm & Slurpy": return Color(hex: "FDE68A")
-        case "Doughy & Loaded": return Color(hex: "FCA5A5")
-        case "Fresh & Crisp": return Color(hex: "BBF7D0")
-        case "Spicy & Bold": return Color(hex: "FECACA")
-        case "The Shareable Feast": return Color(hex: "FEF3C7")
-        case "The Sip & Snack": return Color(hex: "E5DEFF")
-        case "The Half-Priced Hero": return Color(hex: "E0F2FE")
-        case "The Liquid Dinner": return Color(hex: "BAE6FD")
-        default: return Color(hex: "F1F5F9")
+        case "Warm & Slurpy": return AppTheme.trayAmber
+        case "Doughy & Loaded": return AppTheme.sageMd
+        case "Fresh & Crisp": return AppTheme.trayMoss
+        case "Spicy & Bold": return AppTheme.sageLt
+        case "The Shareable Feast": return AppTheme.trayPeach
+        case "The Sip & Snack": return AppTheme.traySlate
+        case "The Half-Priced Hero": return AppTheme.trayAmber
+        case "The Liquid Dinner": return AppTheme.traySlate
+        default: return AppTheme.neutralBg
         }
     }
 
-    private var bottomTextColor: Color { Color(hex: "0F172A") }
+    private var bottomTextColor: Color { AppTheme.onSurface }
 
     var body: some View {
         SurveyOptionCard(

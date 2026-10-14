@@ -41,10 +41,6 @@ struct SwipeFoodPanel: View {
         .background(AppTheme.white)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: AppTheme.shadowColor, radius: 18, x: 0, y: 6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
-        )
         .transition(.asymmetric(
             insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)),
             removal:   .opacity
@@ -62,7 +58,7 @@ struct SwipeFoodPanel: View {
                     .tracking(1.2)
                     .foregroundColor(AppTheme.muted)
                 Text(category.title)
-                    .font(.custom("Georgia", size: 18))
+                    .font(AppTheme.title)
                     .italic()
                     .foregroundColor(AppTheme.onSurface)
                     .lineLimit(1)
@@ -137,10 +133,10 @@ struct SwipeFoodPanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(isPicked ? AppTheme.sage : Color.black.opacity(0.06),
-                                lineWidth: isPicked ? 3 : 1)
+                        .stroke(isPicked ? AppTheme.sage : Color.clear,
+                                lineWidth: isPicked ? 3 : 0)
                 )
-                .shadow(color: isPicked ? AppTheme.sage.opacity(0.30) : Color.black.opacity(0.10),
+                .shadow(color: isPicked ? AppTheme.sage.opacity(0.30) : AppTheme.shadowColor,
                         radius: isPicked ? 14 : 8, x: 0, y: isPicked ? 6 : 3)
                 .scaleEffect(isPicked ? 1.015 : 1.0)
                 .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isPicked)
@@ -181,7 +177,7 @@ struct SwipeFoodPanel: View {
 
     private var bottomGradient: some View {
         LinearGradient(
-            colors: [Color.black.opacity(0.0), Color.black.opacity(0.55)],
+            colors: [AppTheme.onSurface.opacity(0.0), AppTheme.onSurface.opacity(0.55)],
             startPoint: .center, endPoint: .bottom
         )
     }
