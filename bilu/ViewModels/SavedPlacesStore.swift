@@ -24,26 +24,60 @@ final class SavedPlacesStore: ObservableObject {
     // MARK: - Places
 
     func isSaved(_ rec: Recommendation, in list: SavedListType) -> Bool {
-        existing(identityKey: rec.identityKey, list: list) != nil
+        listType(of: rec) == list
     }
 
-    /// Toggles a place in/out of a list. Fires haptics so the audio grammar has a
-    /// single source — callers keep only their scale animation.
-    func toggle(_ rec: Recommendation, list: SavedListType) {
-        if let place = existing(identityKey: rec.identityKey, list: list) {
-            context.delete(place)
-            Haptics.soft()
+    /// The list a place currently lives in, or `nil` when it isn't saved. A place
+    /// is in at most one list: `identityKey` is unique across both.
+    func listType(of rec: Recommendation) -> SavedListType? {
+        existing(identityKey: rec.identityKey)?.listType
+    }
+
+    /// Toggles a place in/out of a list. If the place is already in the other list
+    /// it moves here (one record per place, never two). `tags` are merged into the
+    /// record when it's added or moved; removing ignores them. Fires haptics so the
+    /// audio grammar has a single source — callers keep only their scale animation.
+    func toggle(_ rec: Recommendation, list: SavedListType, tags: [String]? = nil) {
+        if let place = existing(identityKey: rec.identityKey) {
+            if place.listType == list {
+                context.delete(place)
+                Haptics.soft()
+            } else {
+                place.listType = list
+                place.mergeTags(tags)
+                Haptics.success()
+            }
         } else {
-            context.insert(SavedPlace(from: rec, listType: list))
+            context.insert(SavedPlace(from: rec, listType: list, tags: tags))
             Haptics.success()
         }
         save()
     }
 
-    func add(_ rec: Recommendation, list: SavedListType) {
-        guard existing(identityKey: rec.identityKey, list: list) == nil else { return }
-        context.insert(SavedPlace(from: rec, listType: list))
+    /// Saves a place into `list` without haptics — the entry point for non-UI
+    /// callers (e.g. resolved TikTok shares). Idempotent: if the place is already
+    /// saved it stays in its current list and only gains the new tags, so a share
+    /// never silently moves a place the user filed elsewhere.
+    @discardableResult
+    func add(_ rec: Recommendation, list: SavedListType, tags: [String]? = nil) -> SavedPlace {
+        if let place = existing(identityKey: rec.identityKey) {
+            place.mergeTags(tags)
+            save()
+            return place
+        }
+        let place = SavedPlace(from: rec, listType: list, tags: tags)
+        context.insert(place)
         save()
+        return place
+    }
+
+    /// Adds tags to an already-saved place. Returns false when the place isn't saved.
+    @discardableResult
+    func addTags(_ tags: [String], to rec: Recommendation) -> Bool {
+        guard let place = existing(identityKey: rec.identityKey) else { return false }
+        place.mergeTags(tags)
+        save()
+        return true
     }
 
     func remove(_ place: SavedPlace) {
@@ -51,15 +85,11 @@ final class SavedPlacesStore: ObservableObject {
         save()
     }
 
-    /// Moves a place to another list (flips, never duplicates). If the destination
-    /// already holds this place, the source is simply removed.
+    /// Moves a place to another list by flipping its list field — the same record,
+    /// so it can never duplicate (`identityKey` is unique across both lists).
     func move(_ place: SavedPlace, to list: SavedListType) {
         guard place.listType != list else { return }
-        if existing(identityKey: place.identityKey, list: list) != nil {
-            context.delete(place)
-        } else {
-            place.listType = list
-        }
+        place.listType = list
         Haptics.light()
         save()
     }
@@ -91,10 +121,9 @@ final class SavedPlacesStore: ObservableObject {
 
     // MARK: - Private
 
-    private func existing(identityKey: String, list: SavedListType) -> SavedPlace? {
-        let raw = list.rawValue
+    private func existing(identityKey: String) -> SavedPlace? {
         var descriptor = FetchDescriptor<SavedPlace>(
-            predicate: #Predicate { $0.identityKey == identityKey && $0.listTypeRaw == raw }
+            predicate: #Predicate { $0.identityKey == identityKey }
         )
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first

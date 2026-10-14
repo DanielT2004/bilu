@@ -18,9 +18,12 @@ enum PersistenceController {
         category: "Persistence"
     )
 
-    /// The real, persisted container used at app launch.
-    static func makeContainer() -> ModelContainer {
-        let config = ModelConfiguration(schema: schema)
+    /// The real, persisted container used at app launch. `storeURL` is for tests;
+    /// `nil` uses SwiftData's default store location. Never deletes or replaces an
+    /// existing store: if it can't be opened, the files stay exactly as they were.
+    static func makeContainer(storeURL: URL? = nil) -> ModelContainer {
+        let config = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
+            ?? ModelConfiguration(schema: schema)
         do {
             let container = try ModelContainer(for: schema, configurations: [config])
             return container

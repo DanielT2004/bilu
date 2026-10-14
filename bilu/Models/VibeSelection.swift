@@ -132,12 +132,14 @@ nonisolated struct VibeSelection: Codable {
 
     /// Returns true if this selection represents the same user-meaningful vibe as `other`.
     /// Compares the fields that drive a recommendation: occasion, key answer, cuisine, location.
+    /// Multi-select fields (food feelings, sub-options) compare order-insensitively.
     /// Not all fields participate — fine-tune toggles like party size shouldn't make two
     /// otherwise-identical vibes look distinct.
     func matches(_ other: VibeSelection) -> Bool {
         occasion == other.occasion
             && keyQuestionAnswer == other.keyQuestionAnswer
             && foodFeelings.sorted() == other.foodFeelings.sorted()
+            && normalizedSubOptions == other.normalizedSubOptions
             && selectedCountry == other.selectedCountry
             && selectedVibe == other.selectedVibe
             && location == other.location
@@ -176,5 +178,29 @@ nonisolated struct VibeSelection: Codable {
         wheelchairAccess      = (try? c.decode(Bool.self, forKey: .wheelchairAccess)) ?? false
         dateNight             = (try? c.decode(Bool.self, forKey: .dateNight)) ?? false
         specialOccasion       = (try? c.decode(Bool.self, forKey: .specialOccasion)) ?? false
+    }
+}
+
+extension VibeSelection {
+    /// Sub-options with each list sorted and empty lists dropped, so order and
+    /// "category opened but nothing picked" don't make two vibes look different.
+    nonisolated var normalizedSubOptions: [String: [String]] {
+        selectedSubOptions.compactMapValues { $0.isEmpty ? nil : $0.sorted() }
+    }
+
+    /// Taste tags for a place saved from this survey's results: each food feeling
+    /// followed by its picked sub-options, then any sub-options whose category
+    /// isn't in `foodFeelings`. "Surprise me" says nothing about taste, so it's
+    /// left out. `SavedPlace.normalizedTags` handles trimming and duplicates.
+    nonisolated var tasteTags: [String] {
+        var tags: [String] = []
+        for feeling in foodFeelings where feeling != "Surprise me" {
+            tags.append(feeling)
+            tags.append(contentsOf: selectedSubOptions[feeling] ?? [])
+        }
+        for category in selectedSubOptions.keys.sorted() where !foodFeelings.contains(category) {
+            tags.append(contentsOf: selectedSubOptions[category] ?? [])
+        }
+        return SavedPlace.normalizedTags(tags) ?? []
     }
 }

@@ -94,7 +94,13 @@ struct HomeView: View {
             await viewModel.loadTrendingIfNeeded()
         }
         .sheet(item: $selectedRestaurant) { rec in
-            RestaurantDetailView(rec: rec) {
+            // Places opened from survey results carry the survey's taste tags;
+            // trending cards aren't tied to a survey, so they save without tags.
+            RestaurantDetailView(
+                rec: rec,
+                tags: viewModel.recommendations.contains { $0.id == rec.id }
+                    ? viewModel.selection.tasteTags : nil
+            ) {
                     await viewModel.fetchTikTokVideos(for: rec)
                 }
                 .environmentObject(savedStore)

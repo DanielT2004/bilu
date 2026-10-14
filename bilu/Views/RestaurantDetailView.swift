@@ -25,6 +25,9 @@ struct RestaurantDetailView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var store: SavedPlacesStore
     let rec: Recommendation
+    /// Taste tags recorded on the `SavedPlace` if the user saves from this sheet
+    /// (survey food feelings + sub-options when opened from results).
+    var tags: [String]? = nil
     let fetchTikToks: () async -> [TikTokVideo]
 
     @State private var tikTokVideos: [TikTokVideo] = []
@@ -86,8 +89,7 @@ struct RestaurantDetailView: View {
         }
         .mapsChoiceDialog(isPresented: $showMapsChoice, recommendation: rec)
         .onAppear {
-            bookmarkSaved = store.isSaved(rec, in: .saved)
-            wantToGoSaved = store.isSaved(rec, in: .wantToGo)
+            refreshSavedState()
             ivenBeenHere = VisitedPlacesStore.isVisited(rec.identityKey)
         }
         .onChange(of: selectedTab) { _, tab in
@@ -405,8 +407,8 @@ struct RestaurantDetailView: View {
     private func tapBookmark() {
         Haptics.medium()
         if reduceMotion {
-            store.toggle(rec, list: .saved)
-            bookmarkSaved = store.isSaved(rec, in: .saved)
+            store.toggle(rec, list: .saved, tags: tags)
+            refreshSavedState()
             return
         }
         withAnimation(AnimationProfile.selection.animation(reduceMotion: false)) {
@@ -414,10 +416,10 @@ struct RestaurantDetailView: View {
         }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 140_000_000)
-            store.toggle(rec, list: .saved)
+            store.toggle(rec, list: .saved, tags: tags)
             withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: false)) {
                 bookmarkPhase = .idle
-                bookmarkSaved = store.isSaved(rec, in: .saved)
+                refreshSavedState()
             }
         }
     }
@@ -425,10 +427,18 @@ struct RestaurantDetailView: View {
     /// Top-bar "Want to Go" toggle → persists into the Want-to-Go list.
     private func tapWantToGo() {
         Haptics.medium()
-        store.toggle(rec, list: .wantToGo)
+        store.toggle(rec, list: .wantToGo, tags: tags)
         withAnimation(AnimationProfile.selection.animation(reduceMotion: reduceMotion)) {
-            wantToGoSaved = store.isSaved(rec, in: .wantToGo)
+            refreshSavedState()
         }
+    }
+
+    /// A place lives in one list at a time, so saving to one list can clear the
+    /// other — always re-read both from the store.
+    private func refreshSavedState() {
+        let list = store.listType(of: rec)
+        bookmarkSaved = list == .saved
+        wantToGoSaved = list == .wantToGo
     }
 
     // MARK: - Tab bar

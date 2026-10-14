@@ -36,6 +36,11 @@ final class SavedPlace {
     var isOpen: Bool?
     var photos: [String]?
     var photoRefs: [String]?
+    /// Taste tags (e.g. "Handheld", "Taco", "Korean") collected when the place is
+    /// saved: from the survey's food feelings and sub-options for results, and from
+    /// extraction for shared TikToks. Optional and additive, so stores written by
+    /// earlier builds open unchanged and their rows read `nil`. v1 only collects.
+    var tags: [String]?
 
     /// Stored as `SavedListType.rawValue`; SwiftData stores primitives most cleanly.
     var listTypeRaw: String
@@ -46,7 +51,12 @@ final class SavedPlace {
         set { listTypeRaw = newValue.rawValue }
     }
 
-    init(from rec: Recommendation, listType: SavedListType, dateSaved: Date = .now) {
+    init(
+        from rec: Recommendation,
+        listType: SavedListType,
+        tags: [String]? = nil,
+        dateSaved: Date = .now
+    ) {
         self.identityKey = rec.placeId ?? (rec.name + rec.dish)
         self.name = rec.name
         self.dish = rec.dish
@@ -65,12 +75,35 @@ final class SavedPlace {
         self.isOpen = rec.isOpen
         self.photos = rec.photos
         self.photoRefs = rec.photoRefs
+        self.tags = SavedPlace.normalizedTags(tags)
         self.listTypeRaw = listType.rawValue
         self.dateSaved = dateSaved
     }
 }
 
 extension SavedPlace {
+    /// Trims, drops empties, and removes case-insensitive duplicates while keeping
+    /// first-seen order. Returns `nil` when nothing is left so "no tags" has one
+    /// representation.
+    nonisolated static func normalizedTags(_ tags: [String]?) -> [String]? {
+        guard let tags else { return nil }
+        var seen = Set<String>()
+        var result: [String] = []
+        for raw in tags {
+            let tag = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !tag.isEmpty, seen.insert(tag.lowercased()).inserted else { continue }
+            result.append(tag)
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    /// Adds tags to the existing set without dropping any already collected.
+    func mergeTags(_ newTags: [String]?) {
+        guard let merged = SavedPlace.normalizedTags((tags ?? []) + (newTags ?? [])),
+              merged != tags else { return }
+        tags = merged
+    }
+
     /// Rebuilds a `Recommendation` so the Profile can drive the existing
     /// `RecommendationCard` and `RestaurantDetailView` with no new rendering code.
     var asRecommendation: Recommendation {

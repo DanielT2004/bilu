@@ -86,7 +86,7 @@ struct UserView: View {
                 .environmentObject(rewardedAds)
         }
         .sheet(item: $selectedPlace) { place in
-            RestaurantDetailView(rec: place.asRecommendation) { [] }
+            RestaurantDetailView(rec: place.asRecommendation, tags: place.tags) { [] }
                 .environmentObject(store)
         }
         .onAppear { viewModel.refreshPendingShares() }
