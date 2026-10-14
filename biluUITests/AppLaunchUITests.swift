@@ -49,6 +49,52 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertEqual(queryField.value as? String, "Best ramen in Los Angeles")
     }
 
+    /// Re-selecting Explore returns the journey to its start (RootTabView.selectTab
+    /// bumps `homeReselectCount`, HomeView calls `viewModel.reset()`). The tab bar is
+    /// hidden on survey steps, so the reachable mid-journey state with the tab bar
+    /// visible is the occasion step after the user has changed the Eat/Drinks mode
+    /// and stepped back out of a survey step. Never reaches a live discovery.
+    func testReselectingExploreReturnsJourneyToStart() {
+        let app = XCUIApplication()
+        app.launch()
+
+        let deferLocation = app.buttons["Maybe later"]
+        if deferLocation.waitForExistence(timeout: 2) {
+            deferLocation.tap()
+        }
+
+        let eatTitle = app.staticTexts["How much time"]
+        let drinksTitle = app.staticTexts["What are you"]
+        let exploreTab = app.buttons["tab-explore"]
+        XCTAssertTrue(eatTitle.waitForExistence(timeout: 10))
+        XCTAssertTrue(exploreTab.exists)
+
+        // Move into the journey: Drinks mode, then the Cafe survey step.
+        app.buttons["Drinks & more"].tap()
+        XCTAssertTrue(drinksTitle.waitForExistence(timeout: 5))
+        XCTAssertFalse(eatTitle.exists)
+
+        let cafe = app.buttons.containing(.staticText, identifier: "Cafe Vibes").firstMatch
+        XCTAssertTrue(cafe.waitForExistence(timeout: 5))
+        cafe.tap()
+
+        // Mid-survey: the tab bar is hidden, so Explore cannot be re-selected here.
+        let back = app.buttons["Back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertTrue(exploreTab.waitForNonExistence(timeout: 5))
+
+        // Step back out: still mid-journey (Drinks mode kept), tab bar visible again.
+        back.tap()
+        XCTAssertTrue(drinksTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(exploreTab.waitForExistence(timeout: 5))
+
+        // Re-selecting Explore resets the journey to the Eat start screen.
+        exploreTab.tap()
+        XCTAssertTrue(eatTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(drinksTitle.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(exploreTab.exists)
+    }
+
     func testSearchKeepsKeyboardVisibleAfterEveryCharacter() {
         let app = XCUIApplication()
         app.launch()

@@ -90,7 +90,7 @@ A candidate is ready only when all of the following are true:
 - [x] App launches with Explore, Search, and Profile navigation.
 - [x] Selected tab state follows navigation across all three destinations.
 - [x] Leaving a tab keeps its progress and search text (`testSearchQueryPersistsAcrossTabChanges`, b1be766).
-- [ ] Re-selecting Explore returns it to the start of the journey (b1be766; no automated test yet).
+- [x] Re-selecting Explore returns it to the start of the journey (b1be766; `testReselectingExploreReturnsJourneyToStart`: switches to Drinks, enters and backs out of a survey step, then re-selects Explore and lands on the Eat start. The tab bar is hidden on survey steps, so Explore can't be re-selected mid-step.)
 - [x] The header profile button opens Profile. (The notifications bell was removed in 1343565 because it had no action, so the old "Notifications opens a sheet" check no longer applies.)
 - [x] Search field, sort state, and Profile edit action have accessible identities.
 - [x] Missing-city search presents city guidance and can be cleared.
