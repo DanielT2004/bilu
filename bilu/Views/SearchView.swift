@@ -17,8 +17,6 @@ struct SearchView: View {
     /// (forward = right→left, backward = left→right). Initialized to .list
     /// to match SearchViewModel's default; updated on every viewMode change.
     @State private var prevModeRaw: Int = ResultsViewMode.list.rawValue
-    @State private var searchFocused = false
-    @ScaledMetric(relativeTo: .body) private var searchFieldHeight = 44.0
 
     private let columns = [
         GridItem(.flexible(), spacing: 10),
@@ -30,11 +28,36 @@ struct SearchView: View {
     }
 
     var body: some View {
+        // NavigationStack hosts the native search field and large title.
+        NavigationStack {
+            content
+                .navigationTitle("Search")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbarBackground(C.surface, for: .navigationBar)
+                .searchable(
+                    text: $viewModel.query,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: Text("Try: matcha in San Diego")
+                )
+                .onSubmit(of: .search, triggerSearch)
+                .onChange(of: viewModel.query) { _, query in
+                    // The native clear (x) and Cancel buttons empty the query;
+                    // an empty field also clears results and city guidance.
+                    if query.isEmpty { viewModel.clear() }
+                }
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
-            header
-            searchBar
+            Text("Find spots from TikTok")
+                .font(.system(size: 12, weight: .medium))
+                .tracking(0.5)
+                .textCase(.uppercase)
+                .foregroundColor(C.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
-                .padding(.top, 12)
+                .padding(.top, 8)
                 .padding(.bottom, 10)
 
             sortChips
@@ -187,83 +210,6 @@ struct SearchView: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Search")
-                .font(.custom("Georgia", size: 28))
-                .foregroundColor(C.onSurface)
-            Text("Find spots from TikTok")
-                .font(.system(size: 12, weight: .medium))
-                .tracking(0.5)
-                .textCase(.uppercase)
-                .foregroundColor(C.muted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 4)
-    }
-
-    // MARK: - Search bar
-
-    private var searchBar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(searchFocused ? C.sage : C.muted)
-                    .accessibilityHidden(true)
-
-                SearchQueryField(
-                    text: $viewModel.query,
-                    isFocused: $searchFocused,
-                    onSubmit: triggerSearch
-                )
-                .frame(maxWidth: .infinity, minHeight: searchFieldHeight, maxHeight: searchFieldHeight)
-
-                if !viewModel.query.isEmpty {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        viewModel.clear()
-                        searchFocused = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(C.subtle)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                    .accessibilityIdentifier("search-clear-button")
-                }
-            }
-            .padding(.horizontal, 12)
-            .background(C.white)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(C.ghostBorder, lineWidth: 1)
-            )
-
-            Button {
-                triggerSearch()
-            } label: {
-                Text("Search")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
-                    .frame(minHeight: 44)
-                    .background(C.sage)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-        }
     }
 
     // MARK: - Sort chips
@@ -595,80 +541,9 @@ struct SearchView: View {
 
     private func triggerSearch() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        searchFocused = false
+        // Submitting dismisses the keyboard but keeps the query in the field.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         Task { await viewModel.search() }
-    }
-}
-
-/// Keeps UIKit's first responder stable while the observable search query updates.
-/// Use ordinary state for its focus binding; a SwiftUI FocusState needs a SwiftUI
-/// focus attachment and must not drive this UIKit field's responder lifecycle.
-private struct SearchQueryField: UIViewRepresentable {
-    @Binding var text: String
-    @Binding var isFocused: Bool
-    let onSubmit: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField()
-        field.borderStyle = .none
-        field.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 15))
-        field.adjustsFontForContentSizeCategory = true
-        field.textColor = UIColor(C.onSurface)
-        field.tintColor = UIColor(C.sage)
-        field.attributedPlaceholder = NSAttributedString(
-            string: "Try: matcha in San Diego",
-            attributes: [.foregroundColor: UIColor(C.muted)]
-        )
-        field.returnKeyType = .search
-        field.delegate = context.coordinator
-        field.accessibilityLabel = "Search food and places"
-        field.accessibilityHint = "Enter a food, restaurant, or city"
-        field.accessibilityIdentifier = "search-query-field"
-        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        field.addTarget(context.coordinator, action: #selector(Coordinator.textChanged(_:)), for: .editingChanged)
-        return field
-    }
-
-    func updateUIView(_ field: UITextField, context: Context) {
-        context.coordinator.parent = self
-        if field.text != text {
-            field.text = text
-        }
-        if isFocused, !field.isFirstResponder {
-            field.becomeFirstResponder()
-        } else if !isFocused, field.isFirstResponder {
-            field.resignFirstResponder()
-        }
-    }
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: SearchQueryField
-
-        init(_ parent: SearchQueryField) {
-            self.parent = parent
-        }
-
-        @objc func textChanged(_ field: UITextField) {
-            parent.text = field.text ?? ""
-        }
-
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            if !parent.isFocused { parent.isFocused = true }
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            if parent.isFocused { parent.isFocused = false }
-        }
-
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            parent.onSubmit()
-            return true
-        }
     }
 }
 

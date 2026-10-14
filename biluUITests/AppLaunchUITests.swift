@@ -8,6 +8,12 @@ final class AppLaunchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// An empty native search field reports its placeholder (or nothing) as its value.
+    private func isEmpty(_ field: XCUIElement) -> Bool {
+        let value = field.value as? String ?? ""
+        return value.isEmpty || value == field.placeholderValue
+    }
+
     func testAppLaunchesWithPrimaryNavigation() {
         addUIInterruptionMonitor(withDescription: "Location permission") { alert in
             let allowButton = alert.buttons["Allow While Using App"]
@@ -25,32 +31,37 @@ final class AppLaunchUITests: XCTestCase {
         // simulator. Use the top corner so the fallback tap cannot advance the
         // survey and hide the tab bar when no alert is present.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.02)).tap()
-        XCTAssertTrue(app.buttons["tab-explore"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["tab-search"].exists)
-        XCTAssertTrue(app.buttons["tab-profile"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Explore"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Search"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Profile"].exists)
     }
 
     func testSearchQueryPersistsAcrossTabChanges() {
         let app = XCUIApplication()
         app.launch()
 
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
 
-        let queryField = app.textFields["search-query-field"]
+        let queryField = app.searchFields.firstMatch
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
         queryField.tap()
-        queryField.typeText("Best ramen in Los Angeles")
+        // No city, so submitting stays on the client-side guidance (no backend
+        // call) and dismisses the keyboard, which covers the native tab bar.
+        queryField.typeText("Best ramen\n")
+        XCTAssertTrue(app.staticTexts["Add a city to search"].waitForExistence(timeout: 5))
 
-        app.buttons["tab-explore"].tap()
+        app.tabBars.buttons["Explore"].tap()
         XCTAssertTrue(app.staticTexts["How much time"].waitForExistence(timeout: 10))
 
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
-        XCTAssertEqual(queryField.value as? String, "Best ramen in Los Angeles")
+        XCTAssertEqual(queryField.value as? String, "Best ramen")
+        XCTAssertTrue(app.staticTexts["Add a city to search"].exists)
     }
 
-    /// Re-selecting Explore returns the journey to its start (RootTabView.selectTab
-    /// bumps `homeReselectCount`, HomeView calls `viewModel.reset()`). The tab bar is
+    /// Re-selecting Explore returns the journey to its start (the native TabView's
+    /// selection Binding routes through RootTabView.selectTab, which bumps
+    /// `homeReselectCount`; HomeView calls `viewModel.reset()`). The tab bar is
     /// hidden on survey steps, so the reachable mid-journey state with the tab bar
     /// visible is the occasion step after the user has changed the Eat/Drinks mode
     /// and stepped back out of a survey step. Never reaches a live discovery.
@@ -65,7 +76,7 @@ final class AppLaunchUITests: XCTestCase {
 
         let eatTitle = app.staticTexts["How much time"]
         let drinksTitle = app.staticTexts["What are you"]
-        let exploreTab = app.buttons["tab-explore"]
+        let exploreTab = app.tabBars.buttons["Explore"]
         XCTAssertTrue(eatTitle.waitForExistence(timeout: 10))
         XCTAssertTrue(exploreTab.exists)
 
@@ -98,11 +109,11 @@ final class AppLaunchUITests: XCTestCase {
     func testSearchKeepsKeyboardVisibleAfterEveryCharacter() {
         let app = XCUIApplication()
         app.launch()
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
 
-        let queryField = app.textFields["search-query-field"]
+        // Native `.searchable` field in Search's navigation bar.
+        let queryField = app.searchFields.firstMatch
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
-        XCTAssertEqual(queryField.frame.height, 44, accuracy: 1)
         queryField.tap()
 
         let keyboard = app.keyboards.firstMatch
@@ -120,7 +131,7 @@ final class AppLaunchUITests: XCTestCase {
         }
 
         queryField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: expected.count))
-        XCTAssertFalse(app.buttons["search-clear-button"].exists)
+        XCTAssertTrue(isEmpty(queryField))
         XCTAssertTrue(keyboard.exists, "Deleting back to an empty query must keep focus")
         queryField.typeText("ramen")
         queryField.typeText(" in Los Angeles")
@@ -131,9 +142,9 @@ final class AppLaunchUITests: XCTestCase {
     func testSearchCanSubmitEditAndClearWithoutLosingText() {
         let app = XCUIApplication()
         app.launch()
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
 
-        let queryField = app.textFields["search-query-field"]
+        let queryField = app.searchFields.firstMatch
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
         queryField.tap()
         queryField.typeText("ramen\n")
@@ -148,9 +159,10 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertEqual((queryField.value as? String)?.lowercased(), "ramen noodles")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
 
-        app.buttons["search-clear-button"].tap()
-        XCTAssertFalse(app.buttons["search-clear-button"].exists)
-        XCTAssertFalse(guidance.exists)
+        // The native clear (x) button empties the field and the city guidance.
+        queryField.buttons["Clear text"].tap()
+        XCTAssertTrue(isEmpty(queryField))
+        XCTAssertTrue(guidance.waitForNonExistence(timeout: 5))
 
         queryField.tap()
         queryField.typeText("tacos")
@@ -165,20 +177,19 @@ final class AppLaunchUITests: XCTestCase {
             UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue
         ]
         app.launch()
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
 
-        let queryField = app.textFields["search-query-field"]
+        // Native search field: sized by the system; VoiceOver reads the prompt.
+        let queryField = app.searchFields.firstMatch
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
-        XCTAssertGreaterThan(queryField.frame.height, 44)
-        XCTAssertEqual(queryField.label, "Search food and places")
+        XCTAssertGreaterThanOrEqual(queryField.frame.height, 36)
+        XCTAssertEqual(queryField.label, "Try: matcha in San Diego")
         queryField.tap()
         queryField.typeText("ramen")
 
         XCTAssertEqual((queryField.value as? String)?.lowercased(), "ramen")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
-        let clearButton = app.buttons["search-clear-button"]
-        XCTAssertGreaterThanOrEqual(clearButton.frame.height, 43.5)
-        XCTAssertGreaterThanOrEqual(clearButton.frame.width, 43.5)
+        XCTAssertTrue(queryField.buttons["Clear text"].exists)
     }
 
     func testRewardedDiscoveryPaywallIsReachable() {
@@ -190,7 +201,7 @@ final class AppLaunchUITests: XCTestCase {
             deferLocation.tap()
         }
 
-        app.buttons["tab-profile"].tap()
+        app.tabBars.buttons["Profile"].tap()
         app.swipeUp()
 
         let rewardedDiscoveries = app.staticTexts["Rewarded discoveries"]
@@ -218,7 +229,7 @@ final class AppLaunchUITests: XCTestCase {
             app.launchEnvironment["BILU_UI_TEST_TIKTOK_ERROR"] = testCase.value
             app.launch()
 
-            app.buttons["tab-search"].tap()
+            app.tabBars.buttons["Search"].tap()
 
             XCTAssertTrue(app.staticTexts[testCase.title].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts[testCase.message].exists)

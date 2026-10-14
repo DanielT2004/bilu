@@ -50,7 +50,7 @@ final class RecommendationRecoveryUITests: XCTestCase {
                    message: "This account has used its current search allowance. Please try again after the limit resets.",
                    action: "Back to Explore")
         app.buttons["search-recovery-action"].tap()
-        XCTAssertTrue(app.buttons["tab-explore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Explore"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["search-recovery-title"].exists)
     }
 

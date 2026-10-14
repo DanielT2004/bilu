@@ -14,43 +14,34 @@ enum Tab {
 
 // MARK: - RootTabView
 
+/// Native `TabView`: Liquid Glass on iOS 26, the standard bar on iOS 17/18.
+/// Each tab item shows only its icon; the text label is kept for VoiceOver.
 struct RootTabView: View {
     @State private var selectedTab: Tab = .home
     @State private var hideTabBar: Bool = false
     @State private var homeReselectCount = 0
     @StateObject private var searchViewModel = SearchViewModel()
-    @Namespace private var tabNS
     @EnvironmentObject private var coordinator: ProfileCoordinator
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            AppTheme.surface.ignoresSafeArea()
+        // TabView keeps every tab alive, so leaving one keeps its progress,
+        // results and scroll position. Re-selecting Explore returns it to the start.
+        TabView(selection: tabSelection) {
+            HomeView(hideTabBar: $hideTabBar, reselectCount: homeReselectCount)
+                // HomeView decides when its survey hides the bar (shouldHideTabBar).
+                .toolbar(hideTabBar ? .hidden : .visible, for: .tabBar)
+                .tabItem { tabIcon("house", label: "Explore") }
+                .tag(Tab.home)
 
-            VStack(spacing: 0) {
-                // Every tab stays alive so leaving one keeps its progress, results
-                // and scroll position. Re-selecting Explore returns it to the start.
-                ZStack {
-                    tabPage(.home) {
-                        HomeView(hideTabBar: $hideTabBar, reselectCount: homeReselectCount)
-                    }
-                    tabPage(.search) { SearchView(viewModel: searchViewModel) }
-                    tabPage(.profile) { UserView(isActive: selectedTab == .profile) }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            SearchView(viewModel: searchViewModel)
+                .tabItem { tabIcon("magnifyingglass", label: "Search") }
+                .tag(Tab.search)
 
-                // Single tab bar — slides off-screen when HomeView's survey flow asks for it.
-                if !(hideTabBar && selectedTab == .home) {
-                    TabBarView(
-                        selectedTab: selectedTab,
-                        onSelect: selectTab,
-                        namespace: tabNS
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: hideTabBar)
+            UserView(isActive: selectedTab == .profile)
+                .tabItem { tabIcon("person.crop.circle", label: "Profile") }
+                .tag(Tab.profile)
         }
+        .tint(AppTheme.sage)
         .onChange(of: coordinator.requestedTab) { _, tab in
             // Profile asks to jump to Home (e.g. re-running a saved vibe).
             guard let tab else { return }
@@ -59,25 +50,29 @@ struct RootTabView: View {
         }
     }
 
+    /// A native TabView only writes its selection when it changes, but it does call
+    /// the binding's setter on every tap, so routing writes through `selectTab`
+    /// lets a tap on the already-selected Explore tab reset the journey.
+    private var tabSelection: Binding<Tab> {
+        Binding(get: { selectedTab }, set: { selectTab($0) })
+    }
+
     private func selectTab(_ tab: Tab) {
         guard tab != selectedTab else {
             if tab == .home { homeReselectCount += 1 }
             return
         }
-        // Hidden tabs stay alive, so dismiss a keyboard the old tab still owns.
+        // Dismiss a keyboard the old tab still owns before switching.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        withAnimation(AnimationProfile.selection.animation(reduceMotion: reduceMotion)) {
-            selectedTab = tab
-        }
+        selectedTab = tab
     }
 
-    private func tabPage<Content: View>(_ tab: Tab, @ViewBuilder content: () -> Content) -> some View {
-        let isSelected = tab == selectedTab
-        return content()
-            .opacity(isSelected ? 1 : 0)
-            .allowsHitTesting(isSelected)
-            .accessibilityHidden(!isSelected)
-            .zIndex(isSelected ? 1 : 0)
+    /// Icon-only tab item. An image without a `Text` gives the native bar no
+    /// visible title; the label is what VoiceOver reads and UI tests query
+    /// (`app.tabBars.buttons["Explore"]`; native tab items drop custom identifiers).
+    private func tabIcon(_ systemName: String, label: String) -> some View {
+        Image(systemName: systemName)
+            .accessibilityLabel(label)
     }
 }
 

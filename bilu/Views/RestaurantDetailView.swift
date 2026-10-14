@@ -111,7 +111,8 @@ struct RestaurantDetailView: View {
     private var topBar: some View {
         HStack {
             Button(action: { UIImpactFeedbackGenerator(style: .light).impactOccurred(); dismiss() }) {
-                Image(systemName: "arrow.left")
+                // chevron.left matches the survey and native back buttons.
+                Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(AppTheme.onSurface)
                     .padding(10)
@@ -119,6 +120,7 @@ struct RestaurantDetailView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Back")
             Spacer()
             Text("bilu")
                 .font(AppTheme.title)
