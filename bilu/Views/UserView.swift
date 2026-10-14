@@ -14,6 +14,9 @@ struct UserView: View {
     @EnvironmentObject private var discoveryAllowance: DiscoveryAllowance
     @EnvironmentObject private var rewardedAds: RewardedAdService
     @StateObject private var viewModel = ProfileViewModel()
+    @StateObject private var shareModel = UserView.makeShareModel()
+    @State private var shareNeedingCity: PendingTikTokShare? = nil
+    @State private var shareCityDraft = ""
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
 
@@ -89,12 +92,29 @@ struct UserView: View {
             RestaurantDetailView(rec: place.asRecommendation, tags: place.tags) { [] }
                 .environmentObject(store)
         }
-        .onAppear { viewModel.refreshPendingShares() }
+        // RootTabView builds every tab at launch, so this resolves shares on launch.
+        .task { await shareModel.refreshAndResolve() }
         .onChange(of: isActive) { _, active in
-            if active { viewModel.refreshPendingShares() }
+            if active { shareModel.refresh() }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { viewModel.refreshPendingShares() }
+            if phase == .active { Task { await shareModel.refreshAndResolve() } }
+        }
+        .alert("Which city is this in?", isPresented: Binding(
+            get: { shareNeedingCity != nil },
+            set: { if !$0 { shareNeedingCity = nil } }
+        )) {
+            TextField("City, e.g. Los Angeles, CA", text: $shareCityDraft)
+                .textInputAutocapitalization(.words)
+            Button("Find place") {
+                guard let share = shareNeedingCity else { return }
+                let city = shareCityDraft
+                shareNeedingCity = nil
+                Task { await shareModel.retry(share, city: city) }
+            }
+            Button("Cancel", role: .cancel) { shareNeedingCity = nil }
+        } message: {
+            Text("We'll look for the place from your TikTok there.")
         }
     }
 
@@ -102,22 +122,43 @@ struct UserView: View {
 
     @ViewBuilder
     private var pendingSharesSection: some View {
-        if !viewModel.pendingShares.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+        if !shareModel.shares.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
                 sectionLabel("Shared from TikTok")
                 PendingSharesRowView(
-                    shares: viewModel.pendingShares,
+                    shares: shareModel.shares,
+                    resolving: shareModel.resolving,
+                    isInWantToGo: { place in
+                        store.isSaved(place.recommendation(caption: nil), in: .wantToGo)
+                    },
+                    onAddToWantToGo: { share, place in
+                        var caption: String?
+                        if case let .resolved(video, _) = share.resolution { caption = video.caption }
+                        // TODO(B1b+F): pass tags when saving — `place.tags` once SavedPlace has `tags`.
+                        store.add(place.recommendation(caption: caption), list: .wantToGo)
+                    },
+                    onChooseCity: { share in
+                        shareCityDraft = ""
+                        shareNeedingCity = share
+                    },
                     onOpen: { share in
                         if let url = URL(string: share.urlString) {
                             openURL(url)
                         }
                     },
                     onDismiss: { share in
-                        viewModel.dismissPendingShare(share)
+                        shareModel.dismiss(share)
                     }
                 )
             }
         }
+    }
+
+    private static func makeShareModel() -> PendingSharesModel {
+        #if DEBUG
+        if PendingSharesModel.fixtureRequested { return .fixture() }
+        #endif
+        return PendingSharesModel()
     }
 
     // MARK: - Saved vibes

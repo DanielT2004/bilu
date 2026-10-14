@@ -24,7 +24,20 @@ final class TikTokResolveServiceTests: XCTestCase {
             return XCTFail("expected .resolved, got \(outcome)")
         }
         XCTAssertEqual(decodedVideo.videoId, "7312345678901234567")
-        XCTAssertEqual(places.map(\.placeName), ["Teddy's Red Tacos"])
+        XCTAssertEqual(places.map(\.name), ["Teddy's Red Tacos"])
+        XCTAssertEqual(places.first?.tags, [])
+    }
+
+    func testPlaceTagsAndCuisineAreKeptWhenSent() {
+        let tagged = place.replacingOccurrences(of: #""score":1.2}"#, with: #""score":1.2,"tags":["tacos"],"cuisine":"Mexican"}"#)
+        let outcome = TikTokResolveService.decode(
+            statusCode: 200,
+            data: data(#"{"video":\#(video),"places":[\#(tagged)]}"#)
+        )
+        guard case let .resolved(_, places) = outcome else {
+            return XCTFail("expected .resolved, got \(outcome)")
+        }
+        XCTAssertEqual(places.first?.tags, ["Mexican", "tacos"])
     }
 
     func testMissingCityKeepsTheVideo() {
