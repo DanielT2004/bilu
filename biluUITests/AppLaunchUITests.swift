@@ -51,7 +51,7 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Add a city to search"].waitForExistence(timeout: 5))
 
         app.tabBars.buttons["Explore"].tap()
-        XCTAssertTrue(app.staticTexts["How much time"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["feed-title"].waitForExistence(timeout: 10))
 
         app.tabBars.buttons["Search"].tap()
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
@@ -62,48 +62,102 @@ final class AppLaunchUITests: XCTestCase {
     /// Re-selecting Explore returns the journey to its start (the native TabView's
     /// selection Binding routes through RootTabView.selectTab, which bumps
     /// `homeReselectCount`; HomeView calls `viewModel.reset()`). The tab bar is
-    /// hidden on survey steps, so the reachable mid-journey state with the tab bar
-    /// visible is the occasion step after the user has changed the Eat/Drinks mode
-    /// and stepped back out of a survey step. Never reaches a live discovery.
+    /// hidden on survey steps, so the journey enters a step through the intent
+    /// sheet, backs out to the feed, and re-selects Explore there. Never reaches a
+    /// live discovery: Food hands off to the food-feeling step without searching.
     func testReselectingExploreReturnsJourneyToStart() {
         let app = XCUIApplication()
         app.launch()
+        deferLocationPrompt(app)
 
-        let deferLocation = app.buttons["Maybe later"]
-        if deferLocation.waitForExistence(timeout: 2) {
-            deferLocation.tap()
-        }
-
-        let eatTitle = app.staticTexts["How much time"]
-        let drinksTitle = app.staticTexts["What are you"]
+        let feedTitle = app.staticTexts["feed-title"]
         let exploreTab = app.tabBars.buttons["Explore"]
-        XCTAssertTrue(eatTitle.waitForExistence(timeout: 10))
+        XCTAssertTrue(feedTitle.waitForExistence(timeout: 10))
         XCTAssertTrue(exploreTab.exists)
 
-        // Move into the journey: Drinks mode, then the Cafe survey step.
-        app.buttons["Drinks & more"].tap()
-        XCTAssertTrue(drinksTitle.waitForExistence(timeout: 5))
-        XCTAssertFalse(eatTitle.exists)
-
-        let cafe = app.buttons.containing(.staticText, identifier: "Cafe Vibes").firstMatch
-        XCTAssertTrue(cafe.waitForExistence(timeout: 5))
-        cafe.tap()
+        // Enter the journey: action button → Food → Quick bite → food step.
+        openIntentSheet(app)
+        app.buttons["intent-food"].tap()
+        app.buttons["refinement-Quick bite"].tap()
+        app.buttons["intent-find-spots"].tap()
 
         // Mid-survey: the tab bar is hidden, so Explore cannot be re-selected here.
         let back = app.buttons["Back"]
         XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["What are you feeling?"].exists)
         XCTAssertTrue(exploreTab.waitForNonExistence(timeout: 5))
 
-        // Step back out: still mid-journey (Drinks mode kept), tab bar visible again.
+        // Step back out: the feed and the tab bar return.
         back.tap()
-        XCTAssertTrue(drinksTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(feedTitle.waitForExistence(timeout: 5))
         XCTAssertTrue(exploreTab.waitForExistence(timeout: 5))
 
-        // Re-selecting Explore resets the journey to the Eat start screen.
+        // Re-selecting Explore lands on the feed with its action button.
         exploreTab.tap()
-        XCTAssertTrue(eatTitle.waitForExistence(timeout: 5))
-        XCTAssertTrue(drinksTitle.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(exploreTab.exists)
+        XCTAssertTrue(feedTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["feed-action-button"].exists)
+        XCTAssertFalse(back.exists)
+    }
+
+    /// Results keep the tab bar, so re-selecting Explore there resets to the feed.
+    /// Uses the DEBUG recovery fixture: no provider call, no real allowance.
+    func testReselectingExploreFromResultsReturnsToFeed() {
+        let app = XCUIApplication()
+        app.launchEnvironment["BILU_UI_TEST_RECOVERY"] = "timedOut"
+        app.launch()
+
+        let recoveryTitle = app.staticTexts["search-recovery-title"]
+        XCTAssertTrue(recoveryTitle.waitForExistence(timeout: 10))
+        app.tabBars.buttons["Explore"].tap()
+        XCTAssertTrue(app.staticTexts["feed-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(recoveryTitle.waitForNonExistence(timeout: 5))
+    }
+
+    /// The action button is a labelled 44+ pt target; the sheet shows all six
+    /// intents, refinements gate "Find spots", and "Late night" is a modifier
+    /// on Drinks and Café only. Nothing here submits a discovery.
+    func testIntentSheetIntentsRefinementsAndLateNightModifier() {
+        let app = XCUIApplication()
+        app.launch()
+        deferLocationPrompt(app)
+        XCTAssertTrue(app.staticTexts["feed-title"].waitForExistence(timeout: 10))
+
+        let action = app.buttons["feed-action-button"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        XCTAssertEqual(action.label, "Find spots")
+        XCTAssertGreaterThanOrEqual(action.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(action.frame.height, 44)
+
+        openIntentSheet(app)
+        for intent in ["cafe", "food", "drinks", "lateNight", "brunch", "sweet"] {
+            XCTAssertTrue(app.buttons["intent-\(intent)"].exists, "Missing intent \(intent)")
+        }
+        let findSpots = app.buttons["intent-find-spots"]
+        XCTAssertFalse(findSpots.isEnabled, "Nothing picked yet")
+
+        app.buttons["intent-drinks"].tap()
+        XCTAssertTrue(app.buttons["modifier-late-night"].waitForExistence(timeout: 3))
+        XCTAssertFalse(findSpots.isEnabled, "Drinks needs a bar type")
+        app.buttons["intent-brunch"].tap()
+        XCTAssertTrue(app.buttons["modifier-late-night"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(findSpots.isEnabled)
+        app.buttons["intent-cafe"].tap()
+        XCTAssertTrue(app.buttons["modifier-late-night"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["refinement-Work or study"].isSelected, "Café defaults to Work or study")
+    }
+
+    private func deferLocationPrompt(_ app: XCUIApplication) {
+        let deferLocation = app.buttons["Maybe later"]
+        if deferLocation.waitForExistence(timeout: 2) {
+            deferLocation.tap()
+        }
+    }
+
+    private func openIntentSheet(_ app: XCUIApplication) {
+        let action = app.buttons["feed-action-button"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        action.tap()
+        XCTAssertTrue(app.buttons["intent-food"].waitForExistence(timeout: 5))
     }
 
     func testSearchKeepsKeyboardVisibleAfterEveryCharacter() {
