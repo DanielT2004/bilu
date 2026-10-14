@@ -134,8 +134,8 @@ struct UserView: View {
                     onAddToWantToGo: { share, place in
                         var caption: String?
                         if case let .resolved(video, _) = share.resolution { caption = video.caption }
-                        // TODO(B1b+F): pass tags when saving — `place.tags` once SavedPlace has `tags`.
-                        store.add(place.recommendation(caption: caption), list: .wantToGo)
+                        store.add(place.recommendation(caption: caption), list: .wantToGo,
+                                  tags: place.tags.isEmpty ? nil : place.tags)
                     },
                     onChooseCity: { share in
                         shareCityDraft = ""

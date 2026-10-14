@@ -39,7 +39,7 @@ struct ResolvedSharePlace: Codable, Equatable, Identifiable {
     let rating: Double?
     let neighborhood: String?
     /// Taste tags (cuisine, vibe) when the resolve response includes them.
-    /// Stored here until `SavedPlace` gains a `tags` field (workstream F).
+    /// Copied onto `SavedPlace.tags` when the user adds the place to Want to Go.
     let tags: [String]
 
     var id: String { placeId }
