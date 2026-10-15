@@ -15,9 +15,9 @@ struct RewardedDiscoveryView: View {
 
                 Image(systemName: "play.rectangle.fill")
                     .font(.system(size: 54, weight: .semibold))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.accentInk)
                     .frame(width: 104, height: 104)
-                    .background(AppTheme.sageLt)
+                    .background(AppTheme.accentTint)
                     .clipShape(Circle())
 
                 VStack(spacing: 10) {
@@ -45,7 +45,7 @@ struct RewardedDiscoveryView: View {
                 } label: {
                     HStack(spacing: 10) {
                         if rewardedAds.isBusy || rewardedAds.isLoadingAd {
-                            ProgressView().tint(.white)
+                            ProgressView().tint(AppTheme.onPrimary)
                         } else {
                             Image(systemName: "play.fill")
                         }
@@ -54,8 +54,8 @@ struct RewardedDiscoveryView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .foregroundStyle(.white)
-                    .background(rewardedAds.isBusy || rewardedAds.isLoadingAd ? AppTheme.subtle : AppTheme.sage)
+                    .foregroundStyle(AppTheme.onPrimary)
+                    .background(AppTheme.sage.opacity(rewardedAds.isBusy || rewardedAds.isLoadingAd ? 0.55 : 1))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .disabled(rewardedAds.isBusy || rewardedAds.isLoadingAd)

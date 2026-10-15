@@ -37,7 +37,7 @@ struct PurchaseView: View {
                             .frame(width: 44, height: 44)
                             .background(AppTheme.sageLt, in: Circle())
                     }
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     .accessibilityLabel("Close discoveries")
                 }
 
@@ -160,7 +160,7 @@ struct PurchaseView: View {
 
     private func balance(_ title: String, count: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(count.formatted()).font(AppTheme.display).foregroundStyle(AppTheme.sage)
+            Text(count.formatted()).font(AppTheme.display).foregroundStyle(AppTheme.primaryInk)
             Text(title).font(.headline)
         }
         .accessibilityElement(children: .ignore)
@@ -169,8 +169,12 @@ struct PurchaseView: View {
 
     private var passCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("Discovery Pass", systemImage: "sparkles")
-                .font(AppTheme.title)
+            Label {
+                Text("Discovery Pass")
+            } icon: {
+                Image(systemName: "sparkles").foregroundStyle(AppTheme.terracotta)
+            }
+            .font(AppTheme.title)
             Text("4 Explore discoveries + 1 TikTok discovery")
                 .font(.headline)
             Text("A one-time purchase. Your purchased discoveries never expire. No subscription.")
@@ -200,9 +204,12 @@ struct PurchaseView: View {
 
     private var proCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("Bilu Pro", systemImage: "crown.fill")
-                .font(AppTheme.title)
-                .foregroundStyle(AppTheme.sage)
+            Label {
+                Text("Bilu Pro").foregroundStyle(AppTheme.onSurface)
+            } icon: {
+                Image(systemName: "crown.fill").foregroundStyle(AppTheme.terracotta)
+            }
+            .font(AppTheme.title)
             Text("6 Explore discoveries + 1 TikTok discovery every service month")
                 .font(.headline)
 
@@ -275,7 +282,7 @@ struct PurchaseView: View {
                 action("Keep account") { account.isConfirmingDeletion = false }
             } else if account.isSignedIn {
                 Label("Signed in with Apple", systemImage: "checkmark.seal.fill")
-                    .font(.subheadline).foregroundStyle(AppTheme.sage)
+                    .font(.subheadline).foregroundStyle(AppTheme.primaryInk)
                 Text("Your saved places stay on this device when you sign out or switch accounts.")
                     .font(.footnote).foregroundStyle(AppTheme.muted)
                 if account.needsSignInRecovery {
@@ -337,7 +344,7 @@ struct PurchaseView: View {
             perform()
         } label: {
             Text(title).font(.body.weight(.semibold))
-                .foregroundStyle(prominent ? AppTheme.white : AppTheme.sage)
+                .foregroundStyle(prominent ? AppTheme.white : AppTheme.primaryInk)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.horizontal, 16).padding(.vertical, 6)
                 .background(prominent ? AppTheme.sage : AppTheme.sageLt, in: Capsule())

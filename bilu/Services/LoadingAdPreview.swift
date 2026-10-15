@@ -47,7 +47,7 @@ struct LoadingAdPreview: View {
                 Spacer()
                 Text("UI TEST").font(.system(size: 10))
             }
-            .foregroundStyle(AppTheme.sage)
+            .foregroundStyle(AppTheme.primaryInk)
             .padding(.horizontal, 20)
             ScrollView {
                 if model.step == .loading {

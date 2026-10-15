@@ -267,7 +267,7 @@ struct UserView: View {
                 HStack(spacing: 14) {
                     Image(systemName: discoveryAllowance.hasRewardedDiscovery ? "checkmark.seal.fill" : "play.rectangle.fill")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(AppTheme.sage)
+                        .foregroundStyle(AppTheme.primaryInk)
                         .frame(width: 40, height: 40)
                         .background(AppTheme.sageLt)
                         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -344,7 +344,7 @@ struct UserView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "hand.raised.fill")
-                            .foregroundStyle(AppTheme.sage)
+                            .foregroundStyle(AppTheme.primaryInk)
                         Text("Privacy Policy")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(AppTheme.onSurface)
@@ -379,7 +379,7 @@ struct UserView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "slider.horizontal.3")
-                                .foregroundStyle(AppTheme.sage)
+                                .foregroundStyle(AppTheme.primaryInk)
                             Text("Ad privacy choices")
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(AppTheme.onSurface)

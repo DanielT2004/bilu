@@ -62,12 +62,12 @@ struct BiluMapView: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(AppTheme.terracotta)
+                                    .fill(AppTheme.sage)
                                     .frame(width: 34, height: 34)
-                                    .shadow(color: AppTheme.terracotta.opacity(0.4), radius: 4, y: 2)
+                                    .shadow(color: AppTheme.sage.opacity(0.4), radius: 4, y: 2)
                                 Text("\(item.index)")
                                     .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(AppTheme.onPrimary)
                             }
                             .scaleEffect(item.index <= revealedPinCount ? 1 : 0.001)
                             .opacity(item.index <= revealedPinCount ? 1 : 0)

@@ -121,7 +121,7 @@ struct PendingSharesRowView: View {
             if added {
                 Label("In Want to Go", systemImage: "checkmark")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(AppTheme.sageLt)
                     .clipShape(Capsule())
@@ -197,7 +197,7 @@ struct PendingSharesRowView: View {
         } label: {
             Label(title, systemImage: systemImage)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppTheme.onPrimary)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(AppTheme.sage)
                 .clipShape(Capsule())

@@ -94,7 +94,7 @@ struct EditProfileView: View {
             } label: {
                 Text("Done")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
@@ -135,7 +135,7 @@ struct EditProfileView: View {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white, AppTheme.sage)
+                            .foregroundStyle(AppTheme.onPrimary, AppTheme.sage)
                             .offset(x: 5, y: -5)
                             .accessibilityHidden(true)
                     }
@@ -154,7 +154,7 @@ struct EditProfileView: View {
         } label: {
             Text("Save")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppTheme.onPrimary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
                 .background(AppTheme.sage)

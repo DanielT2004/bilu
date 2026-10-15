@@ -49,11 +49,11 @@ struct RecommendationCard: View {
                     Text("Take Me There")
                         .font(.system(size: 14, weight: .semibold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(AppTheme.onPrimary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 11)
                 .frame(minHeight: 44)
-                .background(AppTheme.terracotta)
+                .background(AppTheme.sage)
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -149,7 +149,7 @@ struct RecommendationCard: View {
 
             // Bottom gradient scrim
             LinearGradient(
-                colors: [.clear, .black.opacity(0.22)],
+                colors: [.clear, AppTheme.photoScrim.opacity(0.22)],
                 startPoint: .center,
                 endPoint: .bottom
             )
@@ -196,7 +196,7 @@ struct RecommendationCard: View {
             HStack(spacing: 6) {
                 Image(systemName: "parkingsign.circle.fill")
                     .font(.system(size: 13))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                 Text(rec.parkingDisplayText)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(AppTheme.muted)

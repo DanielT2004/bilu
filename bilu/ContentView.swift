@@ -41,7 +41,9 @@ struct RootTabView: View {
                 .tabItem { tabIcon("person.crop.circle", label: "Profile") }
                 .tag(Tab.profile)
         }
-        .tint(AppTheme.sage)
+        // Ink, not fill: the tint also colors system text buttons and links,
+        // and the ink shade passes AA as text in both appearances.
+        .tint(AppTheme.primaryInk)
         .onChange(of: coordinator.requestedTab) { _, tab in
             // Profile asks to jump to Home (e.g. re-running a saved vibe).
             guard let tab else { return }

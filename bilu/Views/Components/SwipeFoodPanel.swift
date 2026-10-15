@@ -68,7 +68,7 @@ struct SwipeFoodPanel: View {
                 Text("\(pickedCount) picked")
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(0.4)
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.onPrimary)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(AppTheme.sage)
@@ -205,7 +205,7 @@ struct SwipeFoodPanel: View {
                 .shadow(color: AppTheme.sage.opacity(0.4), radius: 6, x: 0, y: 2)
             Image(systemName: "checkmark")
                 .font(.system(size: 12, weight: .heavy))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.onPrimary)
         }
         .transition(.scale(scale: 0.4).combined(with: .opacity))
     }

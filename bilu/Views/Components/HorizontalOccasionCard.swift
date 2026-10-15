@@ -52,7 +52,7 @@ struct HorizontalOccasionCard: View {
                             .foregroundStyle(AppTheme.onSurface)
                         Text(time)
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(AppTheme.terracotta)
+                            .foregroundStyle(AppTheme.accentInk)
                     }
                     Text(desc)
                         .font(.system(size: 14))

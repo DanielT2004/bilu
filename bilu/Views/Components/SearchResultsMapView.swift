@@ -96,7 +96,7 @@ struct SearchResultsMapView: View {
         VStack(spacing: 10) {
             Image(systemName: "mappin.and.ellipse")
                 .font(.system(size: 22, weight: .light))
-                .foregroundColor(C.sage)
+                .foregroundColor(C.primaryInk)
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(C.sageLt))
             Text("no spots yet")
@@ -131,7 +131,7 @@ private struct MapPinView: View {
                         .shadow(color: C.sage.opacity(0.4), radius: 6, y: 3)
                     Text("\(location.rank + 1)")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(C.onPrimary)
                 }
             } else {
                 Circle()

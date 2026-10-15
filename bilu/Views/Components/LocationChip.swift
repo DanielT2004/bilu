@@ -21,7 +21,7 @@ struct LocationChip: View {
             HStack(spacing: 6) {
                 Image(systemName: "location.fill")
                     .font(AppTheme.caption)
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     .accessibilityHidden(true)
                 Text(viewModel.locationChipLabel)
                     .font(AppTheme.label)
@@ -76,7 +76,7 @@ private struct LocationSheet: View {
                 } label: {
                     Text("Done")
                         .font(AppTheme.label)
-                        .foregroundStyle(AppTheme.sage)
+                        .foregroundStyle(AppTheme.primaryInk)
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityIdentifier("location-sheet-done")
@@ -128,13 +128,13 @@ private struct LocationSheet: View {
                 if isShowingSuggestions {
                     suggestionList
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .background(AppTheme.surface)
+                        .background(AppTheme.sheetSurface)
                 }
             }
 
             Spacer(minLength: 0)
         }
-        .background(AppTheme.surface)
+        .background(AppTheme.sheetSurface)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(24)
@@ -144,7 +144,7 @@ private struct LocationSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(AppTheme.label)
-                .foregroundStyle(searchFocused ? AppTheme.sage : AppTheme.muted)
+                .foregroundStyle(searchFocused ? AppTheme.primaryInk : AppTheme.muted)
                 .accessibilityHidden(true)
             TextField("Search a city, neighborhood or address", text: $placeSearch.query)
                 .font(AppTheme.body)
@@ -196,7 +196,7 @@ private struct LocationSheet: View {
                         HStack(spacing: 12) {
                             Image(systemName: "mappin.circle.fill")
                                 .font(.title3)
-                                .foregroundStyle(AppTheme.sage)
+                                .foregroundStyle(AppTheme.primaryInk)
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(suggestion.title)

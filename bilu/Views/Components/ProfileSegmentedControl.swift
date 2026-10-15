@@ -39,9 +39,9 @@ struct ProfileSegmentedControl: View {
                     .font(.system(size: 13, weight: .semibold))
                 Text("\(count)")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(isActive ? .white.opacity(0.85) : AppTheme.subtle)
+                    .foregroundStyle(isActive ? AppTheme.onPrimary : AppTheme.subtle)
             }
-            .foregroundStyle(isActive ? .white : AppTheme.muted)
+            .foregroundStyle(isActive ? AppTheme.onPrimary : AppTheme.muted)
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Capsule())
             .background {

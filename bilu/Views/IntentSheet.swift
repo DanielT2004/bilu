@@ -59,9 +59,9 @@ struct IntentSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
-                .background(AppTheme.surface)
+                .background(AppTheme.sheetSurface)
         }
-        .background(AppTheme.surface)
+        .background(AppTheme.sheetSurface)
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(24)
@@ -86,7 +86,7 @@ struct IntentSheet: View {
                 }
                 if intent.supportsLateNight {
                     chip(FeedIntent.lateNight.title, systemImage: FeedIntent.lateNight.systemImage,
-                         isSelected: lateNight, tint: AppTheme.terracotta, identifier: "modifier-late-night") {
+                         isSelected: lateNight, identifier: "modifier-late-night") {
                         Haptics.light()
                         lateNight.toggle()
                     }
@@ -122,7 +122,7 @@ struct IntentSheet: View {
                         .font(AppTheme.label)
                         .accessibilityHidden(true)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(AppTheme.onPrimary)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background(AppTheme.sage)
                 .clipShape(Capsule())
@@ -140,7 +140,7 @@ struct IntentSheet: View {
             } else if intent?.submitsDirectly == true, let status = viewModel.discoveryAllowanceStatus {
                 Text("Uses a discovery · \(status)")
                     .font(AppTheme.caption)
-                    .foregroundStyle(AppTheme.muted)
+                    .foregroundStyle(AppTheme.accentInk)
                     .frame(maxWidth: .infinity)
                     .accessibilityIdentifier("intent-allowance-status")
             }
@@ -158,23 +158,23 @@ struct IntentSheet: View {
     }
 
     private func chip(_ title: String, systemImage: String? = nil, isSelected: Bool,
-                      tint: Color = AppTheme.sage, identifier: String,
+                      identifier: String,
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(AppTheme.label)
-                        .foregroundStyle(isSelected ? .white : tint)
+                        .foregroundStyle(isSelected ? AppTheme.onPrimary : AppTheme.primaryInk)
                         .accessibilityHidden(true)
                 }
                 Text(title)
                     .font(AppTheme.label)
-                    .foregroundStyle(isSelected ? .white : AppTheme.onSurface)
+                    .foregroundStyle(isSelected ? AppTheme.onPrimary : AppTheme.onSurface)
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 44)
-            .background(isSelected ? tint : AppTheme.white)
+            .background(isSelected ? AppTheme.sage : AppTheme.white)
             .clipShape(Capsule())
             .shadow(color: AppTheme.shadowColor, radius: 8, x: 0, y: 3)
             .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: isSelected)

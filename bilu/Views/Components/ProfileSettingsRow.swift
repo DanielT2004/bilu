@@ -22,7 +22,7 @@ struct ProfileSettingsRow: View {
                         .frame(width: 38, height: 38)
                     Image(systemName: icon)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(AppTheme.sage)
+                        .foregroundStyle(AppTheme.primaryInk)
                 }
 
                 Text(title)

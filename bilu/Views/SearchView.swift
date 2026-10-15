@@ -206,7 +206,7 @@ struct SearchView: View {
                         }
                 }
             }
-            .foregroundColor(isActive ? .white : C.muted)
+            .foregroundColor(isActive ? C.onPrimary : C.muted)
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(isActive ? C.sage : Color.clear)
             .clipShape(Capsule())
@@ -237,7 +237,7 @@ struct SearchView: View {
         } label: {
             Text(option.label)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(isActive ? .white : C.muted)
+                .foregroundColor(isActive ? C.onPrimary : C.muted)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(isActive ? C.sage : C.white)
@@ -263,7 +263,7 @@ struct SearchView: View {
                     .frame(width: 72, height: 72)
                 Image(systemName: "fork.knife")
                     .font(.system(size: 30, weight: .light))
-                    .foregroundColor(C.sage)
+                    .foregroundColor(C.primaryInk)
             }
             Text("Search TikTok for\nany food vibe")
                 .font(.custom("Georgia", size: 20))
@@ -295,7 +295,7 @@ struct SearchView: View {
         VStack(spacing: 14) {
             Image(systemName: error == .offline ? "wifi.slash" : "exclamationmark.triangle")
                 .font(.system(size: 34, weight: .light))
-                .foregroundColor(C.sage)
+                .foregroundColor(C.primaryInk)
             Text(error.title)
                 .font(.custom("Georgia", size: 22))
                 .foregroundColor(C.onSurface)
@@ -309,7 +309,7 @@ struct SearchView: View {
             } label: {
                 Text(error == .pendingDiscovery ? "Check discovery" : "Try Again")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(C.onPrimary)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 11)
                     .frame(minHeight: 44)
@@ -344,7 +344,7 @@ struct SearchView: View {
         VStack(spacing: 18) {
             Image(systemName: "mappin.and.ellipse")
                 .font(.system(size: 36, weight: .light))
-                .foregroundColor(C.sage)
+                .foregroundColor(C.primaryInk)
 
             Text("Add a city to search")
                 .font(.custom("Georgia", size: 24))
@@ -365,7 +365,7 @@ struct SearchView: View {
                         } label: {
                             Text(city)
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(C.sage)
+                                .foregroundColor(C.primaryInk)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
                                 .frame(minHeight: 44)
@@ -582,7 +582,7 @@ private struct VideoStripItem: View {
                 .clipped()
 
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.55)],
+                    colors: [.clear, C.photoScrim.opacity(0.55)],
                     startPoint: .center,
                     endPoint: .bottom
                 )
@@ -596,7 +596,7 @@ private struct VideoStripItem: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(.black.opacity(0.45))
+                .background(C.photoScrim.opacity(0.45))
                 .clipShape(Capsule())
                 .padding(6)
             }
@@ -637,7 +637,7 @@ private struct VideoTile: View {
                 .clipped()
 
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.55)],
+                    colors: [.clear, C.photoScrim.opacity(0.55)],
                     startPoint: .center,
                     endPoint: .bottom
                 )
@@ -651,7 +651,7 @@ private struct VideoTile: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(.black.opacity(0.45))
+                .background(C.photoScrim.opacity(0.45))
                 .clipShape(Capsule())
                 .padding(10)
             }
@@ -729,7 +729,7 @@ private struct LocationHeroCard: View {
                         img.resizable().scaledToFill()
                     default:
                         Rectangle().fill(C.sageLt)
-                            .overlay(Image(systemName: "fork.knife").foregroundColor(C.sage).font(.system(size: 28)))
+                            .overlay(Image(systemName: "fork.knife").foregroundColor(C.primaryInk).font(.system(size: 28)))
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -739,7 +739,7 @@ private struct LocationHeroCard: View {
                 // Rank badge
                 Text("#\(location.rank + 1)")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(C.onPrimary)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(C.sage)
@@ -790,7 +790,7 @@ private struct LocationMediumCard: View {
                     img.resizable().scaledToFill()
                 default:
                     Rectangle().fill(C.sageLt)
-                        .overlay(Image(systemName: "fork.knife").foregroundColor(C.sage).font(.system(size: 20)))
+                        .overlay(Image(systemName: "fork.knife").foregroundColor(C.primaryInk).font(.system(size: 20)))
                 }
             }
             .frame(maxWidth: .infinity)
@@ -834,7 +834,7 @@ private struct LocationRow: View {
                     img.resizable().scaledToFill()
                 default:
                     Rectangle().fill(C.sageLt)
-                        .overlay(Image(systemName: "fork.knife").foregroundColor(C.sage).font(.system(size: 16)))
+                        .overlay(Image(systemName: "fork.knife").foregroundColor(C.primaryInk).font(.system(size: 16)))
                 }
             }
             .frame(width: 64, height: 64)
@@ -916,7 +916,7 @@ private struct FilterChipsBar: View {
                 }
                 Text(label).font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(isActive ? .white : C.sage)
+            .foregroundColor(isActive ? C.onPrimary : C.primaryInk)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(isActive ? C.sage : C.sageLt)

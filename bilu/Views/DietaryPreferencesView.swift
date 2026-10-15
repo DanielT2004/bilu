@@ -79,7 +79,7 @@ struct DietaryPreferencesView: View {
             } label: {
                 Text("Done")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
@@ -100,12 +100,12 @@ struct DietaryPreferencesView: View {
                     .font(.system(size: 16))
                 Text(pref.label)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isOn ? .white : AppTheme.onSurface)
+                    .foregroundStyle(isOn ? AppTheme.onPrimary : AppTheme.onSurface)
                 Spacer(minLength: 0)
                 if isOn {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.onPrimary)
                         .accessibilityHidden(true)
                 }
             }

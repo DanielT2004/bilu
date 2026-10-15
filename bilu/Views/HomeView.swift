@@ -227,7 +227,7 @@ struct HomeView: View {
             Spacer()
             Text("bilu")
                 .font(AppTheme.title)
-                .foregroundColor(C.sage)
+                .foregroundColor(C.primaryInk)
             Spacer()
             if viewModel.step == .feed {
                 // Keeps the wordmark centred now that the right slot is empty.
@@ -315,7 +315,7 @@ struct HomeView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(C.onPrimary)
                 .frame(width: 60, height: 60)
                 .background(C.sage)
                 .clipShape(Circle())
@@ -384,7 +384,7 @@ struct HomeView: View {
         Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.selectKeyQuestionAnswer(opt.key) } label: {
              HStack(alignment: .top, spacing: 14) {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.white.opacity(0.15) : C.neutralBg)
+                    .fill(isSelected ? C.onPrimary.opacity(0.15) : C.neutralBg)
                     .frame(width: 42, height: 42)
                     .overlay(Text(opt.icon).font(.system(size: 20)))
                     .accessibilityHidden(true)
@@ -393,20 +393,20 @@ struct HomeView: View {
                     HStack(spacing: 7) {
                         Text(opt.title)
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(isSelected ? .white : C.onSurface)
+                            .foregroundColor(isSelected ? C.onPrimary : C.onSurface)
                         if let badge = opt.badge {
                             Text(badge)
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(isSelected ? C.sage : C.darkSage)
+                                .foregroundColor(isSelected ? C.primaryInk : C.darkSage)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 1)
-                                .background(isSelected ? Color.white : C.surface)
+                                .background(isSelected ? C.white : C.surface)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                     }
                     Text(opt.desc)
                         .font(.system(size: 12, weight: .light))
-                        .foregroundColor(isSelected ? .white.opacity(0.7) : C.muted)
+                        .foregroundColor(isSelected ? C.onPrimary : C.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -416,7 +416,7 @@ struct HomeView: View {
             .padding(.horizontal, 18)
             .background(isSelected ? C.sage : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+            .shadow(color: isSelected ? C.sage.opacity(0.18) : C.shadowColor, radius: 12, x: 0, y: 4)
             .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
         .buttonStyle(.plain)
@@ -429,7 +429,7 @@ struct HomeView: View {
                 .font(.system(size: 10, weight: .medium))
                 .tracking(0.8)
                 .textCase(.uppercase)
-                .foregroundColor(C.sage)
+                .foregroundColor(C.primaryInk)
             VStack(spacing: 5) {
                 ForEach(options, id: \.self) { t in
                     let isSel = viewModel.selection.keyQuestionTimeWindow == t
@@ -444,7 +444,7 @@ struct HomeView: View {
                                     .accessibilityHidden(true)
                             }
                         }
-                        .foregroundColor(isSel ? .white : C.muted)
+                        .foregroundColor(isSel ? C.onPrimary : C.muted)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -462,7 +462,7 @@ struct HomeView: View {
         .padding(.leading, 14)
         .background(C.white)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 3)
+        .shadow(color: C.shadowColor, radius: 10, x: 0, y: 3)
     }
 
     private var datePicker: some View {
@@ -471,7 +471,7 @@ struct HomeView: View {
                 .font(.system(size: 10, weight: .medium))
                 .tracking(0.8)
                 .textCase(.uppercase)
-                .foregroundColor(C.sage)
+                .foregroundColor(C.primaryInk)
             DatePicker(
                 "",
                 selection: Binding(
@@ -499,7 +499,7 @@ struct HomeView: View {
         .padding(.leading, 14)
         .background(C.white)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 3)
+        .shadow(color: C.shadowColor, radius: 10, x: 0, y: 3)
     }
 
     // MARK: - ══════════ FOOD FEELING STEP ══════════
@@ -633,10 +633,10 @@ struct HomeView: View {
                 HStack(spacing: 6) {
                     Text("Browse by cuisine")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(C.sage)
+                        .foregroundColor(C.primaryInk)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(C.sage)
+                        .foregroundColor(C.primaryInk)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 14)
@@ -678,7 +678,7 @@ struct HomeView: View {
             pillLabel(vibe, isOn: isSelected)
                 .background(isSelected ? C.sage : C.white)
                 .clipShape(Capsule())
-                .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: isSelected ? 8 : 5, x: 0, y: 2)
+                .shadow(color: isSelected ? C.sage.opacity(0.18) : C.shadowColor, radius: isSelected ? 8 : 5, x: 0, y: 2)
                 .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
                 .pillHitArea()
         }
@@ -697,7 +697,7 @@ struct HomeView: View {
             Text(label)
                 .font(.system(size: 13, weight: .medium))
         }
-        .foregroundColor(isOn ? .white : C.onSurface)
+        .foregroundColor(isOn ? C.onPrimary : C.onSurface)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
@@ -710,9 +710,9 @@ struct HomeView: View {
             }
         } label: {
             pillLabel(label, isOn: isOn)
-                .background(isOn ? C.terracotta : C.white)
+                .background(isOn ? C.sage : C.white)
                 .clipShape(Capsule())
-                .shadow(color: isOn ? C.terracotta.opacity(0.22) : C.shadowColor, radius: isOn ? 10 : 6, x: 0, y: 3)
+                .shadow(color: isOn ? C.sage.opacity(0.22) : C.shadowColor, radius: isOn ? 10 : 6, x: 0, y: 3)
                 .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isOn)
                 .pillHitArea()
         }
@@ -823,7 +823,7 @@ struct HomeView: View {
                         if !badgeLabel.isEmpty && !isExpanded {
                             Text(badgeLabel)
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.white)
+                                .foregroundColor(C.onPrimary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
                                 .background(C.sage)
@@ -834,7 +834,7 @@ struct HomeView: View {
                             // border colour isn't the only cue.
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(C.sage)
+                                .foregroundColor(C.primaryInk)
                                 .accessibilityHidden(true)
                         }
                     }
@@ -842,12 +842,12 @@ struct HomeView: View {
 
                     Text(cat.title)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(isExpanded ? .white : C.onSurface)
+                        .foregroundColor(isExpanded ? C.onPrimary : C.onSurface)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(cat.subtitle)
                         .font(.system(size: 11, weight: .light))
-                        .foregroundColor(isExpanded ? .white.opacity(0.75) : C.muted)
+                        .foregroundColor(isExpanded ? C.onPrimary : C.muted)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
@@ -880,7 +880,7 @@ struct HomeView: View {
                 )
         )
         .shadow(
-            color: isExpanded ? C.sage.opacity(0.22) : (isSelected ? C.sage.opacity(0.12) : Color.black.opacity(0.06)),
+            color: isExpanded ? C.sage.opacity(0.22) : (isSelected ? C.sage.opacity(0.12) : C.shadowColor),
             radius: 12, x: 0, y: 4
         )
         .scaleEffect(reduceMotion ? 1.0 : (isDimmed ? 0.96 : (isExpanded ? 1.01 : 1.0)))
@@ -936,16 +936,16 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(cat.title)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(isSelected ? .white : C.onSurface)
+                        .foregroundColor(isSelected ? C.onPrimary : C.onSurface)
                     Text(cat.subtitle)
                         .font(.system(size: 12, weight: .light))
-                        .foregroundColor(isSelected ? .white.opacity(0.75) : C.muted)
+                        .foregroundColor(isSelected ? C.onPrimary : C.muted)
                 }
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(C.onPrimary)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -953,7 +953,7 @@ struct HomeView: View {
             .padding(.horizontal, 16)
             .background(isSelected ? C.sage : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
+            .shadow(color: isSelected ? C.sage.opacity(0.18) : C.shadowColor, radius: 12, x: 0, y: 4)
             .opacity(isSelected ? 1.0 : 0.78)
             .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
@@ -1062,7 +1062,7 @@ struct HomeView: View {
         Button(action: action) {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(isActive ? .white : C.muted)
+                .foregroundColor(isActive ? C.onPrimary : C.muted)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(isActive ? C.sage : Color.clear)
@@ -1082,12 +1082,12 @@ struct HomeView: View {
                 Text(flag).font(.system(size: 18)).accessibilityHidden(true)
                 Text(name)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(isSelected ? .white : C.onSurface)
+                    .foregroundColor(isSelected ? C.onPrimary : C.onSurface)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(C.onPrimary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1095,7 +1095,7 @@ struct HomeView: View {
             .padding(.horizontal, 16)
             .background(isSelected ? C.sage : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 10, x: 0, y: 3)
+            .shadow(color: isSelected ? C.sage.opacity(0.18) : C.shadowColor, radius: 10, x: 0, y: 3)
             .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
         .buttonStyle(.plain)
@@ -1108,10 +1108,10 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(opt.title)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(isSelected ? .white : C.onSurface)
+                    .foregroundColor(isSelected ? C.onPrimary : C.onSurface)
                 Text(opt.desc)
                     .font(.system(size: 11, weight: .light))
-                    .foregroundColor(isSelected ? .white.opacity(0.7) : C.muted)
+                    .foregroundColor(isSelected ? C.onPrimary : C.muted)
                     .padding(.top, 1)
 
                 if !opt.exampleMatches.isEmpty {
@@ -1120,10 +1120,10 @@ struct HomeView: View {
                             ForEach(opt.exampleMatches, id: \.self) { m in
                                 Text(m)
                                     .font(.system(size: 10))
-                                    .foregroundColor(isSelected ? .white.opacity(0.7) : C.muted)
+                                    .foregroundColor(isSelected ? C.onPrimary : C.muted)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 2)
-                                    .background(isSelected ? Color.white.opacity(0.15) : C.surface)
+                                    .background(isSelected ? C.onPrimary.opacity(0.15) : C.surface)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                         }
@@ -1136,7 +1136,7 @@ struct HomeView: View {
             .padding(.horizontal, 16)
             .background(isSelected ? C.sage : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 10, x: 0, y: 3)
+            .shadow(color: isSelected ? C.sage.opacity(0.18) : C.shadowColor, radius: 10, x: 0, y: 3)
             .opacity(opt.isSurprise && !isSelected ? 0.75 : 1.0)
             .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
@@ -1210,12 +1210,12 @@ struct HomeView: View {
                         Image(systemName: "arrow.right")
                             .font(.system(size: 14, weight: .medium))
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(C.onPrimary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(C.terracotta)
+                    .background(C.sage)
                     .clipShape(Capsule())
-                    .shadow(color: C.terracotta.opacity(0.25), radius: 16, x: 0, y: 6)
+                    .shadow(color: C.sage.opacity(0.25), radius: 16, x: 0, y: 6)
                 }
                 .buttonStyle(ScalePress())
 
@@ -1253,7 +1253,7 @@ struct HomeView: View {
                         if isSel {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(C.sage)
+                                .foregroundColor(C.primaryInk)
                         }
                         Text(tier)
                             .font(.system(size: 15, weight: .bold))
@@ -1290,7 +1290,7 @@ struct HomeView: View {
                      ? "0\(viewModel.selection.partySize) people"
                      : "\(viewModel.selection.partySize) people")
                     .font(AppTheme.title)
-                    .foregroundColor(C.sage)
+                    .foregroundColor(C.primaryInk)
                     .contentTransition(.numericText())
                     .accessibilityLabel(partySizeSpoken)
                     .accessibilityIdentifier("fine-tune-party-size")
@@ -1332,7 +1332,7 @@ struct HomeView: View {
                         .overlay(
                             Image(systemName: "plus")
                                 .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.white)
+                                .foregroundColor(C.onPrimary)
                         )
                 }
                 .buttonStyle(ScalePress())
@@ -1374,13 +1374,13 @@ struct HomeView: View {
                         Text(opt.label)
                             .font(.system(size: 13, weight: .medium))
                     }
-                    .foregroundColor(isSel ? .white : C.onSurface)
+                    .foregroundColor(isSel ? C.onPrimary : C.onSurface)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(isSel ? C.sage : C.white)
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(isSel ? C.sage : C.ghostBorder, lineWidth: 1))
-                    .shadow(color: isSel ? C.sage.opacity(0.15) : Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
+                    .shadow(color: isSel ? C.sage.opacity(0.15) : C.shadowColor, radius: 8, x: 0, y: 3)
                     .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSel)
                     .pillHitArea()
                 }
@@ -1402,7 +1402,7 @@ struct HomeView: View {
                         .frame(width: 40, height: 40)
                     Image(systemName: icon)
                         .font(.system(size: 16))
-                        .foregroundColor(isOn ? C.sage : C.muted)
+                        .foregroundColor(isOn ? C.primaryInk : C.muted)
                 }
                 .accessibilityHidden(true)
                 Text(label)
@@ -1484,7 +1484,7 @@ struct HomeView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(C.sage)
+                        .foregroundStyle(C.primaryInk)
                     Text("We loosened your filters to find these — adjust to refine.")
                         .font(.system(size: 13, weight: .light))
                         .foregroundStyle(C.onSurface)
@@ -1547,7 +1547,7 @@ struct HomeView: View {
                                 Text(viewModel.currentVibeIsSaved ? "Saved" : "Save this vibe")
                                     .font(.system(size: 14, weight: .semibold))
                             }
-                            .foregroundStyle(.white)
+                            .foregroundStyle(viewModel.currentVibeIsSaved ? C.onAccent : C.onPrimary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                             .background(viewModel.currentVibeIsSaved ? C.terracotta : C.sage)
@@ -1628,7 +1628,7 @@ struct HomeView: View {
         VStack(spacing: 14) {
             Image(systemName: recovery.systemImage)
                 .font(.system(size: 28, weight: .light))
-                .foregroundStyle(C.sage)
+                .foregroundStyle(C.primaryInk)
                 .frame(width: 56, height: 56)
                 .background(C.sageLt)
                 .clipShape(Circle())
@@ -1660,7 +1660,7 @@ struct HomeView: View {
                     }
                     Text(recovery.actionTitle).font(.system(size: 15, weight: .medium))
                 }
-                .foregroundStyle(isPrimaryAction ? .white : C.sage)
+                .foregroundStyle(isPrimaryAction ? C.onPrimary : C.primaryInk)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, isPrimaryAction ? 6 : 0)
                 .background(isPrimaryAction ? C.sage : C.sageLt)
@@ -1708,7 +1708,7 @@ struct HomeView: View {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 14, weight: .medium))
             }
-            .foregroundColor(.white)
+            .foregroundColor(C.onPrimary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .background(C.sage)
@@ -1736,17 +1736,17 @@ private struct SubBubble: View {
                 Text(sub.emoji)
                     .font(.system(size: 22))
                     .frame(width: 48, height: 48)
-                    .background(isSelected ? Color.white.opacity(0.3) : Color.white.opacity(0.15))
+                    .background(isSelected ? C.onPrimary.opacity(0.3) : C.onPrimary.opacity(0.15))
                     .clipShape(Circle())
                     .overlay(
                         Circle()
-                            .strokeBorder(isSelected ? Color.white : Color.clear, lineWidth: 2)
+                            .strokeBorder(isSelected ? C.onPrimary : Color.clear, lineWidth: 2)
                     )
                     .scaleEffect(isSelected && !reduceMotion ? 1.1 : 1.0)
                     .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
                 Text(sub.label)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(appeared ? 0.9 : 0))
+                    .foregroundColor(C.onPrimary.opacity(appeared ? 0.9 : 0))
                     .lineLimit(1)
                     .animation(
                         reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65)

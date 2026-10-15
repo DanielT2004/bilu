@@ -126,7 +126,7 @@ struct RestaurantDetailView: View {
             Text("bilu")
                 .font(AppTheme.title)
                 .italic()
-                .foregroundStyle(AppTheme.sage)
+                .foregroundStyle(AppTheme.primaryInk)
                 .accessibilityHidden(true)
             Spacer()
             Button(action: tapWantToGo) {
@@ -209,7 +209,7 @@ struct RestaurantDetailView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color(white: 0, opacity: 0.45))
+                    .background(AppTheme.photoScrim.opacity(0.45))
                     .clipShape(Capsule())
                     .padding(.trailing, 16)
                     .padding(.bottom, 56)
@@ -281,7 +281,7 @@ struct RestaurantDetailView: View {
                 style: .continuous
             )
         )
-        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: -6)
+        .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: -6)
         .padding(.top, -28)
     }
 
@@ -397,7 +397,7 @@ struct RestaurantDetailView: View {
                     Text("I've been here")
                         .font(.system(size: 15, weight: .semibold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(ivenBeenHere ? AppTheme.onAccent : AppTheme.onPrimary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(ivenBeenHere ? AppTheme.terracotta : AppTheme.sage)
@@ -416,7 +416,7 @@ struct RestaurantDetailView: View {
                         .frame(width: 52, height: 52)
                     Image(systemName: bookmarkSaved ? AppTheme.Icon.savedFilled : AppTheme.Icon.saved)
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(bookmarkSaved ? AppTheme.sage : AppTheme.onSurface)
+                        .foregroundStyle(bookmarkSaved ? AppTheme.primaryInk : AppTheme.onSurface)
                         .scaleEffect(bookmarkPhase == .pressing ? 1.18 : 1.0)
                 }
                 .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion),
@@ -482,14 +482,14 @@ struct RestaurantDetailView: View {
                     VStack(spacing: 6) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .light))
-                            .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
+                            .foregroundStyle(selectedTab == tab ? AppTheme.primaryInk : AppTheme.subtle)
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selectedTab)
 
                         Text(tab.label)
                             .font(.system(size: 11, weight: .semibold))
                             .tracking(0.6)
                             .textCase(.uppercase)
-                            .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
+                            .foregroundStyle(selectedTab == tab ? AppTheme.primaryInk : AppTheme.subtle)
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selectedTab)
 
                         // Active underline
@@ -592,7 +592,7 @@ struct RestaurantDetailView: View {
                         .font(.system(size: 18))
                         .foregroundStyle(AppTheme.onSurface)
                         .frame(width: 52, height: 52)
-                        .background(Color(hex: "eae8e3"))
+                        .background(AppTheme.neutralBg)
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -604,7 +604,7 @@ struct RestaurantDetailView: View {
                     .font(.system(size: 18))
                     .foregroundStyle(AppTheme.onSurface)
                     .frame(width: 52, height: 52)
-                    .background(Color(hex: "eae8e3"))
+                    .background(AppTheme.neutralBg)
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -630,7 +630,7 @@ struct RestaurantDetailView: View {
             Image(systemName: "globe").font(.system(size: 15))
             Text("Website").font(.system(size: 15, weight: .semibold))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(AppTheme.onPrimary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .background(AppTheme.sage)
@@ -642,7 +642,7 @@ struct RestaurantDetailView: View {
             Image(systemName: "location.fill").font(.system(size: 15))
             Text("Get Directions").font(.system(size: 15, weight: .semibold))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(AppTheme.onPrimary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
         .background(AppTheme.sage)
@@ -716,7 +716,7 @@ struct RestaurantDetailView: View {
                         .font(.system(size: 10, weight: .medium))
                         .tracking(0.8)
                         .textCase(.uppercase)
-                        .foregroundStyle(AppTheme.sage)
+                        .foregroundStyle(AppTheme.primaryInk)
                         .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
@@ -765,7 +765,7 @@ struct RestaurantDetailView: View {
                         .font(.system(size: 13, weight: .semibold))
                 }
             }
-            .foregroundStyle(AppTheme.sage)
+            .foregroundStyle(AppTheme.primaryInk)
             .frame(maxWidth: .infinity, minHeight: 52)
             .padding(.horizontal, 16)
             .background(AppTheme.white)
@@ -796,7 +796,7 @@ struct RestaurantDetailView: View {
                         .font(.system(size: 10, weight: .medium))
                         .tracking(0.8)
                         .textCase(.uppercase)
-                        .foregroundStyle(AppTheme.sage)
+                        .foregroundStyle(AppTheme.primaryInk)
                         .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
@@ -826,7 +826,7 @@ struct RestaurantDetailView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(AppTheme.sage)
+            .foregroundStyle(AppTheme.primaryInk)
             .frame(maxWidth: .infinity, minHeight: 52)
             .padding(.horizontal, 16)
             .background(AppTheme.white)
@@ -857,7 +857,7 @@ struct RestaurantDetailView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.white)
                     .padding(6)
-                    .background(Color(white: 0, opacity: 0.4))
+                    .background(AppTheme.photoScrim.opacity(0.4))
                     .clipShape(Circle())
                     .padding(10)
             }
@@ -888,7 +888,7 @@ struct RestaurantDetailView: View {
             proTipRow("03", "Check Google Maps for the latest hours before heading out.")
         }
         .padding(20)
-        .background(Color(hex: "f5f3ee"))
+        .background(AppTheme.neutralBg)
         .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
@@ -896,11 +896,11 @@ struct RestaurantDetailView: View {
         HStack(alignment: .top, spacing: 14) {
             Text(num)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(AppTheme.terracotta)
+                .foregroundStyle(AppTheme.accentInk)
                 .frame(width: 22, alignment: .leading)
             Text(text)
                 .font(.system(size: 13))
-                .foregroundStyle(Color(hex: "45483e"))
+                .foregroundStyle(AppTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -919,7 +919,7 @@ struct RestaurantDetailView: View {
                 Button(action: openMaps) {
                     Text(address)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color(hex: "45483e"))
+                        .foregroundStyle(AppTheme.muted)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -961,19 +961,19 @@ struct RestaurantDetailView: View {
                     Annotation(rec.name, coordinate: coord) {
                         ZStack {
                             Circle()
-                                .fill(AppTheme.terracotta)
+                                .fill(AppTheme.sage)
                                 .frame(width: 30, height: 30)
-                                .shadow(color: AppTheme.terracotta.opacity(0.4), radius: 4, y: 2)
+                                .shadow(color: AppTheme.sage.opacity(0.4), radius: 4, y: 2)
                             Image(systemName: "fork.knife")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(AppTheme.onPrimary)
                         }
                     }
                 }
                 .disabled(true)
                 .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 180)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .shadow(color: Color.black.opacity(0.06), radius: 10, y: 4)
+                .shadow(color: AppTheme.shadowColor, radius: 10, y: 4)
             }
         }
     }
@@ -1043,7 +1043,7 @@ struct RestaurantDetailView: View {
         VStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 14))
-                .foregroundStyle(AppTheme.terracotta)
+                .foregroundStyle(AppTheme.primaryInk)
             Text(value)
                 .font(.system(size: 17, weight: .heavy))
                 .foregroundStyle(AppTheme.onSurface)
@@ -1088,7 +1088,7 @@ struct RestaurantDetailView: View {
                             Text("TikTok")
                                 .font(.system(size: 10, weight: .bold))
                                 .tracking(0.5)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(AppTheme.onPrimary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
                                 .background(AppTheme.sage)
@@ -1135,7 +1135,7 @@ struct RestaurantDetailView: View {
 
                 // Gradient overlay — bottom heavy
                 LinearGradient(
-                    colors: [.black.opacity(0.8), .clear],
+                    colors: [AppTheme.photoScrim.opacity(0.8), .clear],
                     startPoint: .bottom,
                     endPoint: .center
                 )
@@ -1143,7 +1143,7 @@ struct RestaurantDetailView: View {
                 // Top vignette
                 VStack {
                     LinearGradient(
-                        colors: [.black.opacity(0.2), .clear],
+                        colors: [AppTheme.photoScrim.opacity(0.2), .clear],
                         startPoint: .top,
                         endPoint: .init(x: 0.5, y: 0.35)
                     )
@@ -1161,7 +1161,7 @@ struct RestaurantDetailView: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .tracking(1.0)
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.onPrimary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(AppTheme.sage)
@@ -1223,7 +1223,7 @@ struct RestaurantDetailView: View {
             .frame(height: 460)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
+            .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }
@@ -1316,7 +1316,7 @@ struct RestaurantDetailView: View {
             .padding(14)
             .background(AppTheme.white)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 6)
+            .shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)
         }
         .buttonStyle(.plain)
     }
@@ -1344,7 +1344,7 @@ struct RestaurantDetailView: View {
                         } label: {
                             Label("Open in Maps", systemImage: "map")
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(AppTheme.onPrimary)
                                 .frame(maxWidth: .infinity, minHeight: 48)
                                 .background(AppTheme.sage)
                                 .clipShape(Capsule())

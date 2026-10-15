@@ -69,7 +69,7 @@ struct FeedView: View {
             }
 
             if !vibes.isEmpty {
-                section(title: "Run it back", systemImage: AppTheme.Icon.vibe) {
+                section(title: "Run it back", systemImage: AppTheme.Icon.vibe, iconColor: AppTheme.terracotta) {
                     ForEach(vibes, id: \.0) { _, summary, selection in
                         vibeCard(summary: summary) { onRunVibe(selection) }
                     }
@@ -87,13 +87,15 @@ struct FeedView: View {
 
     // MARK: - Sections
 
+    /// Section icons are sienna; the saved-vibe sparkle is ochre (a special moment).
     private func section<Content: View>(title: String, systemImage: String,
+                                        iconColor: Color = AppTheme.primaryInk,
                                         @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
                     .font(AppTheme.label)
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(iconColor)
                     .accessibilityHidden(true)
                 Text(title)
                     .font(AppTheme.headline)
@@ -134,7 +136,7 @@ struct FeedView: View {
                     if let miles {
                         Text(miles)
                             .font(AppTheme.caption)
-                            .foregroundStyle(AppTheme.sage)
+                            .foregroundStyle(AppTheme.primaryInk)
                             .padding(.top, 2)
                     }
                 }
@@ -166,11 +168,11 @@ struct FeedView: View {
                         Text("Run it back")
                             .font(AppTheme.label)
                     }
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     if let status = viewModel.discoveryAllowanceStatus {
                         Text("Uses a discovery · \(status)")
                             .font(AppTheme.caption)
-                            .foregroundStyle(AppTheme.muted)
+                            .foregroundStyle(AppTheme.accentInk)
                     }
                 }
             }
@@ -204,7 +206,7 @@ struct FeedView: View {
                             .font(AppTheme.caption)
                             .accessibilityHidden(true)
                     }
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                     .padding(.top, 4)
                 }
             }

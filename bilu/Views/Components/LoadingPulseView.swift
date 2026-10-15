@@ -14,9 +14,9 @@ struct LoadingPulseView: View {
     @State private var orbit3: Double = 240
     @State private var breathScale: CGFloat = 1.0
 
-    private let primaryColor   = AppTheme.sage        // FF3B30 Spicy Red
-    private let secondaryColor = AppTheme.terracotta  // FF9500 Mango Orange
-    private let lightBg        = AppTheme.sageLt      // FFDAD6 light red tint
+    private let primaryColor   = AppTheme.sage
+    private let secondaryColor = AppTheme.terracotta  // ochre: discovery moment
+    private let lightBg        = AppTheme.sageLt
 
     var body: some View {
         ZStack {
@@ -27,13 +27,13 @@ struct LoadingPulseView: View {
                 .frame(width: 190, height: 190)
                 .rotationEffect(.degrees(outerAngle))
 
-            // White mid circle
+            // Card-colored mid circle
             Circle()
-                .fill(Color.white)
+                .fill(AppTheme.white)
                 .frame(width: 154, height: 154)
-                .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+                .shadow(color: AppTheme.shadowColor, radius: 12, y: 4)
 
-            // Light red inner circle
+            // Sienna-tint inner circle
             Circle()
                 .fill(lightBg)
                 .frame(width: 114, height: 114)
@@ -45,7 +45,7 @@ struct LoadingPulseView: View {
                 .overlay(
                     Image(systemName: "location.north.fill")
                         .font(.system(size: 22, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(AppTheme.onPrimary)
                 )
                 .rotationEffect(.degrees(iconAngle))
 
@@ -94,7 +94,7 @@ struct LoadingPulseView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(color)
                     .frame(width: 32, height: 32)
-                    .background(Color.white)
+                    .background(AppTheme.white)
                     .clipShape(Circle())
                     .shadow(color: color.opacity(0.2), radius: 4, y: 2)
                     .offset(x: 80)

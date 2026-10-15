@@ -68,7 +68,7 @@ struct LocationVideosSheet: View {
                         .frame(width: 36, height: 36)
                     Text("\(location.rank + 1)")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(C.onPrimary)
                 }
             } else {
                 ZStack {
@@ -77,7 +77,7 @@ struct LocationVideosSheet: View {
                         .frame(width: 36, height: 36)
                     Image(systemName: "mappin")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(C.sage)
+                        .foregroundColor(C.primaryInk)
                 }
             }
 
@@ -120,7 +120,7 @@ struct LocationVideosSheet: View {
                         .fill(C.sageLt)
                         .overlay(
                             Image(systemName: "play.fill")
-                                .foregroundColor(C.sage)
+                                .foregroundColor(C.primaryInk)
                                 .font(.system(size: 20))
                         )
                 @unknown default:
@@ -138,7 +138,7 @@ struct LocationVideosSheet: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
-                .background(.black.opacity(0.45))
+                .background(C.photoScrim.opacity(0.45))
                 .clipShape(Capsule())
                 .padding(8)
             }

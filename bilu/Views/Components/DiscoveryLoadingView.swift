@@ -37,7 +37,7 @@ struct DiscoveryLoadingView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label("YOUR NEXT TABLE", systemImage: "fork.knife")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
                 Text("Make the most of your shortlist")
                     .font(AppTheme.title)
                     .foregroundStyle(AppTheme.onSurface)

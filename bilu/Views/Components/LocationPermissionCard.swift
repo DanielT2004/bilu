@@ -18,7 +18,7 @@ struct LocationPermissionCard: View {
     var body: some View {
         ZStack {
             // Dimmed scrim — tap to dismiss
-            Color.black.opacity(0.2)
+            AppTheme.photoScrim.opacity(0.3)
                 .ignoresSafeArea()
                 .onTapGesture {
                     Haptics.light()
@@ -47,7 +47,7 @@ struct LocationPermissionCard: View {
         VStack(spacing: 16) {
             Image(systemName: "location.fill")
                 .font(.system(size: 24, weight: .medium))
-                .foregroundColor(AppTheme.sage)
+                .foregroundColor(AppTheme.primaryInk)
                 .frame(width: 52, height: 52)
                 .background(AppTheme.sageLt)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -70,7 +70,7 @@ struct LocationPermissionCard: View {
                 } label: {
                     Text("Use my location")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(AppTheme.onPrimary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(AppTheme.sage)

@@ -9,11 +9,10 @@ import CoreLocation
 
 // MARK: - Appearance helper
 
-/// Spicy Red in light mode, Mango Orange in dark mode — mirrors the map's own muted dark style.
+/// The burnt sienna primary for each appearance (see `AppTheme.Palette.primary`).
 private func mapAccent(dark: Bool, alpha: CGFloat) -> UIColor {
-    dark
-        ? UIColor(red: 255/255, green: 149/255, blue: 0/255,   alpha: alpha)  // #FF9500 mango orange
-        : UIColor(red: 255/255, green: 59/255,  blue: 48/255,  alpha: alpha)  // #FF3B30 spicy red
+    let swatch = AppTheme.Palette.primary
+    return UIColor(rgb: dark ? swatch.dark : swatch.light, alpha: alpha)
 }
 
 // MARK: - Annotation classes
@@ -607,10 +606,10 @@ struct HomeMapWidget: View {
                 VStack(spacing: 0) {
                     Text(String(format: "%.1f mi", radiusMiles))
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(AppTheme.sage)
+                        .foregroundColor(AppTheme.primaryInk)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.92))
+                        .background(AppTheme.white.opacity(0.92))
                         .clipShape(Capsule())
                         .padding(.top, 10)
                     Spacer()
@@ -670,7 +669,7 @@ struct HomeMapWidget: View {
                         Button { expand() } label: {
                             Text("Change")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(AppTheme.sage)
+                                .foregroundColor(AppTheme.primaryInk)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
                                 .background(AppTheme.surface)

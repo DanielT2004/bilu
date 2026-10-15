@@ -37,7 +37,7 @@ struct SavedVibesRowView: View {
                     .lineLimit(1)
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(AppTheme.sage)
+                    .foregroundStyle(AppTheme.primaryInk)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

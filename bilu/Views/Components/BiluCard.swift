@@ -2,8 +2,8 @@
 //  BiluCard.swift
 //  bilu
 //
-//  The one card style: white on surface, 18 pt continuous corners, ambient
-//  red-tinted shadow. No accent bars, ghost icons or borders.
+//  The one card style: cream (café brown in dark) on surface, 18 pt continuous
+//  corners, ambient espresso-tinted shadow. No accent bars, ghost icons or borders.
 //
 
 import SwiftUI
