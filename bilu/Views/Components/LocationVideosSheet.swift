@@ -25,11 +25,18 @@ struct LocationVideosSheet: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(Array(videos.enumerated()), id: \.element.id) { index, video in
-                        videoCard(video: video)
-                            .onTapGesture {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                onSelectVideo(index)
-                            }
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onSelectVideo(index)
+                        } label: {
+                            videoCard(video: video)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(VideoAccessibility.clipLabel(authorName: video.author.name, viewCount: video.viewCount))
+                        .accessibilityHint(VideoAccessibility.playHint)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityIdentifier("location-video-\(index)")
                     }
                 }
                 .padding(.horizontal, 20)
@@ -79,6 +86,7 @@ struct LocationVideosSheet: View {
                     .font(.custom("Georgia", size: 20))
                     .foregroundColor(C.onSurface)
                     .lineLimit(2)
+                    .accessibilityAddTraits(.isHeader)
                 if !location.address.isEmpty {
                     Text(location.address)
                         .font(.system(size: 12, weight: .light))
@@ -91,6 +99,10 @@ struct LocationVideosSheet: View {
                     .textCase(.uppercase)
                     .foregroundColor(C.subtle)
                     .padding(.top, 2)
+                    .accessibilityLabel(
+                        "\(VideoAccessibility.spokenCount(videos.count, unit: "TikTok")), "
+                        + VideoAccessibility.spokenCount(location.totalViews, unit: "view")
+                    )
             }
 
             Spacer(minLength: 0)

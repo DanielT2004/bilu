@@ -14,6 +14,7 @@ private let C = AppTheme.self
 struct LoadingStatusTicker: View {
     let videos: [TikTokVideo]
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var stageIndex = 0
     @State private var displayedCounter = 0
     @State private var dotPulse = false
@@ -52,9 +53,12 @@ struct LoadingStatusTicker: View {
             Circle()
                 .fill(C.sage)
                 .frame(width: 7, height: 7)
-                .opacity(dotPulse ? 1.0 : 0.35)
-                .scaleEffect(dotPulse ? 1.0 : 0.85)
+                .opacity(reduceMotion || dotPulse ? 1.0 : 0.35)
+                .scaleEffect(reduceMotion || dotPulse ? 1.0 : 0.85)
+                .accessibilityHidden(true)
                 .onAppear {
+                    // Reduce Motion: a steady dot instead of an endless pulse.
+                    guard !reduceMotion else { return }
                     withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                         dotPulse = true
                     }
@@ -65,7 +69,7 @@ struct LoadingStatusTicker: View {
                 .foregroundColor(C.muted)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 .id("stage-\(stageIndex)")
 
             Spacer(minLength: 6)
@@ -83,6 +87,9 @@ struct LoadingStatusTicker: View {
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
         .shadow(color: C.shadowColor, radius: 8, y: 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(currentStage.text)
+        .accessibilityAddTraits(.updatesFrequently)
         .onAppear { animateCounterToCurrentTarget() }
         .onReceive(timer) { _ in advanceStage() }
     }
@@ -98,6 +105,10 @@ struct LoadingStatusTicker: View {
     private func animateCounterToCurrentTarget() {
         guard let target = currentStage.counterTarget else {
             displayedCounter = 0
+            return
+        }
+        if reduceMotion {
+            displayedCounter = target
             return
         }
         displayedCounter = 0

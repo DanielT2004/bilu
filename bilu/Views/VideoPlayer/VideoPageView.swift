@@ -29,6 +29,30 @@ struct VideoPageView: View {
                 tapZone
                 tapZone
             }
+            // The tap zones are invisible, so expose the page as one control
+            // with play/pause as its default action and speed as a named action.
+            .accessibilityElement()
+            .accessibilityLabel(VideoAccessibility.clipLabel(
+                authorName: pageModel.video.author.name,
+                viewCount: pageModel.video.viewCount
+            ))
+            .accessibilityValue(VideoAccessibility.playbackValue(
+                isPlaying: pageModel.isPlaying,
+                rate: pageModel.playbackRate
+            ))
+            .accessibilityHint("Double-tap to play or pause")
+            .accessibilityAddTraits([.isButton, .startsMediaSession])
+            .accessibilityAction {
+                guard isActive else { return }
+                Haptics.light()
+                pageModel.togglePlayPause()
+            }
+            .accessibilityAction(named: pageModel.playbackRate > 1.0 ? "Play at normal speed" : "Play at 2x speed") {
+                guard isActive else { return }
+                Haptics.light()
+                pageModel.setRate(pageModel.playbackRate > 1.0 ? 1.0 : 2.0)
+            }
+            .accessibilityIdentifier("video-page-\(index)")
 
             // 2x indicator pill — top-center, only when speeding up
             if isActive && pageModel.playbackRate > 1.0 {
@@ -49,6 +73,7 @@ struct VideoPageView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.15), value: pageModel.playbackRate)
             }
@@ -67,6 +92,7 @@ struct VideoPageView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.opacity.animation(.easeInOut(duration: 0.15)))
                             .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
 
                     Spacer()
@@ -145,6 +171,7 @@ struct VideoPageView: View {
                 }
                 .frame(width: 32, height: 32)
                 .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1.5))
+                .accessibilityHidden(true)
 
                 Text("@\(pageModel.video.author.name)")
                     .font(.system(size: 14, weight: .semibold))
@@ -161,7 +188,9 @@ struct VideoPageView: View {
             // Stats
             HStack(spacing: 10) {
                 hudStatPill(icon: "heart.fill", count: pageModel.video.diggCount)
+                    .accessibilityLabel(VideoAccessibility.spokenCount(pageModel.video.diggCount, unit: "like"))
                 hudStatPill(icon: "bubble.left.fill", count: pageModel.video.commentCount)
+                    .accessibilityLabel(VideoAccessibility.spokenCount(pageModel.video.commentCount, unit: "comment"))
             }
         }
         .padding(.horizontal, 16)
@@ -179,6 +208,7 @@ struct VideoPageView: View {
         .padding(.vertical, 5)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
     }
 
     private func formatCount(_ n: Int) -> String {

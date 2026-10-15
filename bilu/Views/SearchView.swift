@@ -39,7 +39,7 @@ struct SearchView: View {
 
             sortChips
                 .padding(.horizontal, 20)
-                .padding(.bottom, 10)
+                .padding(.bottom, 4)
 
             if !viewModel.videos.isEmpty {
                 viewModeToggle
@@ -159,21 +159,24 @@ struct SearchView: View {
         let showLoadingDot = isLocationDependent && viewModel.isLoadingLocations && !isActive
         return Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(AnimationProfile.selection.animation(reduceMotion: reduceMotion)) {
                 viewModel.viewMode = mode
             }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: isActive ? mode.activeSystemImage : mode.systemImage)
                     .font(.system(size: 13, weight: .medium))
+                    .accessibilityHidden(true)
                 Text(mode.label)
                     .font(.system(size: 13, weight: .medium))
                 if showLoadingDot {
                     Circle()
                         .fill(C.sage)
                         .frame(width: 6, height: 6)
-                        .opacity(mapTabPulse ? 1.0 : 0.3)
+                        .opacity(reduceMotion || mapTabPulse ? 1.0 : 0.3)
+                        .accessibilityHidden(true)
                         .onAppear {
+                            guard !reduceMotion else { return }
                             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                                 mapTabPulse = true
                             }
@@ -181,12 +184,15 @@ struct SearchView: View {
                 }
             }
             .foregroundColor(isActive ? .white : C.muted)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(isActive ? C.sage : Color.clear)
             .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityValue(showLoadingDot ? "Finding places" : "")
+        .accessibilityIdentifier("search-mode-\(mode.label.lowercased())")
     }
 
     // MARK: - Header
@@ -196,6 +202,7 @@ struct SearchView: View {
             Text("Search")
                 .font(.custom("Georgia", size: 28))
                 .foregroundColor(C.onSurface)
+                .accessibilityAddTraits(.isHeader)
             Text("Find spots from TikTok")
                 .font(.system(size: 12, weight: .medium))
                 .tracking(0.5)
@@ -291,9 +298,14 @@ struct SearchView: View {
                 .background(isActive ? C.sage : C.white)
                 .clipShape(Capsule())
                 .shadow(color: C.shadowColor, radius: isActive ? 6 : 0, x: 0, y: 2)
-                .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isActive)
+                .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: isActive)
+                // The capsule stays compact; the hit area grows to 44 pt.
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityIdentifier("search-sort-\(option.rawValue)")
     }
 
     // MARK: - Empty prompt
@@ -355,6 +367,7 @@ struct SearchView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 11)
+                    .frame(minHeight: 44)
                     .background(C.sage)
                     .clipShape(Capsule())
             }
@@ -410,9 +423,11 @@ struct SearchView: View {
                                 .foregroundColor(C.sage)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
+                                .frame(minHeight: 44)
                                 .background(C.sageLt)
                                 .clipShape(Capsule())
                         }
+                        .accessibilityHint("Adds this city to your search")
                     }
                 }
                 .padding(.horizontal, 24)
@@ -716,6 +731,10 @@ private struct VideoStripItem: View {
             .shadow(color: AppTheme.shadowColor, radius: 6, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(VideoAccessibility.clipLabel(authorName: video.author.name, viewCount: video.viewCount))
+        .accessibilityHint(VideoAccessibility.playHint)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -725,6 +744,7 @@ private struct VideoTile: View {
     let video: TikTokVideo
     let onTap: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pressed = false
 
     var body: some View {
@@ -763,10 +783,14 @@ private struct VideoTile: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: AppTheme.shadowColor, radius: 8, y: 3)
-            .scaleEffect(pressed ? 0.96 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pressed)
+            .scaleEffect(pressed && !reduceMotion ? 0.96 : 1.0)
+            .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: pressed)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(VideoAccessibility.clipLabel(authorName: video.author.name, viewCount: video.viewCount))
+        .accessibilityHint(VideoAccessibility.playHint)
+        .accessibilityAddTraits(.isButton)
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in pressed = true }
@@ -797,11 +821,11 @@ private struct WhyThisPlacePill: View {
             if videoCount > 1 {
                 Label("\(videoCount) videos", systemImage: "play.rectangle.fill")
                     .labelStyle(.titleOnly)
-                Text("·").foregroundColor(C.subtle)
+                Text("·").foregroundColor(C.subtle).accessibilityHidden(true)
             }
             Text("\(formatCompactCount(totalViews)) views")
             if let r = rating {
-                Text("·").foregroundColor(C.subtle)
+                Text("·").foregroundColor(C.subtle).accessibilityHidden(true)
                 HStack(spacing: 2) {
                     Image(systemName: "star.fill")
                         .font(.system(size: 9))
@@ -992,6 +1016,7 @@ private struct FilterChipsBar: View {
                     Divider()
                         .frame(height: 18)
                         .padding(.horizontal, 4)
+                        .accessibilityHidden(true)
 
                     ForEach(availableNeighborhoods, id: \.self) { n in
                         let isActive = selectedNeighborhoods.contains(n)
@@ -1013,6 +1038,7 @@ private struct FilterChipsBar: View {
             HStack(spacing: 5) {
                 if let icon = icon {
                     Image(systemName: icon).font(.system(size: 11, weight: .medium))
+                        .accessibilityHidden(true)
                 }
                 Text(label).font(.system(size: 13, weight: .medium))
             }
@@ -1021,8 +1047,11 @@ private struct FilterChipsBar: View {
             .padding(.vertical, 8)
             .background(isActive ? C.sage : C.sageLt)
             .clipShape(Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
 
