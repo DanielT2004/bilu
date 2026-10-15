@@ -100,6 +100,27 @@ function deps(
   };
 }
 
+/** Runs `run` with console output captured instead of printed. */
+async function captureConsole<T>(
+  run: () => Promise<T>,
+): Promise<{ lines: string[]; result: T }> {
+  const lines: string[] = [];
+  const methods = ["log", "info", "warn", "error", "debug"] as const;
+  const originals = methods.map((m) => console[m]);
+  for (const m of methods) {
+    console[m] = (...args: unknown[]) => {
+      lines.push(
+        args.map((a) => typeof a === "string" ? a : String(a)).join(" "),
+      );
+    };
+  }
+  try {
+    return { lines, result: await run() };
+  } finally {
+    methods.forEach((m, i) => (console[m] = originals[i]));
+  }
+}
+
 function post(body: unknown): Request {
   return new Request("https://local.test/tiktok-resolve", {
     method: "POST",
@@ -217,6 +238,7 @@ Deno.test("a resolved share returns its places and spends one quota unit", async
   assertEquals(log.quota, 1);
   assertEquals(log.locate.length, 1);
   assertEquals(log.locate[0].searchQuery, "food in Los Angeles");
+  assertEquals(log.locate[0].queryCity, "Los Angeles");
   assertEquals(log.locate[0].videos[0].desc, OEMBED_BODY.title);
   assertEquals(log.locate[0].latitude, 34.05);
   assertEquals(res.headers.get("X-Daily-Budget-Remaining"), "29");
@@ -274,7 +296,7 @@ Deno.test("no city returns missing_city with the video before any paid work", as
   assertEquals(log.locate.length, 0);
 });
 
-Deno.test("a city the pipeline can't place still returns missing_city", async () => {
+Deno.test("a supplied city is authoritative: no charged missing_city", async () => {
   const log = {
     quota: 0,
     auth: 0,
@@ -282,12 +304,73 @@ Deno.test("a city the pipeline can't place still returns missing_city", async ()
     fetches: [] as string[],
   };
   const res = await handleTikTokResolve(
-    post({ shareUrl: VIDEO_URL, city: "Nowhere" }),
+    post({ shareUrl: VIDEO_URL, city: "  Nowhere  " }),
     deps({}, log, { kind: "missing_city" }),
   );
-  assertEquals(res.status, 400);
-  assertEquals((await res.json()).error, "missing_city");
+  // The pipeline gets the city as its query city, and even if it still
+  // reports missing_city the user sees "no place found", not "choose a city".
+  assertEquals(log.locate[0].queryCity, "Nowhere");
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.places, []);
+  assertEquals(body.queryCity, "Nowhere");
+  assertEquals(body.video.videoId, "7312345678901234567");
   assertEquals(log.quota, 1);
+});
+
+Deno.test("a pipeline failure after the quota unit is spent says charged", async () => {
+  const log = {
+    quota: 0,
+    auth: 0,
+    locate: [] as LocatePlacesInput[],
+    fetches: [] as string[],
+  };
+  const secret = "upstream said: Teddy's Red Tacos near 123 Secret St";
+  const { lines, result: res } = await captureConsole(() =>
+    handleTikTokResolve(
+      post({ shareUrl: VIDEO_URL, city: "Los Angeles" }),
+      deps({ locate: () => Promise.reject(new Error(secret)) }, log),
+    )
+  );
+  assertEquals(res.status, 502);
+  const body = await res.json();
+  assertEquals(body.error, "place_lookup_failed");
+  assertEquals(body.charged, true);
+  assertEquals(log.quota, 1);
+  assertEquals(lines.length, 1);
+  assertEquals(JSON.parse(lines[0]), {
+    event: "tiktok_resolve_failed",
+    charged: true,
+    errorName: "Error",
+  });
+  for (const line of lines) {
+    assertEquals(line.includes("Secret"), false, line);
+    assertEquals(line.includes("Teddy"), false, line);
+  }
+});
+
+Deno.test("a failure before the quota unit is spent says not charged", async () => {
+  const log = {
+    quota: 0,
+    auth: 0,
+    locate: [] as LocatePlacesInput[],
+    fetches: [] as string[],
+  };
+  const { lines, result: res } = await captureConsole(() =>
+    handleTikTokResolve(
+      post({ shareUrl: VIDEO_URL, city: "Los Angeles" }),
+      deps({
+        fetch: () => Promise.reject(new TypeError("dns fail for secret.host")),
+      }, log),
+    )
+  );
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals(body.error, "resolve_failed");
+  assertEquals(body.charged, false);
+  assertEquals(log.quota, 0);
+  assertEquals(lines.some((l) => l.includes("secret.host")), false);
+  assertEquals(JSON.parse(lines[0]).errorName, "TypeError");
 });
 
 Deno.test("quota and auth refusals pass through as their own status", async () => {

@@ -580,6 +580,12 @@ export interface LocatePlacesInput {
   searchQuery: string;
   latitude?: number;
   longitude?: number;
+  /** An already-validated city that is authoritative for this request (a
+   * shared link sends the user's own city). When set, it replaces the city
+   * Gemini extracts from `searchQuery`, so the pipeline never answers
+   * `missing_city` for a request that supplied one. tiktok-locations leaves
+   * it unset and keeps extracting the city from the user's search. */
+  queryCity?: string;
 }
 
 export type LocatePlacesResult =
@@ -621,13 +627,15 @@ export async function locatePlaces(
     geminiApiKey,
   );
 
-  // 3. CITY GUARD — reject if no city in query
-  if (!gemini.queryCity || !gemini.queryCity.trim()) {
+  // 3. CITY GUARD — reject if no city in query (a supplied city wins)
+  const queryCity = body.queryCity?.trim() || gemini.queryCity?.trim() || "";
+  if (!queryCity) {
     console.log("[tiktok-places] queryCity missing");
     return { kind: "missing_city" };
   }
-
-  const queryCity = gemini.queryCity.trim();
+  if (body.queryCity?.trim()) {
+    console.log("[tiktok-places] queryCity supplied by caller");
+  }
 
   // 4. Geocode the query city once → use as locationBias for every venue lookup
   const cityCoord = await geocodeCityToCoord(

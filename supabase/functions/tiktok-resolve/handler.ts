@@ -209,6 +209,7 @@ export async function handleTikTokResolve(
   if (!geminiApiKey || !placesApiKey) {
     return json(500, {
       error: "GEMINI_API_KEY or GOOGLE_PLACES_API_KEY not configured",
+      charged: false,
     });
   }
 
@@ -230,6 +231,7 @@ export async function handleTikTokResolve(
     ? body.city.trim().slice(0, 80)
     : "";
 
+  let charged = false;
   try {
     // Free steps first, so a dead or private link never spends the user's
     // quota: authenticate, expand the short link, read the caption.
@@ -263,6 +265,11 @@ export async function handleTikTokResolve(
     }
 
     const quota = await deps.consumeQuota(user.id, PAID_API_QUOTA);
+    // From here on the user's quota unit is spent. paid_api_guard has no
+    // refund for paid-API quota (only the discovery allowance has one), so a
+    // failure below can't be undone; it is reported as `charged: true` so the
+    // app never retries it automatically.
+    charged = true;
 
     const result = await deps.locate(
       {
@@ -272,9 +279,10 @@ export async function handleTikTokResolve(
           viewCount: 0,
           shareUrl: video.canonicalUrl,
         }],
-        // The pipeline takes its city from the search query; for a shared
-        // link the user's own city stands in for one.
-        searchQuery: city ? `food in ${city}` : "",
+        searchQuery: `food in ${city}`,
+        // The user's own city is authoritative for a shared link, so the
+        // pipeline never answers missing_city for a request that sent one.
+        queryCity: city,
         latitude: finiteNumber(body.latitude),
         longitude: finiteNumber(body.longitude),
       },
@@ -282,26 +290,34 @@ export async function handleTikTokResolve(
       placesApiKey,
     );
 
-    if (result.kind === "missing_city") {
-      return json(400, {
-        error: "missing_city",
-        message: "Turn on location or pick a city to match this video.",
-        video,
-      }, quotaHeaders(quota));
-    }
-
+    // With a supplied city the pipeline shouldn't report missing_city; if it
+    // does, the honest answer is "no place found", never "choose a city".
     return json(200, {
       video,
-      places: result.locations,
-      queryCity: result.queryCity,
+      places: result.kind === "ok" ? result.locations : [],
+      queryCity: result.kind === "ok" ? result.queryCity : city,
     }, quotaHeaders(quota));
   } catch (err) {
     const accessResponse = paidAPIAccessErrorResponse(err, corsHeaders);
     if (accessResponse) return accessResponse;
-    console.error(
-      "[tiktok-resolve] 500:",
-      err instanceof Error ? err.message : String(err),
-    );
-    return json(500, { error: "resolve_failed" });
+    // Error kind only: exception messages can quote upstream bodies.
+    console.error(JSON.stringify({
+      event: "tiktok_resolve_failed",
+      charged,
+      errorName: safeErrorName(err),
+    }));
+    return charged
+      ? json(502, {
+        error: "place_lookup_failed",
+        charged: true,
+        message: "We couldn't match this video right now.",
+      })
+      : json(500, { error: "resolve_failed", charged: false });
   }
+}
+
+/** A loggable error class name ("TypeError", "TimeoutError"), never a message. */
+function safeErrorName(err: unknown): string {
+  const name = err instanceof Error ? err.name : typeof err;
+  return /^[A-Za-z]{1,40}$/.test(name) ? name : "Unknown";
 }

@@ -106,7 +106,18 @@ export async function handleTikTokLocations(
       `  hasCoords:  ${body.latitude != null && body.longitude != null}`,
     );
 
-    const result = await locatePlaces(body, geminiApiKey, placesApiKey);
+    // Pass fields explicitly: the city always comes from the user's search
+    // here, so a client can't supply the `queryCity` override.
+    const result = await locatePlaces(
+      {
+        videos: body.videos,
+        searchQuery: body.searchQuery,
+        latitude: body.latitude,
+        longitude: body.longitude,
+      },
+      geminiApiKey,
+      placesApiKey,
+    );
     if (result.kind === "missing_city") {
       return new Response(
         JSON.stringify({

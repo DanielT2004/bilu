@@ -106,6 +106,7 @@ function stubFetch(geminiText: string): typeof fetch {
 async function captureLogs(
   geminiText: string,
   run: () => Promise<unknown>,
+  fetcher: typeof fetch = stubFetch(geminiText),
 ): Promise<{ lines: string[]; result: unknown }> {
   const lines: string[] = [];
   const methods = ["log", "info", "warn", "error", "debug"] as const;
@@ -124,7 +125,7 @@ async function captureLogs(
       );
     };
   }
-  globalThis.fetch = stubFetch(geminiText);
+  globalThis.fetch = fetcher;
   try {
     const result = await run();
     return { lines, result };
@@ -203,6 +204,107 @@ Deno.test({
       lines.some((l) => l.includes("Gemini JSON parse failed: SyntaxError")),
       "parse failure keeps its error kind",
     );
+    assertNoSensitive(lines);
+  },
+});
+
+Deno.test({
+  name: "a supplied queryCity replaces a missing Gemini city",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    // Gemini omits the city (as it does for "food in <city>" sometimes); the
+    // caller's validated city still places the venue.
+    const geminiText = JSON.stringify({
+      queryCity: null,
+      videos: VIDEOS.map((v) => ({
+        videoId: v.videoId,
+        places: [{ name: VENUE, area: null, confidence: "high" }],
+      })),
+    });
+    const { lines, result } = await captureLogs(
+      geminiText,
+      () =>
+        locatePlaces(
+          { videos: VIDEOS, searchQuery: QUERY, queryCity: ` ${CITY} ` },
+          GEMINI_KEY,
+          PLACES_KEY,
+        ),
+    );
+    const ok = result as Awaited<ReturnType<typeof locatePlaces>>;
+    assertEquals(ok.kind, "ok");
+    if (ok.kind === "ok") {
+      assertEquals(ok.queryCity, CITY);
+      assertEquals(ok.locations[0].placeId, PLACE_ID);
+    }
+    assertNoSensitive(lines);
+
+    // Without the override the same response is still missing_city
+    // (tiktok-locations behaviour is unchanged).
+    const { result: without } = await captureLogs(
+      geminiText,
+      () =>
+        locatePlaces(
+          { videos: VIDEOS, searchQuery: QUERY },
+          GEMINI_KEY,
+          PLACES_KEY,
+        ),
+    );
+    assertEquals(
+      (without as Awaited<ReturnType<typeof locatePlaces>>).kind,
+      "missing_city",
+    );
+  },
+});
+
+Deno.test({
+  name: "Places HTTP errors log status, error code and length, never the body",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const geminiText = JSON.stringify({
+      queryCity: CITY,
+      videos: VIDEOS.map((v) => ({
+        videoId: v.videoId,
+        places: [{ name: VENUE, area: AREA, confidence: "high" }],
+      })),
+    });
+    const base = stubFetch(geminiText);
+    // Google echoes the request in its error message.
+    const errorBody = JSON.stringify({
+      error: {
+        code: 400,
+        message: `Invalid textQuery "${VENUE} ${AREA} ${CITY}" (${QUERY})`,
+        status: "INVALID_ARGUMENT",
+      },
+    });
+    const failingPlaces: typeof fetch = (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "https://places.googleapis.com/v1/places:searchText") {
+        return Promise.resolve(new Response(errorBody, { status: 400 }));
+      }
+      return base(input, init);
+    };
+    const { lines, result } = await captureLogs(
+      geminiText,
+      () =>
+        locatePlaces(
+          { videos: VIDEOS, searchQuery: QUERY },
+          GEMINI_KEY,
+          PLACES_KEY,
+        ),
+      failingPlaces,
+    );
+    const ok = result as Awaited<ReturnType<typeof locatePlaces>>;
+    assertEquals(ok.kind, "ok");
+    const httpErrors = lines.filter((l) => l.includes("HTTP error"));
+    assert(httpErrors.length > 0, "the failure is still logged");
+    for (const line of httpErrors) {
+      assert(line.includes('"status":400'), line);
+      assert(line.includes('"errorStatus":"INVALID_ARGUMENT"'), line);
+      assert(line.includes(`"bodyLength":${errorBody.length}`), line);
+      assert(!line.includes("Invalid textQuery"), line);
+    }
     assertNoSensitive(lines);
   },
 });

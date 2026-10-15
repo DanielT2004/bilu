@@ -57,6 +57,26 @@ function logPlacesWarn(...args: unknown[]) {
   console.warn("[places]", ...args);
 }
 
+/** Loggable facts about a failed Google response: its length and, when the
+ * body is Google's standard error envelope, the canonical status code (e.g.
+ * "INVALID_ARGUMENT"). Never the body text, which can echo the query. */
+export function upstreamErrorSummary(
+  bodyText: string,
+): { bodyLength: number; errorStatus?: string } {
+  const summary: { bodyLength: number; errorStatus?: string } = {
+    bodyLength: bodyText.length,
+  };
+  try {
+    const status = JSON.parse(bodyText)?.error?.status;
+    if (typeof status === "string" && /^[A-Z_]{1,40}$/.test(status)) {
+      summary.errorStatus = status;
+    }
+  } catch {
+    // Not JSON: the length is all we keep.
+  }
+  return summary;
+}
+
 // ── Supabase cache helpers ────────────────────────────────────────────────────
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -202,7 +222,7 @@ export async function geocodeCityToCoord(
   if (!res.ok) {
     logPlacesWarn(logTag, "geocodeCity: HTTP error", {
       status: res.status,
-      bodySnippet: bodyText.slice(0, 300),
+      ...upstreamErrorSummary(bodyText),
     });
     return null;
   }
@@ -322,7 +342,7 @@ export async function resolvePlaceIdByTextSearch(
   if (!res.ok) {
     logPlacesWarn(logTag, "textSearch: HTTP error", {
       status: res.status,
-      bodySnippet: bodyText.slice(0, 500),
+      ...upstreamErrorSummary(bodyText),
     });
     return null;
   }
@@ -390,7 +410,7 @@ export async function fetchPlaceDetails(
   if (!res.ok) {
     logPlacesWarn(logTag, "placeDetails: HTTP error", {
       status: res.status,
-      bodySnippet: bodyText.slice(0, 500),
+      ...upstreamErrorSummary(bodyText),
     });
     return empty;
   }
@@ -513,7 +533,7 @@ export async function fetchCurrentOpenStatus(
   if (!res.ok) {
     logPlacesWarn(logTag, "openStatus: HTTP error", {
       status: res.status,
-      bodySnippet: bodyText.slice(0, 300),
+      ...upstreamErrorSummary(bodyText),
     });
     return undefined;
   }
@@ -552,7 +572,7 @@ export async function fetchPhotoUri(
   if (!res.ok) {
     logPlacesWarn(logTag, "photoMedia: HTTP error", {
       status: res.status,
-      bodySnippet: bodyText.slice(0, 500),
+      ...upstreamErrorSummary(bodyText),
     });
     return null;
   }
