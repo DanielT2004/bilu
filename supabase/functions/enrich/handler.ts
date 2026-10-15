@@ -132,8 +132,12 @@ export async function handleEnrichment(
     if (errors.length > 0) {
       console.warn("[enrich] Enrichment errors:", errors);
     }
+    // Places could not confirm these (lookup failed or no live status). The
+    // app uses this to tell "couldn't load details" apart from "all closed".
+    const unverifiedCount = results.filter((r) => r.rec.isOpen === undefined)
+      .length;
 
-    return new Response(JSON.stringify({ recommendations }), {
+    return new Response(JSON.stringify({ recommendations, unverifiedCount }), {
       status: 200,
       headers: {
         ...corsHeaders,
