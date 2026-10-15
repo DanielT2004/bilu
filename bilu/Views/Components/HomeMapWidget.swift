@@ -517,6 +517,15 @@ private struct InteractiveMapView: UIViewRepresentable {
 
 // MARK: - HomeMapWidget
 
+/// A request to move the map, e.g. after the user picks a searched place.
+/// Each request is distinct, so picking the same place twice still moves it.
+struct MapRecenterRequest: Equatable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+}
+
 struct HomeMapWidget: View {
     let locationLabel: String
     /// GPS-resolved center from the ViewModel. Adopted once, then ignored.
@@ -527,6 +536,8 @@ struct HomeMapWidget: View {
     var onRadiusChanged: (Double, CLLocationCoordinate2D) -> Void = { _, _ in }
     var onLocationResolved: (String) -> Void = { _ in }
     var onRadiusModeChanged: (Bool) -> Void = { _ in }
+    /// Moves the map like a manual pan: updates the radius center and label.
+    var recenterRequest: MapRecenterRequest? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Silent render fallback — the map needs *some* center; this is never surfaced as the
@@ -554,7 +565,8 @@ struct HomeMapWidget: View {
          initialUseRadius: Bool? = nil,
          onRadiusChanged: @escaping (Double, CLLocationCoordinate2D) -> Void = { _, _ in },
          onLocationResolved: @escaping (String) -> Void = { _ in },
-         onRadiusModeChanged: @escaping (Bool) -> Void = { _ in }) {
+         onRadiusModeChanged: @escaping (Bool) -> Void = { _ in },
+         recenterRequest: MapRecenterRequest? = nil) {
         self.locationLabel = locationLabel
         self.initialCenter = initialCenter
         self._isExpanded = isExpanded
@@ -562,6 +574,7 @@ struct HomeMapWidget: View {
         self.onRadiusChanged = onRadiusChanged
         self.onLocationResolved = onLocationResolved
         self.onRadiusModeChanged = onRadiusModeChanged
+        self.recenterRequest = recenterRequest
         self._radiusMiles = State(initialValue: initialRadiusMiles ?? 2.0)
         self._useRadius = State(initialValue: initialUseRadius ?? false)
     }
@@ -689,6 +702,14 @@ struct HomeMapWidget: View {
         }
         // CLLocationCoordinate2D isn't Equatable; watch a string proxy so the GPS adopt
         // fires when the resolved coordinate arrives.
+        .onChange(of: recenterRequest) { _, request in
+            guard let request else { return }
+            userHasInteracted = true
+            didApplyInitialCenter = true
+            mapCenter = request.coordinate
+            if useRadius { onRadiusChanged(radiusMiles, request.coordinate) }
+            reverseGeocode(request.coordinate)
+        }
         .onChange(of: initialCenterKey) { _, _ in
             applyInitialCenterIfAppropriate(initialCenter)
         }

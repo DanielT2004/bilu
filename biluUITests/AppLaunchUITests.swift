@@ -116,6 +116,36 @@ final class AppLaunchUITests: XCTestCase {
     /// The action button is a labelled 44+ pt target; the sheet shows all six
     /// intents, refinements gate "Find spots", and "Late night" is a modifier
     /// on Drinks and Café only. Nothing here submits a discovery.
+    /// The "Where to search" sheet can set the area by typing a place name.
+    /// Suggestions come from Apple's MapKit service, so the pick step is
+    /// skipped (not failed) when the simulator has no network.
+    func testLocationSheetSetsAreaFromSearchedPlace() throws {
+        let app = XCUIApplication()
+        app.launch()
+        deferLocationPrompt(app)
+        XCTAssertTrue(app.staticTexts["feed-title"].waitForExistence(timeout: 10))
+
+        app.buttons["feed-location-chip"].tap()
+        let field = app.textFields["location-search-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(field.frame.height, 20)
+        field.tap()
+        field.typeText("Santa Monica")
+
+        let first = app.buttons["location-suggestion-0"]
+        guard first.waitForExistence(timeout: 10) else {
+            throw XCTSkip("MapKit returned no suggestions (no network?)")
+        }
+        first.tap()
+
+        // The field clears and the map's label adopts the picked place.
+        XCTAssertTrue(app.staticTexts["Santa Monica"].waitForExistence(timeout: 10))
+        app.buttons["location-sheet-done"].tap()
+        let chip = app.buttons["feed-location-chip"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
+        XCTAssertTrue(chip.label.contains("Santa Monica"), "Chip label was \(chip.label)")
+    }
+
     func testIntentSheetIntentsRefinementsAndLateNightModifier() {
         let app = XCUIApplication()
         app.launch()
