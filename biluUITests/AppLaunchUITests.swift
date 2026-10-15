@@ -45,6 +45,9 @@ final class AppLaunchUITests: XCTestCase {
         let queryField = app.searchFields.firstMatch
         XCTAssertTrue(queryField.waitForExistence(timeout: 10))
         queryField.tap()
+        // The native search field takes focus a beat after the tap; typing
+        // before the keyboard is up fails with "no keyboard focus".
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         // No city, so submitting stays on the client-side guidance (no backend
         // call) and dismisses the keyboard, which covers the native tab bar.
         queryField.typeText("Best ramen\n")
