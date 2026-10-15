@@ -27,7 +27,7 @@ final class RecommendationRecoveryUITests: XCTestCase {
             let app = launch(testCase.scenario)
             assertCard(app, title: testCase.title, message: testCase.message, action: "Try again")
             app.buttons["search-recovery-action"].tap()
-            XCTAssertTrue(app.staticTexts["Recovered Bakery"].waitForExistence(timeout: 10),
+            XCTAssertTrue(recoveredCard(app).waitForExistence(timeout: 10),
                           "\(testCase.scenario) retry should reveal results")
             XCTAssertFalse(app.staticTexts["search-recovery-title"].exists)
             app.terminate()
@@ -41,7 +41,7 @@ final class RecommendationRecoveryUITests: XCTestCase {
                    action: "Adjust your vibe")
         app.buttons["search-recovery-action"].tap()
         XCTAssertTrue(app.staticTexts["search-recovery-title"].waitForNonExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["Recovered Bakery"].exists, "Adjusting must not run another search")
+        XCTAssertFalse(recoveredCard(app).exists, "Adjusting must not run another search")
     }
 
     func testUsageLimitOffersBackToExplore() {
@@ -60,6 +60,11 @@ final class RecommendationRecoveryUITests: XCTestCase {
             .waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Unlock another discovery"].exists)
         XCTAssertFalse(app.staticTexts["search-recovery-title"].exists)
+    }
+
+    /// The result card is one button whose label starts with the place name.
+    private func recoveredCard(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Recovered Bakery'")).firstMatch
     }
 
     private func launch(_ scenario: String) -> XCUIApplication {
