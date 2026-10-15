@@ -101,6 +101,11 @@ struct HomeView: View {
                 .environmentObject(discoveryAllowance)
                 .environmentObject(savedStore)
         }
+        // Opened by submitSurvey when a search has no area yet.
+        .sheet(isPresented: $viewModel.isShowingLocationSheet,
+               onDismiss: { viewModel.locationSheetDismissed() }) {
+            LocationSheet(viewModel: viewModel, notice: viewModel.locationSheetNotice)
+        }
         .sheet(item: $selectedRestaurant) { rec in
             // Places opened from survey results carry the survey's taste tags;
             // feed places carry their own.

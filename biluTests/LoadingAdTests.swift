@@ -597,6 +597,7 @@ final class LoadingAdTests: XCTestCase {
             fetchRecommendations: { _, _ in Self.success("Unverified candidate", isOpen: nil) },
             enrich: enrichment.run, readinessTimeout: timeout)
         model.reduceMotionPreference = true
+        model.detectedLocation = "Los Angeles"
         return model
     }
 
@@ -606,6 +607,7 @@ final class LoadingAdTests: XCTestCase {
             commerceEnabled: { commerce }, fetchRecommendations: ai.fetch,
             enrich: { recommendations, _, _ in recommendations })
         model.reduceMotionPreference = true
+        model.detectedLocation = "Los Angeles"
         return model
     }
 

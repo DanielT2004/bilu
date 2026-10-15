@@ -209,6 +209,134 @@ final class IntentMappingTests: XCTestCase {
         XCTAssertFalse(result.contains { $0.name == "far" || $0.name == "noCoords" })
     }
 
+    // MARK: - No search area, no discovery (P1-1)
+
+    func testDirectIntentsWithoutAnAreaStayInTheSheetAndSpendNothing() async {
+        for intent in FeedIntent.allCases where intent.submitsDirectly {
+            let model = home(withArea: false)
+            model.isShowingIntentSheet = true
+            model.applyIntent(intent, refinement: intent.refinements.first, lateNight: false)
+            for _ in 0..<50 { await Task.yield() }
+            XCTAssertTrue(model.isShowingIntentSheet, "\(intent) keeps the sheet open to set an area")
+            XCTAssertEqual(model.step, .feed, "\(intent)")
+        }
+        XCTAssertTrue(fetcher.selections.isEmpty)
+        XCTAssertEqual(allowance.remainingFreeDiscoveries, 1)
+    }
+
+    func testFoodStepIntentsWithoutAnAreaAskForOneInsteadOfSearching() async throws {
+        for intent in FeedIntent.allCases where !intent.submitsDirectly {
+            let model = home(withArea: false)
+            model.applyIntent(intent, refinement: intent.refinements.first, lateNight: false)
+            XCTAssertEqual(model.step, .foodFeeling, "\(intent)")
+            model.selectFoodFeeling("Surprise me")
+            model.continueFromFoodFeeling()
+            try await eventually { model.isShowingLocationSheet }
+            XCTAssertEqual(model.locationSheetNotice, HomeViewModel.searchAreaRequiredNotice)
+            XCTAssertEqual(model.step, .foodFeeling, "\(intent) keeps the user's choices")
+            XCTAssertFalse(model.showingRewardGate, "no reward gate for a search that can't run")
+            model.locationSheetDismissed()
+            XCTAssertNil(model.locationSheetNotice)
+        }
+        XCTAssertTrue(fetcher.selections.isEmpty)
+        XCTAssertEqual(allowance.remainingFreeDiscoveries, 1)
+    }
+
+    func testFineTuneWithoutAnAreaNeverSendsYourArea() async throws {
+        let model = home(withArea: false)
+        model.applyIntent(.food, refinement: refinement(.food, "Sit down"), lateNight: false)
+        model.selectFoodFeeling("Surprise me")
+        model.openFineTune()
+        model.proceedWithFineTune()
+        try await eventually { model.isShowingLocationSheet }
+        XCTAssertEqual(model.selection.location, "")
+        XCTAssertTrue(fetcher.selections.isEmpty)
+    }
+
+    func testUnsetLocationPlaceholderIsNotASearchArea() async {
+        let model = home(withArea: false)
+        model.detectedLocation = HomeViewModel.unsetLocationLabel
+        XCTAssertFalse(model.hasUsableLocation)
+        XCTAssertEqual(model.effectiveLocation, "your area", "never the placeholder text")
+        await model.submitSurvey()
+        XCTAssertTrue(model.isShowingLocationSheet)
+        XCTAssertTrue(fetcher.selections.isEmpty)
+    }
+
+    func testLegacySavedVibeWithoutAPlaceAsksForAnAreaThenUsesIt() async throws {
+        let model = home(withArea: false)
+        let legacy = VibeSelection(occasion: "Late Night", foodFeelings: ["Handheld"], location: "",
+                                   selectedVibe: "🔥 Trending")
+        model.restore(legacy)
+        try await eventually { model.isShowingLocationSheet }
+        XCTAssertTrue(fetcher.selections.isEmpty)
+        XCTAssertEqual(allowance.remainingFreeDiscoveries, 1)
+
+        // The user picks a place in the sheet, then runs it back again.
+        model.chooseSearchCenter(CLLocationCoordinate2D(latitude: 34.15, longitude: -118.14))
+        model.commitSearchAreaLabel("Pasadena")
+        model.restore(legacy)
+        let sent = try await submitted()
+        XCTAssertEqual(sent.location, "Pasadena")
+        XCTAssertEqual(sent.latitude, 34.15)
+        XCTAssertEqual(sent.occasion, "Late Night")
+        XCTAssertEqual(sent.foodFeelings, ["Handheld"])
+    }
+
+    // MARK: - Location sheet state (P1-5)
+
+    func testNoAreaUntilAPlaceIsChosenAndReopeningStartsThere() {
+        let model = home(withArea: false)
+        XCTAssertNil(model.searchAreaCenter, "no GPS, nothing chosen: the sheet has no center to commit")
+        XCTAssertNil(model.searchAreaLabel)
+        XCTAssertFalse(model.hasUsableLocation)
+        XCTAssertEqual(model.locationChipLabel, "Set location")
+
+        // Turning on radius mode alone doesn't invent an area.
+        model.setRadiusMode(true)
+        XCTAssertFalse(model.hasUsableLocation)
+        XCTAssertEqual(model.locationChipLabel, "Set location")
+        model.setRadiusMode(false)
+        model.commitSearchAreaLabel("  ")
+        XCTAssertFalse(model.hasUsableLocation)
+
+        // A picked place in city mode: center and label are kept.
+        let picked = CLLocationCoordinate2D(latitude: 34.0195, longitude: -118.4912)
+        model.chooseSearchCenter(picked)
+        model.commitSearchAreaLabel("Santa Monica")
+        XCTAssertFalse(model.selection.useRadiusSearch)
+        XCTAssertEqual(model.searchAreaCenter?.latitude, picked.latitude)
+        XCTAssertEqual(model.searchAreaLabel, "Santa Monica")
+        XCTAssertEqual(model.locationChipLabel, "Santa Monica")
+
+        // Toggling radius off keeps the center; a new journey keeps it too.
+        model.setSearchRadius(3, center: picked)
+        model.setRadiusMode(false)
+        model.reset()
+        XCTAssertEqual(model.searchAreaCenter?.longitude, picked.longitude)
+        XCTAssertTrue(model.hasUsableLocation)
+    }
+
+    // MARK: - Re-running a saved vibe (P2-2)
+
+    func testRestoredVibeAdjustsFromTheFeedNotThePreviousJourney() async throws {
+        let model = home()
+        model.applyIntent(.food, refinement: refinement(.food, "Quick bite"), lateNight: false)
+        model.selectFoodFeeling("Surprise me")
+        model.continueFromFoodFeeling()   // waits ~260 ms before submitting
+        try await eventually { self.fetcher.selections.count == 1 && model.step == .reveal }
+
+        let vibe = VibeSelection(occasion: "Brunch", foodFeelings: ["Eggy & savory"], location: "Pasadena",
+                                 selectedVibe: "⭐ Best rated")
+        model.restore(vibe)
+        _ = try await submitted(count: 2)
+        try await eventually { model.step == .reveal }
+        model.adjustVibe()
+        XCTAssertEqual(model.step, .feed, "not the food step the previous journey used")
+        XCTAssertTrue(model.isShowingIntentSheet)
+        XCTAssertEqual(model.selection.occasion, "Brunch")
+    }
+
     // MARK: - Helpers
 
     private func refinement(_ intent: FeedIntent, _ label: String) -> IntentRefinement {
@@ -219,7 +347,7 @@ final class IntentMappingTests: XCTestCase {
         return match
     }
 
-    private func home() -> HomeViewModel {
+    private func home(withArea: Bool = true) -> HomeViewModel {
         let ads = LoadingAdController(frequency: LoadingAdFrequencyStore(defaults: defaults), eligible: { false },
             record: { _, _, _, _, _, _, _, _ in }, observeEnvironment: false)
         let fetcher = self.fetcher!
@@ -227,8 +355,17 @@ final class IntentMappingTests: XCTestCase {
             fetchRecommendations: { selection, _ in await fetcher.fetch(selection) },
             enrich: { recommendations, _, _ in recommendations }, readinessTimeout: 60)
         model.reduceMotionPreference = true
-        model.detectedLocation = "Los Angeles"
+        if withArea { model.detectedLocation = "Los Angeles" }
         return model
+    }
+
+    private func eventually(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
+        for _ in 0..<200 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Expected asynchronous state did not arrive", file: file, line: line)
+        throw URLError(.timedOut)
     }
 
     private func submitted(count: Int = 1, file: StaticString = #filePath, line: UInt = #line) async throws -> VibeSelection {

@@ -291,6 +291,7 @@ final class RecommendationRecoveryTests: XCTestCase {
         let model = HomeViewModel(loadingAds: ads, allowance: allowance, commerceEnabled: { false },
             fetchRecommendations: fetch, enrich: { recommendations, _, _ in recommendations }, readinessTimeout: 60)
         model.reduceMotionPreference = true
+        model.detectedLocation = "Los Angeles"
         return model
     }
 

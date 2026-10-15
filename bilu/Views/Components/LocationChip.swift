@@ -48,10 +48,14 @@ struct LocationChip: View {
     }
 }
 
-/// The map sheet behind the chip. The widget is always expanded here, so the
-/// user can drag the pin and radius right away.
-private struct LocationSheet: View {
+/// The map sheet behind the chip (and the one Explore opens when a search
+/// needs an area first). The widget is always expanded here, so the user can
+/// drag the pin and radius right away. Only a GPS fix, a picked place or a
+/// pan commits an area; the map's placeholder region never does.
+struct LocationSheet: View {
     @ObservedObject var viewModel: HomeViewModel
+    /// Why the sheet opened on its own, e.g. a search that needs an area.
+    var notice: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isExpanded = true
     @StateObject private var placeSearch = PlaceSearchModel()
@@ -84,6 +88,15 @@ private struct LocationSheet: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
 
+            if let notice {
+                Text(notice)
+                    .font(AppTheme.body)
+                    .foregroundStyle(AppTheme.onSurface)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20)
+                    .accessibilityIdentifier("location-sheet-notice")
+            }
+
             searchField
                 .padding(.horizontal, 16)
 
@@ -98,28 +111,25 @@ private struct LocationSheet: View {
             // and pending recenter survive while the user types.
             ZStack(alignment: .top) {
             HomeMapWidget(
-                locationLabel: viewModel.mapLocationLabel,
-                initialCenter: viewModel.feedOrigin,
+                locationLabel: viewModel.searchAreaLabel ?? "",
+                initialCenter: viewModel.searchAreaCenter,
                 isExpanded: $isExpanded,
                 staysExpanded: true,
                 initialRadiusMiles: viewModel.selection.radiusMiles,
                 initialUseRadius: viewModel.selection.useRadiusSearch,
                 onRadiusChanged: { miles, coord in
-                    viewModel.selection.radiusMiles = miles
-                    viewModel.selection.latitude = coord.latitude
-                    viewModel.selection.longitude = coord.longitude
-                    viewModel.selection.useRadiusSearch = true
+                    viewModel.setSearchRadius(miles, center: coord)
                 },
                 onLocationResolved: { label in
-                    viewModel.detectedLocation = label
-                    viewModel.selection.location = label
+                    viewModel.commitSearchAreaLabel(label)
                 },
                 onRadiusModeChanged: { isRadiusMode in
-                    viewModel.selection.useRadiusSearch = isRadiusMode
-                    if !isRadiusMode {
-                        viewModel.selection.latitude = nil
-                        viewModel.selection.longitude = nil
-                    }
+                    viewModel.setRadiusMode(isRadiusMode)
+                },
+                // The chosen center stays in the selection in both modes, so
+                // reopening the sheet starts there.
+                onCenterChosen: { coord in
+                    viewModel.chooseSearchCenter(coord)
                 },
                 recenterRequest: recenter
             )

@@ -266,6 +266,10 @@ final class HomeViewModel: ObservableObject {
     @Published var selectedVibe: String = ""
     /// Drives the intent sheet from the feed's action button and empty-state card.
     @Published var isShowingIntentSheet = false
+    /// Explore's "Where to search" sheet, opened when a search has no area yet.
+    @Published var isShowingLocationSheet = false
+    /// Why the location sheet opened on its own; cleared when it closes.
+    @Published private(set) var locationSheetNotice: String?
     /// Places resolved from shared TikToks, from the app root's
     /// `PendingSharesModel` (local results only; the feed never resolves).
     @Published private(set) var tikTokPlaces: [FeedTikTokPlace] = []
@@ -353,6 +357,10 @@ final class HomeViewModel: ObservableObject {
     /// the food-feeling step. "Late night" on Drinks or Café only sets
     /// `keyQuestionTimeWindow` (never `openNow`, which needs `fineTuneApplied`).
     func applyIntent(_ intent: FeedIntent, refinement: IntentRefinement?, lateNight: Bool) {
+        // A direct-submit intent with no search area stays in the sheet (its
+        // location chip and copy ask for one) rather than dismissing into a
+        // search that `submitSurvey` would refuse anyway.
+        if intent.submitsDirectly && !hasUsableLocation { return }
         cancelDiscovery()
         isShowingIntentSheet = false
         selection = Self.selection(for: intent, refinement: refinement, lateNight: lateNight, base: selection)
@@ -511,7 +519,8 @@ final class HomeViewModel: ObservableObject {
 
     func proceedWithFineTune() {
         selection.fineTuneApplied = true
-        selection.location = effectiveLocation
+        // Never write the "your area" placeholder in as a place.
+        if hasUsableLocation { selection.location = effectiveLocation }
         searchTask = Task { await submitSurvey() }
     }
 
@@ -671,11 +680,27 @@ final class HomeViewModel: ObservableObject {
     }
 
     /// Restore a saved vibe (from the Profile re-run flow) and kick the search.
+    /// A re-run starts from the feed, so "Adjust" returns there, never to the
+    /// previous journey's step. A vibe saved without a place keeps the search
+    /// area the user has set now.
     func restore(_ selection: VibeSelection) {
         cancelDiscovery()
-        self.selection = selection
-        cuisineMode = selection.cuisineMode == "country" ? .country : .vibe
-        selectedVibe = selection.selectedVibe
+        var restored = selection
+        if !Self.hasSearchArea(restored) {
+            restored.location = self.selection.location
+            restored.latitude = self.selection.latitude
+            restored.longitude = self.selection.longitude
+            restored.radiusMiles = self.selection.radiusMiles
+            restored.useRadiusSearch = self.selection.useRadiusSearch
+        }
+        self.selection = restored
+        cuisineMode = restored.cuisineMode == "country" ? .country : .vibe
+        selectedVibe = restored.selectedVibe
+        recommendations = []
+        lastSearchFailure = nil
+        revealPhase = .sealed
+        step = .feed
+        surveySubmissionStep = .feed
         searchTask = Task { await submitSurvey() }
     }
 
@@ -756,6 +781,13 @@ final class HomeViewModel: ObservableObject {
 
     func submitSurvey() async {
         guard !Task.isCancelled, activeDiscoveryID == nil else { return }
+        // The single choke point for every journey (intent sheet, food step,
+        // fine-tune, Run it back, retries): no real search area, no request,
+        // no reward gate and no discovery spent. Ask for an area instead.
+        guard hasUsableLocation else {
+            requestSearchArea()
+            return
+        }
         guard commerceEnabled() || allowance.canRunDiscovery else {
             rewardGateNotice = nil
             showingRewardGate = true
@@ -1123,6 +1155,10 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Feed
 
     static let unsetLocationLabel = "Set your location"
+    /// Labels that only stand in for a place and must never be searched.
+    static let placeholderLocations: Set<String> = ["your area", unsetLocationLabel]
+    static let searchAreaRequiredNotice =
+        "Choose where to search first: search for a place or drag the map, then try again. No discovery was used."
 
     /// True once GPS or the map has produced a real place name.
     var hasResolvedLocationLabel: Bool {
@@ -1131,14 +1167,70 @@ final class HomeViewModel: ObservableObject {
 
     /// True when a discovery has somewhere real to search.
     var hasUsableLocation: Bool {
-        !selection.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || hasResolvedLocationLabel
-            || (selection.useRadiusSearch && selection.latitude != nil && selection.longitude != nil)
+        Self.hasSearchArea(selection) || hasResolvedLocationLabel
+    }
+
+    /// A typed or picked place, or a chosen map center.
+    static func hasSearchArea(_ selection: VibeSelection) -> Bool {
+        let typed = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (!typed.isEmpty && !placeholderLocations.contains(typed))
+            || (selection.latitude != nil && selection.longitude != nil)
+    }
+
+    /// Where the location sheet opens: the chosen center (either mode), else GPS.
+    var searchAreaCenter: CLLocationCoordinate2D? {
+        if let lat = selection.latitude, let lng = selection.longitude {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        return initialMapCenter
+    }
+
+    /// The committed area's name for the sheet, or nil when there is none yet.
+    var searchAreaLabel: String? {
+        let typed = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty && !Self.placeholderLocations.contains(typed) { return typed }
+        return hasResolvedLocationLabel ? detectedLocation : nil
+    }
+
+    // Writes from the location sheet. Only GPS, a picked place or a pan reach
+    // these; the map's placeholder region never does.
+
+    func chooseSearchCenter(_ coordinate: CLLocationCoordinate2D) {
+        selection.latitude = coordinate.latitude
+        selection.longitude = coordinate.longitude
+    }
+
+    func commitSearchAreaLabel(_ label: String) {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        detectedLocation = trimmed
+        selection.location = trimmed
+    }
+
+    func setSearchRadius(_ miles: Double, center: CLLocationCoordinate2D) {
+        selection.radiusMiles = miles
+        chooseSearchCenter(center)
+        selection.useRadiusSearch = true
+    }
+
+    func setRadiusMode(_ isRadiusMode: Bool) {
+        selection.useRadiusSearch = isRadiusMode
+    }
+
+    /// Opens the location sheet with copy explaining why. No request is made.
+    func requestSearchArea() {
+        isShowingIntentSheet = false
+        locationSheetNotice = Self.searchAreaRequiredNotice
+        isShowingLocationSheet = true
+    }
+
+    func locationSheetDismissed() {
+        locationSheetNotice = nil
     }
 
     /// The location chip: "Near you · 2 mi" in radius mode, else the city name.
     var locationChipLabel: String {
-        if selection.useRadiusSearch {
+        if selection.useRadiusSearch && selection.latitude != nil && selection.longitude != nil {
             return "Near you · \(Self.formattedMiles(selection.radiusMiles))"
         }
         let typed = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1205,14 +1297,6 @@ final class HomeViewModel: ObservableObject {
         return String(format: "%.1f mi", meters / 1609.34)
     }
 
-    // MARK: - Map label
-
-    var mapLocationLabel: String {
-        let loc = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !loc.isEmpty { return loc }
-        return detectedLocation.isEmpty ? "Near pin" : detectedLocation
-    }
-
     /// Returns a city-level string suitable for TikTok search queries.
     /// Prefers reverse-geocoding coordinates to "City, State".
     /// Falls back to extracting the city from the user-typed location string.
@@ -1254,7 +1338,7 @@ final class HomeViewModel: ObservableObject {
     var effectiveLocation: String {
         let loc = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
         if !loc.isEmpty { return loc }
-        if !detectedLocation.isEmpty { return detectedLocation }
+        if hasResolvedLocationLabel { return detectedLocation }
         if let lat = selection.latitude, let lng = selection.longitude {
             return String(format: "%.4f° N, %.4f° W", lat, abs(lng))
         }

@@ -526,8 +526,11 @@ struct MapRecenterRequest: Equatable {
 }
 
 struct HomeMapWidget: View {
+    /// The committed search area's label, or empty when there is none yet.
     let locationLabel: String
-    /// GPS-resolved center from the ViewModel. Adopted once, then ignored.
+    /// The committed search center (a chosen place, or GPS). Adopted once, then
+    /// ignored. Nil means no area yet: the map shows a placeholder region and
+    /// commits nothing until the user pans or picks a place.
     var initialCenter: CLLocationCoordinate2D? = nil
     @Binding var isExpanded: Bool
     /// Sheet mode (the location chip): always expanded, never auto-collapses.
@@ -535,12 +538,14 @@ struct HomeMapWidget: View {
     var onRadiusChanged: (Double, CLLocationCoordinate2D) -> Void = { _, _ in }
     var onLocationResolved: (String) -> Void = { _ in }
     var onRadiusModeChanged: (Bool) -> Void = { _ in }
+    /// A center the user chose (pan or place pick), in either mode.
+    var onCenterChosen: (CLLocationCoordinate2D) -> Void = { _ in }
     /// Moves the map like a manual pan: updates the radius center and label.
     var recenterRequest: MapRecenterRequest? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Silent render fallback — the map needs *some* center; this is never surfaced as the
-    /// user's location unless GPS resolves and overwrites it.
+    /// Placeholder region — the map needs *some* center. It is never committed
+    /// as a search area: nothing is geocoded or reported until `hasChosenCenter`.
     @State private var mapCenter = CLLocationCoordinate2D(latitude: 34.0224, longitude: -118.2851)
     @State private var radiusMiles = 2.0
     @State private var useRadius = false
@@ -549,6 +554,9 @@ struct HomeMapWidget: View {
     /// and never once the user has interacted.
     @State private var didApplyInitialCenter = false
     @State private var userHasInteracted = false
+    /// True once the center is real: GPS / the committed center was adopted,
+    /// the user panned, or picked a searched place.
+    @State private var hasChosenCenter = false
     /// Broad city/area label (e.g. "Los Angeles") — shown in city-wide mode.
     @State private var cityLabel = ""
     /// Specific neighborhood label (e.g. "University Park") — shown in radius mode.
@@ -565,6 +573,7 @@ struct HomeMapWidget: View {
          onRadiusChanged: @escaping (Double, CLLocationCoordinate2D) -> Void = { _, _ in },
          onLocationResolved: @escaping (String) -> Void = { _ in },
          onRadiusModeChanged: @escaping (Bool) -> Void = { _ in },
+         onCenterChosen: @escaping (CLLocationCoordinate2D) -> Void = { _ in },
          recenterRequest: MapRecenterRequest? = nil) {
         self.locationLabel = locationLabel
         self.initialCenter = initialCenter
@@ -573,7 +582,10 @@ struct HomeMapWidget: View {
         self.onRadiusChanged = onRadiusChanged
         self.onLocationResolved = onLocationResolved
         self.onRadiusModeChanged = onRadiusModeChanged
+        self.onCenterChosen = onCenterChosen
         self.recenterRequest = recenterRequest
+        self._cityLabel = State(initialValue: locationLabel)
+        self._specificLabel = State(initialValue: locationLabel)
         self._radiusMiles = State(initialValue: initialRadiusMiles ?? 2.0)
         self._useRadius = State(initialValue: initialUseRadius ?? false)
     }
@@ -594,7 +606,9 @@ struct HomeMapWidget: View {
                 onMapTapped: { handleMapTap() },
                 onCenterChanged: { newCenter in
                     userHasInteracted = true
+                    hasChosenCenter = true
                     mapCenter = newCenter
+                    onCenterChosen(newCenter)
                     if useRadius { onRadiusChanged(radiusMiles, newCenter) }
                     reverseGeocode(newCenter)
                 }
@@ -633,9 +647,12 @@ struct HomeMapWidget: View {
                             .tint(AppTheme.sage)
                             .onChange(of: useRadius) { _, newVal in
                                 onRadiusModeChanged(newVal)
-                                let label = newVal ? specificLabel : cityLabel
-                                if !label.isEmpty { onLocationResolved(label) }
-                                if newVal { onRadiusChanged(radiusMiles, mapCenter) }
+                                // Never turn the placeholder region into an area.
+                                if hasChosenCenter {
+                                    let label = newVal ? specificLabel : cityLabel
+                                    if !label.isEmpty { onLocationResolved(label) }
+                                    if newVal { onRadiusChanged(radiusMiles, mapCenter) }
+                                }
                                 // Reset the auto-collapse timer so the user has a full
                                 // 3 seconds to start interacting after toggling.
                                 if !staysExpanded { scheduleAutoCollapse() }
@@ -652,11 +669,14 @@ struct HomeMapWidget: View {
                     HStack(spacing: 7) {
                         Circle().fill(AppTheme.sage).frame(width: 8, height: 8)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(useRadius ? specificLabel : cityLabel)
+                            Text(barTitle)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundColor(AppTheme.onSurface)
                                 .animation(.easeInOut(duration: 0.3), value: useRadius)
-                            Text(useRadius
+                                .accessibilityIdentifier("location-sheet-area-label")
+                            Text(!hasChosenCenter
+                                 ? "No search area yet"
+                                 : useRadius
                                  ? String(format: "Within %.1f mi", radiusMiles)
                                  : "City-wide search")
                                 .font(.system(size: 10, weight: .light))
@@ -689,7 +709,7 @@ struct HomeMapWidget: View {
         .padding(.horizontal, 16)
         .animation(.easeInOut(duration: 0.35), value: isExpanded)
         .onChange(of: radiusMiles) { oldVal, newVal in
-            if useRadius { onRadiusChanged(newVal, mapCenter) }
+            if useRadius && hasChosenCenter { onRadiusChanged(newVal, mapCenter) }
             // Tactile detents at integer mile boundaries (1, 2, 5, 10) — like a digital crown.
             let thresholds: [Double] = [1, 2, 5, 10]
             for t in thresholds {
@@ -705,7 +725,9 @@ struct HomeMapWidget: View {
             guard let request else { return }
             userHasInteracted = true
             didApplyInitialCenter = true
+            hasChosenCenter = true
             mapCenter = request.coordinate
+            onCenterChosen(request.coordinate)
             if useRadius { onRadiusChanged(radiusMiles, request.coordinate) }
             reverseGeocode(request.coordinate)
         }
@@ -713,11 +735,19 @@ struct HomeMapWidget: View {
             applyInitialCenterIfAppropriate(initialCenter)
         }
         .onAppear {
+            // No center yet: show the placeholder region without geocoding or
+            // committing it (it used to become "Los Angeles" silently).
             applyInitialCenterIfAppropriate(initialCenter)
-            // Skip the throwaway default geocode if a GPS center is already in hand.
-            if initialCenter == nil { reverseGeocode(mapCenter) }
         }
     }
+
+    /// The location bar's title: the area, or how to set one.
+    private var barTitle: String {
+        let label = useRadius ? specificLabel : cityLabel
+        return hasChosenCenter && !label.isEmpty ? label : Self.noAreaPrompt
+    }
+
+    static let noAreaPrompt = "Search for a place or drag the map"
 
     /// Equatable proxy for `initialCenter` so `.onChange` can observe it.
     private var initialCenterKey: String {
@@ -730,6 +760,7 @@ struct HomeMapWidget: View {
     private func applyInitialCenterIfAppropriate(_ coord: CLLocationCoordinate2D?) {
         guard let coord, !didApplyInitialCenter, !userHasInteracted, !isExpanded || staysExpanded else { return }
         didApplyInitialCenter = true
+        hasChosenCenter = true
         mapCenter = coord
         Haptics.light()
         reverseGeocode(coord)
