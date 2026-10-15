@@ -4,37 +4,70 @@ This document is the authoritative design contract for the **bilu** app. Every A
 
 ---
 
-## Design System: The Dopamine Engine
+## Design System: Burnt Sienna / Midnight Café
 
-The creative north star is **"app-as-a-dopamine-inducing discovery engine"** — high-energy, modern, food-forward. Every screen should feel alive, vibrant, and magnetic. If it feels calm and muted, add more red and remove a line.
+The creative north star is **an independent food magazine meets a neighborhood café** — editorial, warm, slightly moody, premium but not intimidating. Bilu is recognizable through warmth, not brightness. Cream dominates, espresso anchors the type, burnt sienna marks actions, and golden ochre appears only for special moments. Light mode is "Burnt Sienna"; dark mode is "Midnight Café". Both follow the system setting.
 
 ---
 
 ## 1. Color Tokens — Use `AppTheme` Only
 
-All colors live in `bilu/Helpers/AppTheme.swift`. **Never introduce raw hex strings in view files.** If a new semantic color is needed, add it to `AppTheme` first.
+All colors live in `bilu/Helpers/AppTheme.swift`. **Never introduce raw hex strings or fixed colors (`Color.white`, `Color.black`, `.white` backgrounds) in view files.** Every token is adaptive (`AppTheme.Palette` holds a light and a dark value per role and resolves per trait collection), so views that use tokens get dark mode for free. If a new semantic color is needed, add a swatch to `AppTheme.Palette` first, with both values, and add its key pairs to `AppThemeContrastTests`.
 
-| Token | Hex | Role |
+Several token names are historic (the palette changed underneath them); the role column is what counts. Prefer the semantic aliases (`primary`, `accent`, `card`) in new code.
+
+| Token | Light (Burnt Sienna) | Dark (Midnight Café) | Role |
+|---|---|---|---|
+| `AppTheme.surface` | `#F4EBDD` warm ivory | `#0E0A07` | Page / screen background |
+| `AppTheme.sheetSurface` | `#F4EBDD` | `#1A120D` | Sheet backgrounds (one step up in dark) |
+| `AppTheme.white` (`card`) | `#FFFAF2` soft cream | `#2A1B14` | Card faces, elevated surfaces |
+| `AppTheme.sage` (`primary`) | `#B9563C` burnt sienna | `#C5523A` | Primary **fill**: buttons, FAB, selected chips, toggles, map pins |
+| `AppTheme.primaryInk` | `#9F4A34` | `#E07A5E` | Sienna as **text/icons** on surfaces: links, "Run it back", distances, section icons, tab tint |
+| `AppTheme.onPrimary` | `#FFFFFF` | `#FFFFFF` | Text and glyphs on a `sage` fill |
+| `AppTheme.sageLt` | `#F5E1D7` | `#3B2219` | Sienna tint: icon trays, unselected action chips |
+| `AppTheme.sageMd` | `#E5B4A3` | `#6B3426` | Progress mid-state, decorative |
+| `AppTheme.terracotta` (`accent`) | `#D9A24B` golden ochre | `#D4A45A` | Special moments only (see below) |
+| `AppTheme.accentInk` | `#7A5214` | `#D4A45A` | Ochre as text ("1 free today", pro-tip numbers) |
+| `AppTheme.onAccent` | `#291C18` | `#1A120D` | Text on an ochre fill |
+| `AppTheme.accentTint` | `#F6E6C6` | `#3A2C17` | Reward / featured badge backgrounds |
+| `AppTheme.onSurface` | `#291C18` espresso | `#F3E7D9` | All primary text |
+| `AppTheme.muted` | `#665A50` cocoa gray | `#B5A797` | Secondary / helper text |
+| `AppTheme.subtle` | `#74675C` | `#9C8C7C` | Tertiary / placeholder text |
+| `AppTheme.neutralBg` | `#EDE3D4` | `#33241B` | Neutral trays, unselected segments |
+| `AppTheme.destructive` | `#B3261E` | `#F2836B` | Closed / destructive |
+| `AppTheme.openGreen` | `#3D6B2B` | `#8CC07A` | Open / positive |
+| `AppTheme.shadowColor` | `#291C18` @ 10% | `#000000` @ 45% | Ambient card shadow (espresso-tinted) |
+| `AppTheme.ghostBorder` | `#B9563C` @ 18% | `#C5523A` @ 35% | Input field edges only |
+| `AppTheme.photoScrim` | `#140D0A` | `#000000` | Gradients / pills behind white text on photos and video |
+
+### Contrast (WCAG AA, asserted by `biluTests/AppThemeContrastTests`)
+| Pair | Light | Dark |
 |---|---|---|
-| `AppTheme.surface` | `#FFF6ED` | Page / screen background |
-| `AppTheme.white` | `#ffffff` | Card faces, elevated surfaces |
-| `AppTheme.sage` | `#FF3B30` | Primary — core actions, brand (Spicy Red) |
-| `AppTheme.sageLt` | `#FFDAD6` | Icon tray backgrounds, chips (light red tint) |
-| `AppTheme.sageMd` | `#FFB4AB` | Progress bar mid, decorative (medium red tint) |
-| `AppTheme.terracotta` | `#FF9500` | Secondary CTA — Mango Orange, use sparingly |
-| `AppTheme.onSurface` | `#1b1c19` | All primary text |
-| `AppTheme.muted` | `#635a51` | Secondary / helper text |
-| `AppTheme.subtle` | `#8B8070` | Tertiary / placeholder text |
-| `AppTheme.shadowColor` | `#FF3B30` @ 8% | Ambient card shadow (red-tinted) |
-| `AppTheme.ghostBorder` | `#FF3B30` @ 15% | Input field edges only |
+| Text on background / card | 13.96 / 15.87 | 16.19 / 13.63 |
+| Secondary text on background / card | 5.65 / 6.43 | 8.39 / 7.06 |
+| White on primary button | 4.71 | 4.52 |
+| Sienna ink on background / card | 5.07 / 5.77 | 6.68 / 5.62 |
+| Ochre ink on background | 5.84 | 8.69 |
+| Espresso on ochre fill | 7.24 | 8.15 |
+
+`AppTheme.sage` is a fill, not a text color: as text it is only 3.99:1 on ivory (light) and 3.67:1 on cards (dark). Use `primaryInk` for sienna text and icons on surfaces.
+
+### Where each color goes
+- **Cream / ivory dominates.** Most of every screen is `surface` and `white` cards.
+- **Espresso anchors typography.** All titles and body text are `onSurface` / `muted`.
+- **Sienna marks actions:** the FAB, "Find spots" and other primary buttons, links, selected chips, the tab tint.
+- **Ochre is for special moments only:** the saved-vibe sparkle, rewards / Discovery Pass / "free today", featured badges, star ratings, the "visited" state. Never a default CTA, and never text on cream (use `accentInk`).
+- **Photos and video** keep white text on a `photoScrim` gradient in both modes; the full-screen video player stays black.
 
 ### Forbidden colors
-- `#8B5CF6` purple — never. Replace with `AppTheme.terracotta`.
+- Raw hex in views, `Color.white` / `Color.black` / `.white` backgrounds. Use tokens; white is allowed only as text on a sienna fill (`onPrimary`) or over photos/video.
+- `#FF3B30` spicy red and `#FF9500` mango orange — replaced by burnt sienna and golden ochre.
+- `#8B5CF6` purple — never.
 - `#0F172A` / `#1C1C1E` near-black — use `AppTheme.onSurface`.
 - `#64748B` slate gray — use `AppTheme.muted`.
 - Pure `Color.black` / `Color.gray` for shadows — use `AppTheme.shadowColor`.
-- `#516237` sage green — replaced by `AppTheme.sage` (Spicy Red).
-- `#9f402d` old terracotta — replaced by `AppTheme.terracotta` (Mango Orange).
+- Translucent white text on sienna (`.white.opacity(0.7)`) — it fails AA; use full `onPrimary`.
+- `.preferredColorScheme(.light)` or `UIUserInterfaceStyle` — the app follows the system appearance.
 
 ---
 
@@ -43,7 +76,7 @@ All colors live in `bilu/Helpers/AppTheme.swift`. **Never introduce raw hex stri
 **Never use a 1px solid border to define a section or card.** Boundaries must be *felt*, not seen.
 
 ### What to do instead
-- **Background shift**: cards use `AppTheme.white` on `AppTheme.surface` background — the cream/white contrast provides sufficient separation.
+- **Background shift**: cards use `AppTheme.white` (soft cream / café brown) on `AppTheme.surface` — the tonal step provides separation in both modes.
 - **Ambient shadow**: `.shadow(color: AppTheme.shadowColor, radius: 16, x: 0, y: 6)` for cards that need lift.
 - **Negative space**: generous `padding` between elements creates visual islands.
 
@@ -106,7 +139,7 @@ Text("What's the occasion?")
 
 ## 4a. Cards — One Style
 
-There is one card style: `AppTheme.white` on `AppTheme.surface`, 18pt continuous corners, `AppTheme.shadowColor` shadow when it needs lift. Use the shared card component (`Views/Components/BiluCard.swift`) instead of restyling cards per screen.
+There is one card style: `AppTheme.white` on `AppTheme.surface`, 18pt continuous corners, `AppTheme.shadowColor` shadow when it needs lift. Use the shared card component (`Views/Components/BiluCard.swift`) instead of restyling cards per screen. A card may lead with a small, cropped photo (feed place cards) only when the photo URL is already stored on the model — never fetch photos or call Places just to decorate a card.
 
 **Never on cards:** colored accent bars, faint "ghost" background icons, or stacks of uppercase badges. These read as generic AI-template UI.
 
@@ -117,8 +150,9 @@ There is one card style: `AppTheme.white` on `AppTheme.surface`, 18pt continuous
 Depth comes from stacking surface tiers:
 
 ```
-Base page:          AppTheme.surface    (#fbf9f4)
-Cards / containers: AppTheme.white      (#ffffff)
+Base page:          AppTheme.surface       (#F4EBDD · #0E0A07)
+Sheets:             AppTheme.sheetSurface  (#F4EBDD · #1A120D)
+Cards / containers: AppTheme.white         (#FFFAF2 · #2A1B14)
 Floating overlays:  .ultraThinMaterial  (blur + tint)
 ```
 
@@ -132,13 +166,14 @@ All buttons are pill-shaped (Capsule or `cornerRadius: 999`).
 
 ```swift
 // Primary CTA (full width)
-.foregroundColor(.white)
+.foregroundStyle(AppTheme.onPrimary)
 .frame(maxWidth: .infinity)
 .padding(.vertical, 15)
 .background(AppTheme.sage)
 .clipShape(Capsule())
 
-// Secondary / high-priority CTA (use sparingly)
+// Special-moment state (saved vibe, visited, reward) — ochre with espresso text
+.foregroundStyle(AppTheme.onAccent)
 .background(AppTheme.terracotta)
 .clipShape(Capsule())
 ```
@@ -251,8 +286,11 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 
 ### Do
 - Embrace asymmetry — don't center everything
+- Let cream dominate; keep espresso for type, sienna for actions, ochre for special moments
+- Use `AppTheme.sage` for action fills with `onPrimary` text, and `primaryInk` for sienna text, links and icons
+- Use ochre (`terracotta` / `accentInk` / `accentTint`) only for the saved-vibe sparkle, rewards, Discovery Pass, "free today", featured badges and ratings
 - Use `sageLt` / `sageMd` for icon trays, not gray
-- Use `AppTheme.terracotta` for high-urgency CTAs ("Take Me There", "New Vibe")
+- Check every new screen in light and dark mode
 - Use the `AppTheme` typography tokens (Noto Serif display, Plus Jakarta Sans UI) for all text
 - Keep one title per screen, at the top
 - Use native `TabView`, `.searchable` and sheets
@@ -265,6 +303,10 @@ When in doubt, add 20% more space. Premium design requires "wasteful" space.
 - Use `DragGesture` + `@GestureState` for fluid, physics-feeling dismiss patterns
 
 ### Don't
+- Make every component brown or sienna — most surfaces stay cream
+- Use ochre for ordinary CTAs, or as text on cream (use `accentInk`)
+- Use `AppTheme.sage` as small text on surfaces (use `primaryInk`)
+- Hard-code `Color.white`, `Color.black` or hex in views, or force a color scheme
 - Use purple (`#8B5CF6`) anywhere
 - Use `Color.black` or `Color.gray` for shadows
 - Add accent bars, ghost icons or uppercase badge stacks to cards
