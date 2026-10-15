@@ -4,7 +4,7 @@
 //
 //  TikTok links shared into bilu via the Share Extension. Each card shows where
 //  resolution stands: finding the place, the place(s) with "Add to Want to Go",
-//  a city prompt, or a dead link the user can dismiss.
+//  a city prompt, "Try again" after a failure, or a dead link to dismiss.
 //
 
 import SwiftUI
@@ -15,6 +15,7 @@ struct PendingSharesRowView: View {
     let isInWantToGo: (ResolvedSharePlace) -> Bool
     let onAddToWantToGo: (PendingTikTokShare, ResolvedSharePlace) -> Void
     let onChooseCity: (PendingTikTokShare) -> Void
+    let onTryAgain: (PendingTikTokShare) -> Void
     let onOpen: (PendingTikTokShare) -> Void
     let onDismiss: (PendingTikTokShare) -> Void
 
@@ -67,7 +68,9 @@ struct PendingSharesRowView: View {
     @ViewBuilder
     private func content(_ share: PendingTikTokShare) -> some View {
         switch share.resolution {
-        case .pending:
+        // `where` binds to `.needsRetry` only: a manual retry in flight shows
+        // the spinner instead of "Try again".
+        case .pending, .awaitingRetry, .needsRetry where resolving.contains(share.id):
             if resolving.contains(share.id) {
                 HStack(spacing: 8) {
                     ProgressView().tint(AppTheme.sage)
@@ -97,6 +100,11 @@ struct PendingSharesRowView: View {
                 onChooseCity(share)
             }
             .accessibilityHint("Pick the city this video is in to find the place.")
+
+        case .needsRetry:
+            primaryButton("Try again", systemImage: "arrow.clockwise") { onTryAgain(share) }
+                .accessibilityHint("Tries to find the place from this video again.")
+                .accessibilityIdentifier("pending-share-try-again")
 
         case .unavailable:
             secondaryButton("Dismiss", systemImage: "xmark") { onDismiss(share) }
@@ -138,9 +146,12 @@ struct PendingSharesRowView: View {
     // MARK: - Copy
 
     private func title(for share: PendingTikTokShare) -> String {
+        if resolving.contains(share.id) { return "Shared TikTok" }
         switch share.resolution {
-        case .pending:
-            return resolving.contains(share.id) ? "Shared TikTok" : "Waiting to match"
+        case .pending, .awaitingRetry:
+            return "Waiting to match"
+        case .needsRetry:
+            return "Couldn't match this video"
         case let .resolved(_, places):
             switch places.count {
             case 0: return "No place named"
@@ -155,11 +166,12 @@ struct PendingSharesRowView: View {
     }
 
     private func subtitle(for share: PendingTikTokShare) -> String {
+        if resolving.contains(share.id) { return share.urlString }
         switch share.resolution {
-        case .pending:
-            return resolving.contains(share.id)
-                ? share.urlString
-                : "We'll try again next time you open bilu."
+        case .pending, .awaitingRetry:
+            return "We'll try again next time you open bilu."
+        case .needsRetry:
+            return "Something went wrong. Try again when you're ready."
         case let .resolved(video, places):
             if places.isEmpty { return "We couldn't find a restaurant in this video." }
             let caption = video.caption.trimmingCharacters(in: .whitespacesAndNewlines)

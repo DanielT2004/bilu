@@ -19,8 +19,14 @@ struct PendingTikTokShare: Identifiable, Equatable {
 
 /// The stored result of resolving one shared TikTok.
 enum PendingShareResolution: Codable, Equatable {
-    /// Not tried yet, or the last try hit `.retryLater`. Resolved on next launch.
+    /// Not tried yet. Resolved on launch or when the app becomes active.
     case pending
+    /// The first try failed before anything was charged; one automatic retry
+    /// is left (next launch or activation).
+    case awaitingRetry
+    /// The last try may have spent quota, or the automatic retry also failed.
+    /// Only the user's "Try again" resolves it again.
+    case needsRetry
     /// The video was read; `places` may be empty when it names no venue.
     case resolved(video: ResolvedShareVideo, places: [ResolvedSharePlace])
     /// The resolver needs a city; the user is asked for one.

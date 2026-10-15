@@ -117,21 +117,110 @@ final class PendingSharesModelTests: XCTestCase {
         XCTAssertEqual(storage.resolutions["b"], .unavailable)
     }
 
-    func testRetryLaterKeepsTheShareAndRetriesNextLaunch() async {
+    func testUnchargedFailureGetsExactlyOneAutomaticRetry() async {
         let storage = InMemoryPendingShareStorage(queued: [share("a")])
         let spy = ResolverSpy(.retryLater)
         let model = makeModel(storage: storage, spy: spy)
 
         await model.refreshAndResolve()
         XCTAssertEqual(model.shares.map(\.id), ["a"])
-        XCTAssertEqual(model.shares.first?.resolution, .pending)
-        XCTAssertNil(storage.resolutions["a"])
+        XCTAssertEqual(model.shares.first?.resolution, .awaitingRetry)
+        XCTAssertEqual(storage.resolutions["a"], .awaitingRetry, "the retry budget survives a relaunch")
         XCTAssertEqual(storage.queued.count, 1)
+
+        // Next launch: the one automatic retry.
+        let relaunched = makeModel(storage: storage, spy: spy)
+        await relaunched.refreshAndResolve()
+        XCTAssertEqual(spy.calls.count, 2)
+        XCTAssertEqual(relaunched.shares.first?.resolution, .needsRetry)
+
+        // Every later activation leaves it to the user.
+        await relaunched.refreshAndResolve()
+        await relaunched.scenePhaseChanged(isActive: true)
+        await makeModel(storage: storage, spy: spy).refreshAndResolve()
+        XCTAssertEqual(spy.calls.count, 2)
+        XCTAssertEqual(storage.resolutions["a"], .needsRetry)
+    }
+
+    func testAutomaticRetryThatSucceedsStoresThePlaces() async {
+        let storage = InMemoryPendingShareStorage(queued: [share("a")])
+        let spy = ResolverSpy(.retryLater)
+        await makeModel(storage: storage, spy: spy).refreshAndResolve()
 
         spy.outcome = .resolved(video: video, places: [place])
         await makeModel(storage: storage, spy: spy).refreshAndResolve()
         XCTAssertEqual(spy.calls.count, 2)
         XCTAssertEqual(storage.resolutions["a"], .resolved(video: video, places: [place]))
+    }
+
+    func testPossiblyChargedFailureIsNeverRetriedAutomatically() async {
+        let storage = InMemoryPendingShareStorage(queued: [share("a")])
+        let spy = ResolverSpy(.failed)
+        let model = makeModel(storage: storage, spy: spy)
+
+        await model.refreshAndResolve()
+        XCTAssertEqual(model.shares.first?.resolution, .needsRetry)
+        XCTAssertEqual(storage.resolutions["a"], .needsRetry)
+
+        await model.refreshAndResolve()
+        await model.scenePhaseChanged(isActive: true)
+        await makeModel(storage: storage, spy: spy).refreshAndResolve()
+        XCTAssertEqual(spy.calls.count, 1, "launches and activations never re-spend quota")
+
+        // "Try again" is the only way back, and it runs once per tap.
+        spy.outcome = .resolved(video: video, places: [place])
+        await model.tryAgain(model.shares[0])
+        XCTAssertEqual(spy.calls.count, 2)
+        XCTAssertEqual(spy.calls.last?.city, "Los Angeles, CA")
+        XCTAssertEqual(model.shares.first?.resolution, .resolved(video: video, places: [place]))
+
+        await model.tryAgain(model.shares[0])
+        XCTAssertEqual(spy.calls.count, 2, "Try again only applies to a failed share")
+    }
+
+    func testManualTryAgainThatFailsStaysManual() async {
+        let storage = InMemoryPendingShareStorage(queued: [share("a")], resolutions: ["a": .needsRetry])
+        let spy = ResolverSpy(.retryLater)
+        let model = makeModel(storage: storage, spy: spy)
+
+        await model.tryAgain(model.shares[0])
+        XCTAssertEqual(model.shares.first?.resolution, .needsRetry)
+        await model.refreshAndResolve()
+        XCTAssertEqual(spy.calls.count, 1)
+    }
+
+    /// RootTabView owns the model and calls these on launch and activation,
+    /// so resolving never waits for the Profile tab to appear.
+    func testRootLifecycleResolvesWithoutProfileAndDeduplicates() async {
+        let storage = InMemoryPendingShareStorage(queued: [share("a")])
+        var calls = 0
+        var gate: CheckedContinuation<Void, Never>?
+        let model = PendingSharesModel(
+            storage: storage,
+            resolver: { _, _, _, _ in
+                calls += 1
+                await withCheckedContinuation { gate = $0 }
+                return .resolved(video: self.video, places: [self.place])
+            },
+            location: { ShareResolveLocation(city: "Los Angeles, CA") },
+            rememberCity: { _ in }
+        )
+
+        // Background and inactive phases do nothing.
+        await model.scenePhaseChanged(isActive: false)
+        XCTAssertEqual(calls, 0)
+
+        // Launch task and the first "active" phase overlap: one call.
+        let launch = Task { await model.refreshAndResolve() }
+        while gate == nil { await Task.yield() }
+        await model.scenePhaseChanged(isActive: true)
+        XCTAssertEqual(calls, 1)
+        gate?.resume()
+        await launch.value
+
+        // The feed reads the same instance's shares.
+        let feed = FeedTikTokPlace.from(model.shares)
+        XCTAssertEqual(feed.map(\.place.name), ["Teddy's Red Tacos"])
     }
 
     func testOverlappingLaunchAndActiveDoNotResolveTwice() async {
@@ -200,7 +289,9 @@ final class PendingSharesModelTests: XCTestCase {
         let all: [String: PendingShareResolution] = [
             "a": .resolved(video: video, places: [place]),
             "b": .needsCity,
-            "c": .unavailable
+            "c": .unavailable,
+            "d": .awaitingRetry,
+            "e": .needsRetry
         ]
         let data = try JSONEncoder().encode(all)
         XCTAssertEqual(try JSONDecoder().decode([String: PendingShareResolution].self, from: data), all)

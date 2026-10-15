@@ -266,7 +266,8 @@ final class HomeViewModel: ObservableObject {
     @Published var selectedVibe: String = ""
     /// Drives the intent sheet from the feed's action button and empty-state card.
     @Published var isShowingIntentSheet = false
-    /// Places resolved from shared TikToks, read from local storage only.
+    /// Places resolved from shared TikToks, from the app root's
+    /// `PendingSharesModel` (local results only; the feed never resolves).
     @Published private(set) var tikTokPlaces: [FeedTikTokPlace] = []
     @Published var tikTokVideos: [String: [TikTokVideo]] = [:]
     @Published var revealPhase: RevealPhase = .sealed
@@ -293,7 +294,6 @@ final class HomeViewModel: ObservableObject {
     private let fetchRecommendations: (VibeSelection, String?) async -> VibeFetchOutcome
     private let enrich: ([Recommendation], [GroundingPlace], String) async -> [Recommendation]
     private let readinessTimeout: TimeInterval
-    private let loadSharedPlaces: () -> [FeedTikTokPlace]
 
     static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "Brunch", "Late Night"]
     static let drinksOccasions:  Set<String> = ["Cafe", "Bakery", "Dessert", "Drinks"]
@@ -312,10 +312,8 @@ final class HomeViewModel: ObservableObject {
          commerceEnabled: (() -> Bool)? = nil,
          fetchRecommendations: ((VibeSelection, String?) async -> VibeFetchOutcome)? = nil,
          enrich: (([Recommendation], [GroundingPlace], String) async -> [Recommendation])? = nil,
-         readinessTimeout: TimeInterval = 8,
-         loadSharedPlaces: (() -> [FeedTikTokPlace])? = nil) {
+         readinessTimeout: TimeInterval = 8) {
         self.selection = VibeSelection()
-        self.loadSharedPlaces = loadSharedPlaces ?? FeedTikTokPlace.loadFromLocalShares
         #if DEBUG
         if fetchRecommendations == nil, let fixture = RecoveryFixture.current {
             // Deterministic UI-test seam: no provider calls, no ads, and a
@@ -1172,9 +1170,10 @@ final class HomeViewModel: ObservableObject {
         return initialMapCenter
     }
 
-    /// Re-reads feed data that lives on the device. No network.
-    func refreshFeed() {
-        tikTokPlaces = loadSharedPlaces()
+    /// Shows the places resolved from shared TikToks. No network.
+    func showSharedPlaces(from shares: [PendingTikTokShare]) {
+        let places = FeedTikTokPlace.from(shares)
+        if places != tikTokPlaces { tikTokPlaces = places }
     }
 
     /// Up to `limit` Want to Go places, nearest first when a location is known;
@@ -1609,21 +1608,6 @@ struct FeedTikTokPlace: Identifiable, Equatable {
             }
         }
         return result
-    }
-
-    /// Reads the App Group queue and stored resolutions. Local only.
-    static func loadFromLocalShares() -> [FeedTikTokPlace] {
-        #if DEBUG
-        if PendingSharesModel.fixtureRequested { return from(PendingSharesModel.fixture().shares) }
-        #endif
-        let storage = AppGroupPendingShareStorage()
-        let resolutions = storage.loadResolutions()
-        let shares = storage.fetchQueued().map { share -> PendingTikTokShare in
-            var share = share
-            share.resolution = resolutions[share.id] ?? .pending
-            return share
-        }
-        return from(shares)
     }
 }
 

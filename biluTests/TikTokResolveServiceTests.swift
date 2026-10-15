@@ -62,14 +62,43 @@ final class TikTokResolveServiceTests: XCTestCase {
         )
     }
 
-    func testQuotaAuthAndServerErrorsAreRetriedLater() {
-        for code in [401, 426, 429, 500, 503] {
+    func testOnlyUnchargedFailuresAreRetriedAutomatically() {
+        // Auth and rate-limit refusals happen before the server spends quota.
+        for code in [401, 429] {
             XCTAssertEqual(
-                TikTokResolveService.decode(statusCode: code, data: data(#"{"error":"x"}"#)),
+                TikTokResolveService.decode(statusCode: code, data: data(#"{"error":"x","code":"y"}"#)),
                 .retryLater,
                 "status \(code)"
             )
         }
-        XCTAssertEqual(TikTokResolveService.decode(statusCode: 200, data: data("{}")), .retryLater)
+        // The function says whether its own failure ran the paid step.
+        XCTAssertEqual(
+            TikTokResolveService.decode(statusCode: 500, data: data(#"{"error":"resolve_failed","charged":false}"#)),
+            .retryLater
+        )
+        XCTAssertEqual(
+            TikTokResolveService.decode(statusCode: 502, data: data(#"{"error":"place_lookup_failed","charged":true}"#)),
+            .failed
+        )
+        // Anything unmarked (gateway timeout, 503, worker killed) may have charged.
+        for code in [426, 500, 503, 504, 546] {
+            XCTAssertEqual(
+                TikTokResolveService.decode(statusCode: code, data: data(#"{"error":"x"}"#)),
+                .failed,
+                "status \(code)"
+            )
+        }
+        // A 200 means the paid step ran; a garbled one isn't retried silently.
+        XCTAssertEqual(TikTokResolveService.decode(statusCode: 200, data: data("{}")), .failed)
+    }
+
+    func testOnlyErrorsBeforeTheRequestLeftAreRetriedAutomatically() {
+        for code in [URLError.Code.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed] {
+            XCTAssertEqual(TikTokResolveService.outcome(forTransportError: URLError(code)), .retryLater, "\(code)")
+        }
+        for code in [URLError.Code.timedOut, .networkConnectionLost, .cancelled, .badServerResponse] {
+            XCTAssertEqual(TikTokResolveService.outcome(forTransportError: URLError(code)), .failed, "\(code)")
+        }
+        XCTAssertEqual(TikTokResolveService.outcome(forTransportError: CocoaError(.fileNoSuchFile)), .failed)
     }
 }

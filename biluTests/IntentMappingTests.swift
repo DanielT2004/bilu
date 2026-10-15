@@ -170,8 +170,8 @@ final class IntentMappingTests: XCTestCase {
                                                             authorName: nil, thumbnailUrl: nil),
                                   places: [ResolvedSharePlace(placeId: "p1", name: "Sonoratown", address: "DTLA",
                                                               latitude: 34.04, longitude: -118.25)]))
-        let model = home(sharedPlaces: { FeedTikTokPlace.from([share]) })
-        model.refreshFeed()
+        let model = home()
+        model.showSharedPlaces(from: [share])
         await Task.yield()
         XCTAssertEqual(model.tikTokPlaces.map(\.place.name), ["Sonoratown"])
         XCTAssertTrue(fetcher.selections.isEmpty)
@@ -219,14 +219,13 @@ final class IntentMappingTests: XCTestCase {
         return match
     }
 
-    private func home(sharedPlaces: @escaping () -> [FeedTikTokPlace] = { [] }) -> HomeViewModel {
+    private func home() -> HomeViewModel {
         let ads = LoadingAdController(frequency: LoadingAdFrequencyStore(defaults: defaults), eligible: { false },
             record: { _, _, _, _, _, _, _, _ in }, observeEnvironment: false)
         let fetcher = self.fetcher!
         let model = HomeViewModel(loadingAds: ads, allowance: allowance, commerceEnabled: { false },
             fetchRecommendations: { selection, _ in await fetcher.fetch(selection) },
-            enrich: { recommendations, _, _ in recommendations }, readinessTimeout: 60,
-            loadSharedPlaces: sharedPlaces)
+            enrich: { recommendations, _, _ in recommendations }, readinessTimeout: 60)
         model.reduceMotionPreference = true
         model.detectedLocation = "Los Angeles"
         return model

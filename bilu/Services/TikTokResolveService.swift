@@ -23,8 +23,14 @@ enum TikTokResolveOutcome: Equatable {
     case needsCity(video: ResolvedShareVideo?)
     /// Not a TikTok link, or the video is private or deleted. Safe to dismiss.
     case unavailable
-    /// Quota, auth, network or server trouble. Keep the share and retry later.
+    /// Failed before anything was charged: no response (offline, host not
+    /// found), a 429 rate limit, a 401, or a server error marked
+    /// `charged: false`. Safe to retry automatically (the model caps it).
     case retryLater
+    /// Failed in a way that may have spent the user's quota (a server error
+    /// after the paid step, a timeout, a dropped connection). Never retried
+    /// automatically; the share card offers "Try again".
+    case failed
 }
 
 /// The resolve call, injectable so `PendingSharesModel` can be tested without
@@ -52,17 +58,32 @@ enum TikTokResolveService {
             return .unavailable
         }
 
+        // No session yet: nothing was sent, so nothing was charged.
+        guard var request = try? await AuthenticatedAPIRequest.post(path: "tiktok-resolve", timeout: 30) else {
+            return .retryLater
+        }
+        request.httpBody = httpBody
         do {
-            var request = try await AuthenticatedAPIRequest.post(path: "tiktok-resolve", timeout: 30)
-            request.httpBody = httpBody
             let (data, response) = try await URLSession.shared.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             return decode(statusCode: code, data: data)
         } catch {
-            #if DEBUG
-            print("[TikTokResolveService] Error: \(error)")
-            #endif
+            return outcome(forTransportError: error)
+        }
+    }
+
+    /// Only errors that mean the request never reached the server are safe to
+    /// retry automatically. A timeout or dropped connection may have arrived
+    /// after the server spent the quota unit.
+    static func outcome(forTransportError error: Error) -> TikTokResolveOutcome {
+        guard let urlError = error as? URLError else { return .failed }
+        switch urlError.code {
+        case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+             .internationalRoamingOff, .dataNotAllowed, .callIsActive, .secureConnectionFailed,
+             .appTransportSecurityRequiresSecureConnection:
             return .retryLater
+        default:
+            return .failed
         }
     }
 
@@ -92,12 +113,15 @@ enum TikTokResolveService {
             let error: String?
             let video: ResolvedShareVideo?
             let places: [PlacePayload]?
+            /// Set by the function on its own failures: whether the paid step ran.
+            let charged: Bool?
         }
         let payload = try? JSONDecoder().decode(Payload.self, from: data)
 
         switch statusCode {
         case 200:
-            guard let video = payload?.video else { return .retryLater }
+            // A 200 means the paid step ran; never auto-retry a garbled one.
+            guard let video = payload?.video else { return .failed }
             let places = (payload?.places ?? []).map {
                 ResolvedSharePlace(location: $0.location, tags: $0.tags)
             }
@@ -106,8 +130,11 @@ enum TikTokResolveService {
             return .needsCity(video: payload?.video)
         case 400, 422:
             return .unavailable
-        default:
+        case 401, 429:
+            // Auth and rate-limit refusals happen before the quota is spent.
             return .retryLater
+        default:
+            return payload?.charged == false ? .retryLater : .failed
         }
     }
 }

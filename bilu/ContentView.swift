@@ -21,7 +21,12 @@ struct RootTabView: View {
     @State private var hideTabBar: Bool = false
     @State private var homeReselectCount = 0
     @StateObject private var searchViewModel = SearchViewModel()
+    /// Shared TikToks, owned here so resolving starts at launch and on every
+    /// activation no matter which tab is open. Profile and the feed both
+    /// observe this one instance.
+    @StateObject private var pendingShares = PendingSharesModel.makeForApp()
     @EnvironmentObject private var coordinator: ProfileCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // TabView keeps every tab alive, so leaving one keeps its progress,
@@ -44,6 +49,11 @@ struct RootTabView: View {
         // Ink, not fill: the tint also colors system text buttons and links,
         // and the ink shade passes AA as text in both appearances.
         .tint(AppTheme.primaryInk)
+        .environmentObject(pendingShares)
+        .task { await pendingShares.refreshAndResolve() }
+        .onChange(of: scenePhase) { _, phase in
+            Task { await pendingShares.scenePhaseChanged(isActive: phase == .active) }
+        }
         .onChange(of: coordinator.requestedTab) { _, tab in
             // Profile asks to jump to Home (e.g. re-running a saved vibe).
             guard let tab else { return }

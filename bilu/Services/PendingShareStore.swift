@@ -167,18 +167,29 @@ final class PendingSharesModel: ObservableObject {
         if pruned.count != resolutions.count { storage.saveResolutions(pruned) }
     }
 
-    /// Refreshes, then resolves every share still `.pending` and not in flight.
-    /// Call on launch and whenever the app becomes active.
+    /// Refreshes, then resolves every share that may still be tried
+    /// automatically (`.pending`, or `.awaitingRetry` with its one retry left)
+    /// and isn't in flight. Called by the app root on launch and whenever the
+    /// app becomes active, so it never depends on a tab being opened.
     func refreshAndResolve() async {
         refresh()
-        let targets = shares.filter { $0.resolution == .pending && !resolving.contains($0.id) }
+        let targets = shares.filter {
+            ($0.resolution == .pending || $0.resolution == .awaitingRetry) && !resolving.contains($0.id)
+        }
         guard !targets.isEmpty else { return }
         // Claim before the first await so an overlapping call skips these.
         resolving.formUnion(targets.map(\.id))
         let context = await location()
         for share in targets {
-            await resolve(share, at: context)
+            await resolve(share, at: context, automatic: true)
         }
+    }
+
+    /// The app root's lifecycle hook: resolve when the scene becomes active.
+    /// Overlapping calls are deduplicated by `resolving`.
+    func scenePhaseChanged(isActive: Bool) async {
+        guard isActive else { return }
+        await refreshAndResolve()
     }
 
     /// Retries a `.needsCity` share with the city the user typed, and remembers
@@ -188,7 +199,17 @@ final class PendingSharesModel: ObservableObject {
         guard !trimmed.isEmpty, !resolving.contains(share.id) else { return }
         rememberCity(trimmed)
         resolving.insert(share.id)
-        await resolve(share, at: ShareResolveLocation(city: trimmed))
+        await resolve(share, at: ShareResolveLocation(city: trimmed), automatic: false)
+    }
+
+    /// The share card's "Try again" for a `.needsRetry` share. Only the user
+    /// starts this, because the failed try may already have used quota.
+    func tryAgain(_ share: PendingTikTokShare) async {
+        guard let current = shares.first(where: { $0.id == share.id }),
+              current.resolution == .needsRetry, !resolving.contains(share.id) else { return }
+        resolving.insert(share.id)
+        let context = await location()
+        await resolve(current, at: context, automatic: false)
     }
 
     func dismiss(_ share: PendingTikTokShare) {
@@ -200,7 +221,8 @@ final class PendingSharesModel: ObservableObject {
         Haptics.soft()
     }
 
-    private func resolve(_ share: PendingTikTokShare, at location: ShareResolveLocation) async {
+    private func resolve(_ share: PendingTikTokShare, at location: ShareResolveLocation,
+                         automatic: Bool) async {
         let outcome = await resolver(share.urlString, location.city, location.latitude, location.longitude)
         resolving.remove(share.id)
 
@@ -209,7 +231,13 @@ final class PendingSharesModel: ObservableObject {
         case let .resolved(video, places): resolution = .resolved(video: video, places: places)
         case .needsCity: resolution = .needsCity
         case .unavailable: resolution = .unavailable
-        case .retryLater: resolution = .pending
+        case .retryLater:
+            // Nothing was charged. A first automatic try earns one more
+            // automatic try; after that (or after a manual try) the user decides.
+            resolution = automatic && share.resolution == .pending ? .awaitingRetry : .needsRetry
+        case .failed:
+            // Quota may be spent: never retry without the user.
+            resolution = .needsRetry
         }
 
         // The user may have dismissed it while the call was in flight.
@@ -218,6 +246,16 @@ final class PendingSharesModel: ObservableObject {
         var resolutions = storage.loadResolutions()
         resolutions[share.id] = resolution == .pending ? nil : resolution
         storage.saveResolutions(resolutions)
+    }
+}
+
+extension PendingSharesModel {
+    /// The single instance the app root owns (the DEBUG fixture when requested).
+    static func makeForApp() -> PendingSharesModel {
+        #if DEBUG
+        if fixtureRequested { return fixture() }
+        #endif
+        return PendingSharesModel()
     }
 }
 
@@ -255,12 +293,13 @@ extension PendingSharesModel {
         ]
         let storage = InMemoryPendingShareStorage(
             queued: [share("resolved", 1), share("needscity", 2), share("unavailable", 3),
-                     share("nomatch", 4), share("waiting", 5)],
+                     share("nomatch", 4), share("failed", 5), share("waiting", 6)],
             resolutions: [
                 "resolved": .resolved(video: video, places: places),
                 "needscity": .needsCity,
                 "unavailable": .unavailable,
-                "nomatch": .resolved(video: video, places: [])
+                "nomatch": .resolved(video: video, places: []),
+                "failed": .needsRetry
             ]
         )
         // "waiting" stays pending: the fixture resolver never answers, so the

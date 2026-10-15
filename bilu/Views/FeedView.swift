@@ -19,6 +19,9 @@ struct FeedView: View {
     @Query(sort: \SavedVibe.dateSaved, order: .reverse) private var savedVibes: [SavedVibe]
     /// Observed so "1 free today" updates when a discovery or reward lands.
     @EnvironmentObject private var discoveryAllowance: DiscoveryAllowance
+    /// The app root's shared-TikTok model; its resolved places feed the
+    /// "From your TikToks" row as soon as they land, without opening Profile.
+    @EnvironmentObject private var pendingShares: PendingSharesModel
 
     var body: some View {
         let origin = viewModel.feedOrigin
@@ -85,7 +88,7 @@ struct FeedView: View {
                     .padding(.top, 28)
             }
         }
-        .onAppear { viewModel.refreshFeed() }
+        .onReceive(pendingShares.$shares) { viewModel.showSharedPlaces(from: $0) }
     }
 
     // MARK: - Sections

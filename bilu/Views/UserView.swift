@@ -14,11 +14,11 @@ struct UserView: View {
     @EnvironmentObject private var discoveryAllowance: DiscoveryAllowance
     @EnvironmentObject private var rewardedAds: RewardedAdService
     @StateObject private var viewModel = ProfileViewModel()
-    @StateObject private var shareModel = UserView.makeShareModel()
+    /// Owned by RootTabView, which resolves shares on launch and activation.
+    @EnvironmentObject private var shareModel: PendingSharesModel
     @State private var shareNeedingCity: PendingTikTokShare? = nil
     @State private var shareCityDraft = ""
     @Environment(\.openURL) private var openURL
-    @Environment(\.scenePhase) private var scenePhase
 
     @Query(sort: \SavedPlace.dateSaved, order: .reverse)
     private var allPlaces: [SavedPlace]
@@ -92,13 +92,8 @@ struct UserView: View {
             RestaurantDetailView(rec: place.asRecommendation, tags: place.tags) { [] }
                 .environmentObject(store)
         }
-        // RootTabView builds every tab at launch, so this resolves shares on launch.
-        .task { await shareModel.refreshAndResolve() }
         .onChange(of: isActive) { _, active in
             if active { shareModel.refresh() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await shareModel.refreshAndResolve() } }
         }
         .alert("Which city is this in?", isPresented: Binding(
             get: { shareNeedingCity != nil },
@@ -141,6 +136,9 @@ struct UserView: View {
                         shareCityDraft = ""
                         shareNeedingCity = share
                     },
+                    onTryAgain: { share in
+                        Task { await shareModel.tryAgain(share) }
+                    },
                     onOpen: { share in
                         if let url = URL(string: share.urlString) {
                             openURL(url)
@@ -152,13 +150,6 @@ struct UserView: View {
                 )
             }
         }
-    }
-
-    private static func makeShareModel() -> PendingSharesModel {
-        #if DEBUG
-        if PendingSharesModel.fixtureRequested { return .fixture() }
-        #endif
-        return PendingSharesModel()
     }
 
     // MARK: - Saved vibes
@@ -419,5 +410,6 @@ struct UserView: View {
         .environmentObject(ProfileCoordinator())
         .environmentObject(DiscoveryAllowance.shared)
         .environmentObject(RewardedAdService.shared)
+        .environmentObject(PendingSharesModel(storage: InMemoryPendingShareStorage()))
         .modelContainer(container)
 }
