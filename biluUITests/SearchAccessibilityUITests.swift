@@ -12,7 +12,7 @@ final class SearchAccessibilityUITests: XCTestCase {
     func testSortChipsAnnounceSelectionAndMeetTapTargetSize() {
         let app = XCUIApplication()
         app.launch()
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
 
         let relevant = app.buttons["search-sort-0"]
         let mostLiked = app.buttons["search-sort-1"]
@@ -38,7 +38,7 @@ final class SearchAccessibilityUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["BILU_UI_TEST_TIKTOK_ERROR"] = "offline"
         app.launch()
-        app.buttons["tab-search"].tap()
+        app.tabBars.buttons["Search"].tap()
 
         let retry = app.buttons["Try Again"]
         XCTAssertTrue(retry.waitForExistence(timeout: 10))

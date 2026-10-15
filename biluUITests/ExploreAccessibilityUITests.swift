@@ -16,9 +16,16 @@ final class ExploreAccessibilityUITests: XCTestCase {
         let deferLocation = app.buttons["Maybe later"]
         if deferLocation.waitForExistence(timeout: 3) { deferLocation.tap() }
 
-        let sitDown = app.buttons.containing(.staticText, identifier: "Sit Down Vibes").firstMatch
-        XCTAssertTrue(sitDown.waitForExistence(timeout: 10))
+        // Reach the food step the redesign way: action button → Food → Sit down.
+        let action = app.buttons["feed-action-button"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10))
+        action.tap()
+        XCTAssertTrue(app.buttons["intent-food"].waitForExistence(timeout: 5))
+        app.buttons["intent-food"].tap()
+        let sitDown = app.buttons["refinement-Sit down"]
+        XCTAssertTrue(sitDown.waitForExistence(timeout: 5))
         sitDown.tap()
+        app.buttons["intent-find-spots"].tap()
 
         let italian = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Italian & pizza'")).firstMatch
         XCTAssertTrue(italian.waitForExistence(timeout: 5))
