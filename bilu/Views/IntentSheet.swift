@@ -17,6 +17,7 @@ struct IntentSheet: View {
     @State private var intent: FeedIntent?
     @State private var refinement: IntentRefinement?
     @State private var lateNight = false
+    @State private var detent: PresentationDetent = .medium
 
     var body: some View {
         ScrollView {
@@ -46,19 +47,25 @@ struct IntentSheet: View {
                         .transition(.opacity)
                 }
 
-                findSpotsButton
-                    .padding(.top, 32)
-                    .padding(.bottom, 24)
             }
             .padding(.horizontal, 20)
+            .padding(.bottom, 24)
             .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: intent)
         }
         .scrollIndicators(.hidden)
+        // Pinned so "Find spots" is reachable in the medium detent.
+        .safeAreaInset(edge: .bottom) {
+            findSpotsButton
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .background(AppTheme.surface)
+        }
         .background(AppTheme.surface)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(24)
-        .presentationContentInteraction(.scrolls)
+        .presentationContentInteraction(.resizes)
     }
 
     @ViewBuilder
@@ -146,6 +153,8 @@ struct IntentSheet: View {
         intent = option
         refinement = option.defaultRefinement
         lateNight = false
+        // Refinement chips sit below the medium detent; grow so they're visible.
+        if !option.refinements.isEmpty || option.supportsLateNight { detent = .large }
     }
 
     private func chip(_ title: String, systemImage: String? = nil, isSelected: Bool,
