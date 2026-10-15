@@ -251,6 +251,17 @@ export async function handleTikTokResolve(
       });
     }
 
+    // The pipeline can only place a video once it knows the city, and it
+    // learns that from the city we pass. Without one, answer before any paid
+    // call instead of spending quota and a Gemini call on a certain miss.
+    if (!city) {
+      return json(400, {
+        error: "missing_city",
+        message: "Turn on location or pick a city to match this video.",
+        video,
+      });
+    }
+
     const quota = await deps.consumeQuota(user.id, PAID_API_QUOTA);
 
     const result = await deps.locate(

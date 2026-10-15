@@ -255,15 +255,39 @@ Deno.test("a private or deleted video does not spend quota", async () => {
   assertEquals(log.locate.length, 0);
 });
 
-Deno.test("no city returns missing_city with the video so the app can ask", async () => {
+Deno.test("no city returns missing_city with the video before any paid work", async () => {
+  const log = {
+    quota: 0,
+    auth: 0,
+    locate: [] as LocatePlacesInput[],
+    fetches: [] as string[],
+  };
   const res = await handleTikTokResolve(
     post({ shareUrl: VIDEO_URL }),
-    deps({}, undefined, { kind: "missing_city" }),
+    deps({}, log),
   );
   assertEquals(res.status, 400);
   const body = await res.json();
   assertEquals(body.error, "missing_city");
   assertEquals(body.video.videoId, "7312345678901234567");
+  assertEquals(log.quota, 0);
+  assertEquals(log.locate.length, 0);
+});
+
+Deno.test("a city the pipeline can't place still returns missing_city", async () => {
+  const log = {
+    quota: 0,
+    auth: 0,
+    locate: [] as LocatePlacesInput[],
+    fetches: [] as string[],
+  };
+  const res = await handleTikTokResolve(
+    post({ shareUrl: VIDEO_URL, city: "Nowhere" }),
+    deps({}, log, { kind: "missing_city" }),
+  );
+  assertEquals(res.status, 400);
+  assertEquals((await res.json()).error, "missing_city");
+  assertEquals(log.quota, 1);
 });
 
 Deno.test("quota and auth refusals pass through as their own status", async () => {
