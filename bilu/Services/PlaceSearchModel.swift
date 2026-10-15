@@ -72,26 +72,36 @@ final class PlaceSearchModel: NSObject, ObservableObject {
         errorMessage = nil
     }
 
-    fileprivate func apply(_ results: [MKLocalSearchCompletion]) {
-        // Ignore late results for a query the user already cleared.
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    /// `fragment` is the query the completer answered. Results for anything
+    /// but the current query (cleared or retyped since) are dropped.
+    fileprivate func apply(_ results: [MKLocalSearchCompletion], for fragment: String) {
+        let current = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !current.isEmpty, current == fragment else { return }
         completions = Array(results.prefix(6))
         suggestions = completions.enumerated().map { index, completion in
             PlaceSuggestion(id: index, title: completion.title, subtitle: completion.subtitle)
         }
         errorMessage = nil
     }
+
+    fileprivate func applyFailure(for fragment: String) {
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines) == fragment else { return }
+        suggestions = []
+        completions = []
+    }
 }
 
+// MapKit doesn't promise which thread calls the delegate, so hop to the main
+// actor instead of asserting we're already on it (which would trap).
 extension PlaceSearchModel: MKLocalSearchCompleterDelegate {
     nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        MainActor.assumeIsolated { apply(completer.results) }
+        let results = completer.results
+        let fragment = completer.queryFragment
+        Task { @MainActor [weak self] in self?.apply(results, for: fragment) }
     }
 
     nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
-        MainActor.assumeIsolated {
-            suggestions = []
-            completions = []
-        }
+        let fragment = completer.queryFragment
+        Task { @MainActor [weak self] in self?.applyFailure(for: fragment) }
     }
 }
