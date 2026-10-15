@@ -35,6 +35,7 @@ struct ProfileHeaderView: View {
                 value: breathScale
             )
             .onAppear { if !reduceMotion { breathScale = 1.05 } }
+            .accessibilityHidden(true)
             .overlay(alignment: .bottomTrailing) {
                 Button(action: { Haptics.light(); onEdit() }) {
                     Image(systemName: "pencil")
@@ -44,9 +45,13 @@ struct ProfileHeaderView: View {
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
                         .shadow(color: AppTheme.shadowColor, radius: 8, x: 0, y: 3)
+                        // Keep the 34 pt visual, but give it a 44×44 hit area.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .offset(x: 4, y: 4)
+                .accessibilityLabel("Edit profile")
+                .offset(x: 9, y: 9)
             }
 
             VStack(spacing: 4) {

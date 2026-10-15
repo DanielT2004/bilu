@@ -115,9 +115,10 @@ struct RestaurantDetailView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(AppTheme.onSurface)
-                    .padding(10)
+                    .frame(width: 44, height: 44)
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back")
@@ -126,13 +127,16 @@ struct RestaurantDetailView: View {
                 .font(AppTheme.title)
                 .italic()
                 .foregroundStyle(AppTheme.sage)
+                .accessibilityHidden(true)
             Spacer()
             Button(action: tapWantToGo) {
                 topBarIcon(wantToGoSaved ? AppTheme.Icon.wantToGoFilled : AppTheme.Icon.wantToGo,
                            tint: wantToGoSaved ? AppTheme.sage : AppTheme.onSurface)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(wantToGoSaved ? "Remove from Want to Go" : "Add to Want to Go")
+            .accessibilityLabel("Add to Want to Go")
+            .accessibilityValue(wantToGoSaved ? "On your Want to Go list" : "")
+            .accessibilityAddTraits(wantToGoSaved ? .isSelected : [])
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -142,9 +146,10 @@ struct RestaurantDetailView: View {
         Image(systemName: name)
             .font(.system(size: 15, weight: .medium))
             .foregroundStyle(tint)
-            .padding(10)
+            .frame(width: 44, height: 44)
             .background(.ultraThinMaterial)
             .clipShape(Circle())
+            .contentShape(Circle())
     }
 
     // MARK: - Photo data
@@ -199,6 +204,7 @@ struct RestaurantDetailView: View {
         Group {
             if allPhotos.count > 1 {
                 Text("\(currentPhoto + 1)/\(allPhotos.count)")
+                    .accessibilityLabel("Photo \(currentPhoto + 1) of \(allPhotos.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
@@ -234,6 +240,7 @@ struct RestaurantDetailView: View {
                     .italic()
                     .foregroundStyle(AppTheme.onSurface)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
 
                 if let address = rec.address {
                     Text(address)
@@ -302,6 +309,7 @@ struct RestaurantDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
 
             // Rating
             VStack(alignment: .center, spacing: 4) {
@@ -334,6 +342,8 @@ struct RestaurantDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .center)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ratingAccessibilityLabel)
 
             // Distance
             VStack(alignment: .trailing, spacing: 4) {
@@ -347,7 +357,17 @@ struct RestaurantDetailView: View {
                     .foregroundStyle(AppTheme.onSurface)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityElement(children: .combine)
         }
+    }
+
+    private var ratingAccessibilityLabel: String {
+        guard let r = rec.rating else { return "Rating unavailable" }
+        var label = "Rating " + String(format: "%.1f", r) + " of 5"
+        if let count = rec.reviewCount, count > 0 {
+            label += ", \(count) " + (count == 1 ? "review" : "reviews")
+        }
+        return label
     }
 
     private func formatReviewCount(_ n: Int) -> String {
@@ -366,12 +386,13 @@ struct RestaurantDetailView: View {
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 let nowVisited = VisitedPlacesStore.toggle(rec.identityKey)
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                withAnimation(AnimationProfile.selection.animation(reduceMotion: reduceMotion)) {
                     ivenBeenHere = nowVisited
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: ivenBeenHere ? "checkmark.circle.fill" : "checkmark.circle")
+                    // Empty circle → filled checkmark, so the state reads without colour.
+                    Image(systemName: ivenBeenHere ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 16))
                     Text("I've been here")
                         .font(.system(size: 15, weight: .semibold))
@@ -381,9 +402,11 @@ struct RestaurantDetailView: View {
                 .padding(.vertical, 16)
                 .background(ivenBeenHere ? AppTheme.terracotta : AppTheme.sage)
                 .clipShape(Capsule())
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: ivenBeenHere)
+                .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion), value: ivenBeenHere)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("I've been here")
+            .accessibilityAddTraits(ivenBeenHere ? .isSelected : [])
 
             // Bookmark circle — soft wind-up press + fill swap on commit.
             Button(action: tapBookmark) {
@@ -400,7 +423,9 @@ struct RestaurantDetailView: View {
                            value: bookmarkSaved)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(bookmarkSaved ? "Remove from Saved" : "Save")
+            .accessibilityLabel("Save")
+            .accessibilityValue(bookmarkSaved ? "Saved" : "")
+            .accessibilityAddTraits(bookmarkSaved ? .isSelected : [])
         }
     }
 
@@ -452,37 +477,48 @@ struct RestaurantDetailView: View {
             ForEach(DetailTab.allCases, id: \.rawValue) { tab in
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                        selectedTab = tab
-                    }
+                    select(tab)
                 } label: {
                     VStack(spacing: 6) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .light))
                             .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
-                            .animation(.easeInOut(duration: 0.2), value: selectedTab)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selectedTab)
 
                         Text(tab.label)
                             .font(.system(size: 11, weight: .semibold))
                             .tracking(0.6)
                             .textCase(.uppercase)
                             .foregroundStyle(selectedTab == tab ? AppTheme.sage : AppTheme.subtle)
-                            .animation(.easeInOut(duration: 0.2), value: selectedTab)
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: selectedTab)
 
                         // Active underline
                         Rectangle()
                             .fill(selectedTab == tab ? AppTheme.sage : Color.clear)
                             .frame(height: 3)
                             .clipShape(Capsule())
-                            .animation(.spring(response: 0.38, dampingFraction: 0.86), value: selectedTab)
+                            .animation(AnimationProfile.stepTransition.animation(reduceMotion: reduceMotion), value: selectedTab)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .padding(.vertical, 6)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tab.label)
+                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
             }
         }
         .padding(.horizontal, 24)
+    }
+
+    /// Switches tabs with a direction-aware slide, or an instant swap when
+    /// Reduce Motion is on.
+    private func select(_ tab: DetailTab) {
+        guard tab != selectedTab else { return }
+        swipeForward = tab.rawValue > selectedTab.rawValue
+        withAnimation(AnimationProfile.stepTransition.animation(reduceMotion: reduceMotion)) {
+            selectedTab = tab
+        }
     }
 
     // MARK: - Tab content (swipeable)
@@ -497,7 +533,7 @@ struct RestaurantDetailView: View {
             }
         }
         .id(selectedTab)
-        .transition(.asymmetric(
+        .transition(reduceMotion ? .opacity : .asymmetric(
             insertion: .move(edge: swipeForward ? .trailing : .leading).combined(with: .opacity),
             removal:   .move(edge: swipeForward ? .leading  : .trailing).combined(with: .opacity)
         ))
@@ -509,15 +545,9 @@ struct RestaurantDetailView: View {
                     let tabs = DetailTab.allCases
                     guard let idx = tabs.firstIndex(of: selectedTab) else { return }
                     if value.translation.width < -40, idx < tabs.count - 1 {
-                        swipeForward = true
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            selectedTab = tabs[idx + 1]
-                        }
+                        select(tabs[idx + 1])
                     } else if value.translation.width > 40, idx > 0 {
-                        swipeForward = false
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            selectedTab = tabs[idx - 1]
-                        }
+                        select(tabs[idx - 1])
                     }
                 }
         )
@@ -566,6 +596,8 @@ struct RestaurantDetailView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Call")
+                .accessibilityHint("Calls \(rec.name)")
             }
             Button(action: openMaps) {
                 Image(systemName: "map")
@@ -576,6 +608,8 @@ struct RestaurantDetailView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Directions")
+            .accessibilityHint("Opens \(rec.name) in a maps app")
         }
     }
 
@@ -627,6 +661,7 @@ struct RestaurantDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 Circle().fill(AppTheme.terracotta).frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
                 Text("AI VIBE CHECK")
                     .font(.system(size: 9, weight: .bold))
                     .tracking(1.5)
@@ -652,10 +687,14 @@ struct RestaurantDetailView: View {
             vibeCheckVisible = true
             Haptics.light()
         }
-        .onLongPressGesture(minimumDuration: 0.5) {
-            UIPasteboard.general.string = rec.explanation
-            Haptics.success()
-        }
+        .onLongPressGesture(minimumDuration: 0.5, perform: copyVibeCheck)
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Copy vibe check", copyVibeCheck)
+    }
+
+    private func copyVibeCheck() {
+        UIPasteboard.general.string = rec.explanation
+        Haptics.success()
     }
 
     // MARK: - Photo row (Google Maps)
@@ -666,22 +705,26 @@ struct RestaurantDetailView: View {
                 Text("Photos")
                     .font(AppTheme.headline)
                     .foregroundStyle(AppTheme.onSurface)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     showingAllPhotos = true
                 } label: {
                     Text("View All")
+                        .accessibilityLabel("View all photos")
                         .font(.system(size: 10, weight: .medium))
                         .tracking(0.8)
                         .textCase(.uppercase)
                         .foregroundStyle(AppTheme.sage)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(galleryPhotos.prefix(5).enumerated()), id: \.offset) { _, url in
+                    ForEach(Array(galleryPhotos.prefix(5).enumerated()), id: \.offset) { idx, url in
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             showingAllPhotos = true
@@ -698,6 +741,8 @@ struct RestaurantDetailView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Photo \(idx + 1) of \(galleryPhotos.count)")
+                        .accessibilityHint("Opens all photos")
                     }
                 }
             }
@@ -740,18 +785,20 @@ struct RestaurantDetailView: View {
                 Text("TikToks")
                     .font(AppTheme.headline)
                     .foregroundStyle(AppTheme.onSurface)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                        selectedTab = .media
-                    }
+                    select(.media)
                 } label: {
                     Text("View All")
+                        .accessibilityLabel("View all TikToks")
                         .font(.system(size: 10, weight: .medium))
                         .tracking(0.8)
                         .textCase(.uppercase)
                         .foregroundStyle(AppTheme.sage)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -768,9 +815,7 @@ struct RestaurantDetailView: View {
     private var loadTikToksCard: some View {
         Button {
             Haptics.light()
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                selectedTab = .media
-            }
+            select(.media)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "play.rectangle")
@@ -818,6 +863,12 @@ struct RestaurantDetailView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(tikTokAccessibilityLabel(video))
+        .accessibilityHint("Plays video")
+    }
+
+    private func tikTokAccessibilityLabel(_ video: TikTokVideo) -> String {
+        "TikTok by @\(video.author.name), \(formatCount(video.viewCount)) views"
     }
 
     // MARK: - Pro Tips
@@ -826,9 +877,11 @@ struct RestaurantDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(AppTheme.terracotta)
+                    .accessibilityHidden(true)
                 Text("Pro Tips")
                     .font(AppTheme.headline)
                     .foregroundStyle(AppTheme.onSurface)
+                    .accessibilityAddTraits(.isHeader)
             }
             proTipRow("01", "Arrive early or book ahead — popular spots fill up fast on weekends.")
             proTipRow("02", "Ask your server about the chef's daily special — it's usually the best thing on the menu.")
@@ -861,6 +914,7 @@ struct RestaurantDetailView: View {
                 .tracking(1.2)
                 .textCase(.uppercase)
                 .foregroundStyle(AppTheme.muted)
+                .accessibilityAddTraits(.isHeader)
             if let address = rec.address {
                 Button(action: openMaps) {
                     Text(address)
@@ -956,6 +1010,8 @@ struct RestaurantDetailView: View {
                             .font(.system(size: 10, weight: .medium))
                             .tracking(1.0)
                             .foregroundStyle(AppTheme.muted)
+                            .accessibilityLabel("What people are saying")
+                            .accessibilityAddTraits(.isHeader)
 
                         ForEach(tikTokCaptionHighlights.prefix(5)) { video in
                             VStack(alignment: .leading, spacing: 8) {
@@ -1002,6 +1058,8 @@ struct RestaurantDetailView: View {
         .background(AppTheme.white)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: AppTheme.shadowColor, radius: 10, x: 0, y: 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(value) \(label)")
     }
 
     // MARK: - ══ MEDIA TAB ══
@@ -1026,6 +1084,7 @@ struct RestaurantDetailView: View {
                             Text("More Clips")
                                 .font(AppTheme.headline)
                                 .foregroundStyle(AppTheme.onSurface)
+                                .accessibilityAddTraits(.isHeader)
                             Text("TikTok")
                                 .font(.system(size: 10, weight: .bold))
                                 .tracking(0.5)
@@ -1039,9 +1098,10 @@ struct RestaurantDetailView: View {
                         let others = Array(tikTokVideos.dropFirst().enumerated())
                         ForEach(others, id: \.offset) { idx, video in
                             otherPostRow(video, playerIndex: idx + 1)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                                 .animation(
-                                    .spring(response: 0.4, dampingFraction: 0.8).delay(Double(idx) * 0.07),
+                                    reduceMotion ? nil : AnimationProfile.listReveal
+                                        .animation(reduceMotion: false).delay(Double(idx) * 0.07),
                                     value: tikTokVideos.count
                                 )
                         }
@@ -1321,6 +1381,8 @@ struct RestaurantDetailView: View {
                             .foregroundStyle(AppTheme.terracotta)
                     }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Self.starRatingLabel(rating))
             }
             Text(review.text)
                 .font(.system(size: 14, weight: .light))
@@ -1352,6 +1414,15 @@ struct RestaurantDetailView: View {
     }
 
     // MARK: - Helpers
+
+    /// "Rated 4 of 5" — whole numbers drop the decimal, halves keep it.
+    static func starRatingLabel(_ rating: Double) -> String {
+        let clamped = min(max(rating, 0), 5)
+        let text = clamped.rounded() == clamped
+            ? String(Int(clamped))
+            : String(format: "%.1f", clamped)
+        return "Rated \(text) of 5"
+    }
 
     private func dialPhone(_ phone: String) {
         let cleaned = phone.filter { $0.isNumber || $0 == "+" }

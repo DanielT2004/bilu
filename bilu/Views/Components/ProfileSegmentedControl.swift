@@ -42,8 +42,8 @@ struct ProfileSegmentedControl: View {
                     .foregroundStyle(isActive ? .white.opacity(0.85) : AppTheme.subtle)
             }
             .foregroundStyle(isActive ? .white : AppTheme.muted)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Capsule())
             .background {
                 if isActive {
                     Capsule()
@@ -53,5 +53,8 @@ struct ProfileSegmentedControl: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(count == 1 ? "1 place" : "\(count) places")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }

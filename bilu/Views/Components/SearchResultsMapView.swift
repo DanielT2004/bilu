@@ -14,6 +14,7 @@ struct SearchResultsMapView: View {
     let videos: [TikTokVideo]
     var onSelect: (SearchLocation) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var mapPosition: MapCameraPosition = .region(SearchResultsMapView.wideUSARegion)
 
     private static let wideUSARegion = MKCoordinateRegion(
@@ -41,11 +42,15 @@ struct SearchResultsMapView: View {
             Map(position: $mapPosition) {
                 ForEach(Array(locations.enumerated()), id: \.element.id) { index, loc in
                     Annotation(loc.placeName, coordinate: CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lng)) {
-                        MapPinView(location: loc, index: index)
-                            .onTapGesture {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                onSelect(loc)
-                            }
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onSelect(loc)
+                        } label: {
+                            MapPinView(location: loc, index: index)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(loc.isTopRanked ? "Number \(loc.rank + 1), \(loc.placeName)" : loc.placeName)
+                        .accessibilityHint("Shows videos for this place")
                     }
                 }
             }
@@ -60,10 +65,16 @@ struct SearchResultsMapView: View {
             }
             .onChange(of: locations) { _, newLocations in
                 guard !newLocations.isEmpty, let target = cityRegion else { return }
-                withAnimation(.easeInOut(duration: 1.4)) {
+                // Reduce Motion: jump straight to the city instead of a 1.4 s fly-over.
+                let flyDuration = reduceMotion ? 0 : 1.4
+                if reduceMotion {
                     mapPosition = .region(target)
+                } else {
+                    withAnimation(.easeInOut(duration: flyDuration)) {
+                        mapPosition = .region(target)
+                    }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + flyDuration) {
                     UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                 }
             }
@@ -72,7 +83,7 @@ struct SearchResultsMapView: View {
                 LoadingStatusTicker(videos: videos)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             } else if locations.isEmpty {
                 emptyOverlay
             }
@@ -107,6 +118,7 @@ private struct MapPinView: View {
     let location: SearchLocation
     let index: Int
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scale: CGFloat = 0
 
     var body: some View {
@@ -130,7 +142,15 @@ private struct MapPinView: View {
             }
         }
         .scaleEffect(scale)
+        // Small dots keep their look but get a 44 pt hit area.
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
         .onAppear {
+            // Reduce Motion: pins appear at once, no staggered pop-in.
+            if reduceMotion {
+                scale = 1
+                return
+            }
             let delay = Double(index) * 0.12
             withAnimation(.spring(response: 0.4, dampingFraction: 0.65).delay(delay)) {
                 scale = 1

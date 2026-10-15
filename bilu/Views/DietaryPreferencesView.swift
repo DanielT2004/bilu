@@ -18,18 +18,19 @@ struct DietaryPreferencesView: View {
     var body: some View {
         VStack(spacing: 0) {
             grabber
+            topBar
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Dietary preferences")
                     .font(AppTheme.display)
                     .foregroundStyle(AppTheme.onSurface)
+                    .accessibilityAddTraits(.isHeader)
                 Text("We'll keep these in mind for your recommendations.")
                     .font(.system(size: 13, weight: .light))
                     .foregroundStyle(AppTheme.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
-            .padding(.top, 8)
             .padding(.bottom, 24)
 
             ScrollView {
@@ -66,6 +67,25 @@ struct DietaryPreferencesView: View {
             .frame(width: 40, height: 5)
             .padding(.top, 10)
             .padding(.bottom, 4)
+            .accessibilityHidden(true)
+    }
+
+    /// Choices save as they're tapped, so "Done" only closes the sheet.
+    private var topBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                dismiss()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.sage)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
     }
 
     private func chip(_ pref: DietaryPreference) -> some View {
@@ -86,13 +106,17 @@ struct DietaryPreferencesView: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 13)
+            .frame(minHeight: 44)
             .background(isOn ? AppTheme.sage : AppTheme.surface)
             .clipShape(Capsule())
         }
         .buttonStyle(ScalePress())
+        .accessibilityLabel(pref.label)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

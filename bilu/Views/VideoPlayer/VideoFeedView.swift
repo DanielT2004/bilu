@@ -36,10 +36,18 @@ struct VideoFeedView: View {
                     .frame(width: 36, height: 36)
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
-                    .padding(.leading, 16)
-                    .padding(.top, 16)
+                    // 36 pt circle, 44 pt hit area; outer padding keeps it in place.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .padding(.leading, 12)
+                    .padding(.top, 12)
             }
+            .accessibilityLabel("Close")
+            .accessibilityHint("Closes the video feed")
+            .accessibilityIdentifier("video-close-button")
         }
+        // VoiceOver two-finger scrub closes the feed, like the swipe gestures do.
+        .accessibilityAction(.escape) { dismiss() }
         .background(Color.black)
         .offset(x: min(0, horizontalDrag), y: max(0, dragOffset))
         .gesture(

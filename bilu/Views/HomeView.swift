@@ -274,11 +274,21 @@ struct HomeView: View {
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 3)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: index)
+                    .animation(motion(.spring(response: 0.3, dampingFraction: 0.8)), value: index)
             }
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Progress")
+        .accessibilityValue("Step \(index + 1) of 4")
+        .accessibilityIdentifier("explore-progress")
+    }
+
+    /// Returns nil when Reduce Motion is on so state changes jump instead of
+    /// springing, sliding or scaling.
+    private func motion(_ animation: Animation) -> Animation? {
+        reduceMotion ? nil : animation
     }
 
     // MARK: - ══════════ FEED STEP ══════════
@@ -336,6 +346,7 @@ struct HomeView: View {
                     .font(AppTheme.display)
                     .foregroundColor(C.onSurface)
                     .lineSpacing(2)
+                    .accessibilityAddTraits(.isHeader)
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
 
@@ -376,6 +387,7 @@ struct HomeView: View {
                     .fill(isSelected ? Color.white.opacity(0.15) : C.neutralBg)
                     .frame(width: 42, height: 42)
                     .overlay(Text(opt.icon).font(.system(size: 20)))
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
@@ -405,9 +417,10 @@ struct HomeView: View {
             .background(isSelected ? C.sage : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+            .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func timeWindowPicker(options: [String]) -> some View {
@@ -421,17 +434,27 @@ struct HomeView: View {
                 ForEach(options, id: \.self) { t in
                     let isSel = viewModel.selection.keyQuestionTimeWindow == t
                     Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.selectKeyQuestionTimeWindow(t) } label: {
-                        Text(t)
-                            .font(.system(size: 12))
-                            .foregroundColor(isSel ? .white : C.muted)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(isSel ? C.sage : C.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSel)
+                        HStack {
+                            Text(t)
+                                .font(.system(size: 12))
+                            Spacer()
+                            if isSel {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .foregroundColor(isSel ? .white : C.muted)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(isSel ? C.sage : C.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .contentShape(Rectangle())
+                        .animation(motion(.spring(response: 0.2, dampingFraction: 0.7)), value: isSel)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSel ? .isSelected : [])
                 }
             }
         }
@@ -509,6 +532,7 @@ struct HomeView: View {
                 .font(AppTheme.display)
                 .foregroundColor(C.onSurface)
                 .lineSpacing(2)
+                .accessibilityAddTraits(.isHeader)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
 
@@ -556,7 +580,7 @@ struct HomeView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard expandedCategoryKey != nil else { return }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                withAnimation(motion(.spring(response: 0.35, dampingFraction: 0.72))) {
                     expandedCategoryKey = nil
                 }
             }
@@ -564,8 +588,11 @@ struct HomeView: View {
             if let surprise = surprise {
                 surpriseCard(surprise, dismissExpanded: expandedCategoryKey != nil)
                     .opacity(expandedCategoryKey != nil ? 0.18 : 1.0)
-                    .scaleEffect(expandedCategoryKey != nil ? 0.96 : 1.0)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.72), value: expandedCategoryKey)
+                    .scaleEffect(expandedCategoryKey != nil && !reduceMotion ? 0.96 : 1.0)
+                    .animation(motion(.spring(response: 0.35, dampingFraction: 0.72)), value: expandedCategoryKey)
+                    // Dimmed while a category is open: tapping it only closes that
+                    // category, so keep it out of VoiceOver until the grid is clear.
+                    .accessibilityHidden(expandedCategoryKey != nil)
                     .padding(.horizontal, 14)
                     .padding(.top, 10)
             }
@@ -586,6 +613,9 @@ struct HomeView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(ScalePress())
+                    .accessibilityLabel("Fine-tune")
+                    .accessibilityHint("Set price, party size, parking and extras")
+                    .accessibilityIdentifier("explore-fine-tune")
                     .disabled(!viewModel.canContinueFromFoodFeeling)
                     .opacity(viewModel.canContinueFromFoodFeeling ? 1 : 0.4)
                 }
@@ -596,7 +626,7 @@ struct HomeView: View {
             // Browse by cuisine link
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                withAnimation(motion(.spring(response: 0.25, dampingFraction: 0.7))) {
                     viewModel.setCuisineMode(.country)
                 }
             } label: {
@@ -621,7 +651,7 @@ struct HomeView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             guard expandedCategoryKey != nil else { return }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+            withAnimation(motion(.spring(response: 0.35, dampingFraction: 0.72))) {
                 expandedCategoryKey = nil
             }
         }
@@ -641,41 +671,53 @@ struct HomeView: View {
         let isSelected = viewModel.selectedVibe == vibe
         return Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            withAnimation(motion(.spring(response: 0.25, dampingFraction: 0.7))) {
                 viewModel.selectVibe(vibe)
             }
         } label: {
-            Text(vibe)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(isSelected ? .white : C.onSurface)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+            pillLabel(vibe, isOn: isSelected)
                 .background(isSelected ? C.sage : C.white)
                 .clipShape(Capsule())
                 .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: isSelected ? 8 : 5, x: 0, y: 2)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+                .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
+                .pillHitArea()
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Pill text with a checkmark when on, so selection doesn't rely on colour alone.
+    private func pillLabel(_ label: String, isOn: Bool) -> some View {
+        HStack(spacing: 5) {
+            if isOn {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .accessibilityHidden(true)
+            }
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+        }
+        .foregroundColor(isOn ? .white : C.onSurface)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     private func occasionToggle(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            withAnimation(motion(.spring(response: 0.25, dampingFraction: 0.7))) {
                 action()
             }
         } label: {
-            Text(label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(isOn ? .white : C.onSurface)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+            pillLabel(label, isOn: isOn)
                 .background(isOn ? C.terracotta : C.white)
                 .clipShape(Capsule())
                 .shadow(color: isOn ? C.terracotta.opacity(0.22) : C.shadowColor, radius: isOn ? 10 : 6, x: 0, y: 3)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isOn)
+                .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isOn)
+                .pillHitArea()
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     // MARK: - Food category card row helpers
@@ -722,47 +764,13 @@ struct HomeView: View {
                         viewModel.selectSubOption(sub.key, forCategory: cat.key)
                     },
                     onClose: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                        withAnimation(motion(.spring(response: 0.35, dampingFraction: 0.72))) {
                             expandedCategoryKey = nil
                         }
                     }
                 )
             }
         }
-    }
-
-    private func compactDimmedCard(_ cat: FoodCategoryOption) -> some View {
-        let isSelected = viewModel.selection.foodFeelings.contains(cat.key)
-        // Tapping the compact sibling is a "dismiss" gesture, not an expand.
-        // The user gets a clean grid on this first tap; they can then tap this
-        // card again as a deliberate second choice.
-        return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
-                expandedCategoryKey = nil
-            }
-        } label: {
-            VStack(spacing: 4) {
-                Text(cat.emoji)
-                    .font(.system(size: 22))
-                Text(cat.title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isSelected ? C.sage : C.muted)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .background(C.white)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(isSelected ? C.sage : Color.clear, lineWidth: 2)
-            )
-            .opacity(0.35)
-            .scaleEffect(0.92)
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: expandedCategoryKey)
     }
 
     // MARK: - Expanded food category card
@@ -787,7 +795,7 @@ struct HomeView: View {
             // and can then tap any card as a second deliberate tap.
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                withAnimation(motion(.spring(response: 0.35, dampingFraction: 0.72))) {
                     if isDimmed {
                         // First tap: just close the open dropdown, don't expand this card.
                         expandedCategoryKey = nil
@@ -808,7 +816,8 @@ struct HomeView: View {
                     HStack(alignment: .top, spacing: 0) {
                         Text(cat.emoji)
                             .font(.system(size: isExpanded ? 28 : 24))
-                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isExpanded)
+                            .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isExpanded)
+                            .accessibilityHidden(true)
                         Spacer()
                         // Chosen-sub badge: visible on collapsed selected cards
                         if !badgeLabel.isEmpty && !isExpanded {
@@ -819,7 +828,14 @@ struct HomeView: View {
                                 .padding(.vertical, 3)
                                 .background(C.sage)
                                 .clipShape(Capsule())
-                                .transition(.scale(scale: 0.7).combined(with: .opacity))
+                                .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
+                        } else if isSelected && !isExpanded {
+                            // Selected without a sub-pick: a checkmark, so the
+                            // border colour isn't the only cue.
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(C.sage)
+                                .accessibilityHidden(true)
                         }
                     }
                     .padding(.bottom, 8)
@@ -841,6 +857,9 @@ struct HomeView: View {
                 .padding(14)
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityValue(isExpanded ? "Expanded" : "")
+            .accessibilityHint(isExpanded ? "Collapses and removes this choice" : "Shows dishes to pick from")
 
             // Sub-options row — pops in when expanded
             if isExpanded && !cat.subOptions.isEmpty {
@@ -864,11 +883,14 @@ struct HomeView: View {
             color: isExpanded ? C.sage.opacity(0.22) : (isSelected ? C.sage.opacity(0.12) : Color.black.opacity(0.06)),
             radius: 12, x: 0, y: 4
         )
-        .scaleEffect(isDimmed ? 0.96 : (isExpanded ? 1.01 : 1.0))
+        .scaleEffect(reduceMotion ? 1.0 : (isDimmed ? 0.96 : (isExpanded ? 1.01 : 1.0)))
         .opacity(isDimmed ? 0.18 : 1.0)
-        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isExpanded)
-        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isDimmed)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+        .animation(motion(.spring(response: 0.35, dampingFraction: 0.72)), value: isExpanded)
+        .animation(motion(.spring(response: 0.35, dampingFraction: 0.72)), value: isDimmed)
+        .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
+        // A dimmed card's only action is closing the open one; hide it from
+        // VoiceOver while another category is open.
+        .accessibilityHidden(isDimmed)
     }
 
     @ViewBuilder
@@ -883,7 +905,7 @@ struct HomeView: View {
                     isSelected: selectedSubs.contains(sub.key),
                     onTap: {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                        withAnimation(motion(.spring(response: 0.25, dampingFraction: 0.7))) {
                             viewModel.selectSubOption(sub.key, forCategory: cat.key)
                         }
                     }
@@ -900,7 +922,7 @@ struct HomeView: View {
             if dismissExpanded {
                 // While a dropdown is open this card acts as a dismiss target,
                 // not as a selection — same two-tap contract as the dimmed cards.
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                withAnimation(motion(.spring(response: 0.35, dampingFraction: 0.72))) {
                     expandedCategoryKey = nil
                 }
             } else {
@@ -910,6 +932,7 @@ struct HomeView: View {
             HStack(spacing: 12) {
                 Text(cat.emoji)
                     .font(.system(size: 22))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(cat.title)
                         .font(.system(size: 14, weight: .medium))
@@ -932,9 +955,10 @@ struct HomeView: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 12, x: 0, y: 4)
             .opacity(isSelected ? 1.0 : 0.78)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+            .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
         .buttonStyle(ScalePress())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Legacy food feeling step (old occasions)
@@ -962,6 +986,7 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 .animation(.none, value: viewModel.cuisineMode == .vibe)
+                .accessibilityAddTraits(.isHeader)
 
             Text(viewModel.cuisineMode == .vibe
                  ? "Pick one or more — we'll find the cuisine"
@@ -1004,6 +1029,9 @@ struct HomeView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(ScalePress())
+                    .accessibilityLabel("Fine-tune")
+                    .accessibilityHint("Set price, party size, parking and extras")
+                    .accessibilityIdentifier("explore-fine-tune")
                     .disabled(!viewModel.canContinueFromFoodFeeling)
                     .opacity(viewModel.canContinueFromFoodFeeling ? 1 : 0.4)
                 }
@@ -1015,19 +1043,20 @@ struct HomeView: View {
     }
 
     private var cuisineModeToggle: some View {
-        ZStack {
-            Capsule().fill(C.neutralBg)
-            HStack(spacing: 0) {
-                toggleSegment("Vibe", isActive: viewModel.cuisineMode == .vibe) {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { viewModel.setCuisineMode(.vibe) }
-                }
-                toggleSegment("Country", isActive: viewModel.cuisineMode == .country) {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { viewModel.setCuisineMode(.country) }
-                }
+        HStack(spacing: 0) {
+            toggleSegment("Vibe", isActive: viewModel.cuisineMode == .vibe) {
+                withAnimation(motion(.spring(response: 0.25, dampingFraction: 0.7))) { viewModel.setCuisineMode(.vibe) }
             }
-            .clipShape(Capsule())
+            toggleSegment("Country", isActive: viewModel.cuisineMode == .country) {
+                withAnimation(motion(.spring(response: 0.25, dampingFraction: 0.7))) { viewModel.setCuisineMode(.country) }
+            }
         }
+        // The track stays its compact visual size; the segments' tap areas
+        // extend above and below it to 44 pt.
+        .background(Capsule().fill(C.neutralBg).padding(.vertical, Self.segmentHitInset))
     }
+
+    private static let segmentHitInset: CGFloat = 10
 
     private func toggleSegment(_ label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -1038,15 +1067,19 @@ struct HomeView: View {
                 .padding(.vertical, 6)
                 .background(isActive ? C.sage : Color.clear)
                 .clipShape(Capsule())
+                .padding(.vertical, Self.segmentHitInset)
+                .frame(minWidth: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private func countryCard(flag: String, name: String) -> some View {
         let isSelected = viewModel.selection.selectedCountry == name
         return Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.selectCountry(name) } label: {
             HStack(spacing: 10) {
-                Text(flag).font(.system(size: 18))
+                Text(flag).font(.system(size: 18)).accessibilityHidden(true)
                 Text(name)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(isSelected ? .white : C.onSurface)
@@ -1063,9 +1096,10 @@ struct HomeView: View {
             .background(isSelected ? C.sage : C.white)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 10, x: 0, y: 3)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+            .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func foodFeelingCard(opt: FoodFeelingOption) -> some View {
@@ -1104,9 +1138,10 @@ struct HomeView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: isSelected ? C.sage.opacity(0.18) : Color.black.opacity(0.06), radius: 10, x: 0, y: 3)
             .opacity(opt.isSurprise && !isSelected ? 0.75 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+            .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - ══════════ FINE-TUNE STEP ══════════
@@ -1126,6 +1161,7 @@ struct HomeView: View {
                 .font(AppTheme.display)
                 .foregroundColor(C.onSurface)
                 .lineSpacing(2)
+                .accessibilityAddTraits(.isHeader)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
 
@@ -1154,10 +1190,10 @@ struct HomeView: View {
             ftSectionLabel("Extras")
                 .padding(.top, 28)
             VStack(spacing: 10) {
-                ftExtraRow(icon: "clock.fill",   label: "Open Right Now",    isOn: viewModel.selection.openNow)      { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { viewModel.toggleOpenNow() } }
-                ftExtraRow(icon: "leaf.fill",    label: "Outdoor Seating",   isOn: viewModel.selection.outdoorSeating) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { viewModel.toggleOutdoorSeating() } }
-                ftExtraRow(icon: "pawprint.fill", label: "Pet Friendly",     isOn: viewModel.selection.petFriendly)   { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { viewModel.togglePetFriendly() } }
-                ftExtraRow(icon: "figure.roll",  label: "Wheelchair Access", isOn: viewModel.selection.wheelchairAccess) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { viewModel.toggleWheelchairAccess() } }
+                ftExtraRow(icon: "clock.fill",   label: "Open Right Now",    isOn: viewModel.selection.openNow)      { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(motion(.spring(response: 0.2, dampingFraction: 0.7))) { viewModel.toggleOpenNow() } }
+                ftExtraRow(icon: "leaf.fill",    label: "Outdoor Seating",   isOn: viewModel.selection.outdoorSeating) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(motion(.spring(response: 0.2, dampingFraction: 0.7))) { viewModel.toggleOutdoorSeating() } }
+                ftExtraRow(icon: "pawprint.fill", label: "Pet Friendly",     isOn: viewModel.selection.petFriendly)   { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(motion(.spring(response: 0.2, dampingFraction: 0.7))) { viewModel.togglePetFriendly() } }
+                ftExtraRow(icon: "figure.roll",  label: "Wheelchair Access", isOn: viewModel.selection.wheelchairAccess) { UIImpactFeedbackGenerator(style: .light).impactOccurred(); withAnimation(motion(.spring(response: 0.2, dampingFraction: 0.7))) { viewModel.toggleWheelchairAccess() } }
             }
             .padding(.top, 10)
             .padding(.horizontal, 20)
@@ -1188,6 +1224,8 @@ struct HomeView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(C.muted)
                         .padding(.vertical, 6)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
             }
             .padding(.horizontal, 20)
@@ -1203,6 +1241,7 @@ struct HomeView: View {
             .textCase(.uppercase)
             .foregroundColor(C.muted)
             .padding(.horizontal, 20)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var ftPriceGrid: some View {
@@ -1210,16 +1249,28 @@ struct HomeView: View {
             ForEach(["$", "$$", "$$$", "$$$$"], id: \.self) { tier in
                 let isSel = viewModel.selection.pricePoints.contains(tier)
                 Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.togglePrice(tier) } label: {
-                    Text(tier)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(isSel ? C.onSurface : C.muted)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(isSel ? C.neutralBg : C.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSel)
+                    HStack(spacing: 3) {
+                        if isSel {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(C.sage)
+                        }
+                        Text(tier)
+                            .font(.system(size: 15, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundColor(isSel ? C.onSurface : C.muted)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(isSel ? C.neutralBg : C.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSel)
                 }
                 .buttonStyle(ScalePress())
+                .accessibilityLabel(RecommendationCard.spokenPrice(tier).map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? tier)
+                .accessibilityAddTraits(isSel ? .isSelected : [])
+                .accessibilityIdentifier("fine-tune-price-\(tier.count)")
             }
         }
     }
@@ -1232,6 +1283,8 @@ struct HomeView: View {
                     .tracking(1.2)
                     .textCase(.uppercase)
                     .foregroundColor(C.muted)
+                    // The section header above already says "Party Size".
+                    .accessibilityHidden(true)
                 Spacer()
                 Text(viewModel.selection.partySize < 10
                      ? "0\(viewModel.selection.partySize) people"
@@ -1239,11 +1292,13 @@ struct HomeView: View {
                     .font(AppTheme.title)
                     .foregroundColor(C.sage)
                     .contentTransition(.numericText())
+                    .accessibilityLabel(partySizeSpoken)
+                    .accessibilityIdentifier("fine-tune-party-size")
             }
 
             // Dots + stepper pill
             HStack {
-                Button { viewModel.adjustPartySize(-1) } label: {
+                Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.adjustPartySize(-1) } label: {
                     Circle()
                         .fill(C.surface)
                         .frame(width: 44, height: 44)
@@ -1254,6 +1309,9 @@ struct HomeView: View {
                         )
                 }
                 .buttonStyle(ScalePress())
+                .accessibilityLabel("Fewer people")
+                .accessibilityValue(partySizeSpoken)
+                .accessibilityIdentifier("fine-tune-party-decrease")
 
                 Spacer()
                 HStack(spacing: 6) {
@@ -1261,12 +1319,13 @@ struct HomeView: View {
                         Circle()
                             .fill(i < viewModel.selection.partySize ? C.sage : C.sageMd)
                             .frame(width: 8, height: 8)
-                            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: viewModel.selection.partySize)
+                            .animation(motion(.spring(response: 0.2, dampingFraction: 0.7)), value: viewModel.selection.partySize)
                     }
                 }
+                .accessibilityHidden(true)
                 Spacer()
 
-                Button { viewModel.adjustPartySize(1) } label: {
+                Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.adjustPartySize(1) } label: {
                     Circle()
                         .fill(C.sage)
                         .frame(width: 44, height: 44)
@@ -1277,6 +1336,9 @@ struct HomeView: View {
                         )
                 }
                 .buttonStyle(ScalePress())
+                .accessibilityLabel("More people")
+                .accessibilityValue(partySizeSpoken)
+                .accessibilityIdentifier("fine-tune-party-increase")
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
@@ -1286,6 +1348,12 @@ struct HomeView: View {
         .padding(20)
         .background(C.surface)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    /// "05 people" on screen would be read as "zero five people".
+    private var partySizeSpoken: String {
+        let n = viewModel.selection.partySize
+        return n == 1 ? "1 person" : "\(n) people"
     }
 
     private var ftParkingChips: some View {
@@ -1299,8 +1367,10 @@ struct HomeView: View {
                 let isSel = viewModel.selection.parking.contains(opt.label)
                 Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); viewModel.toggleParking(opt.label) } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: opt.icon)
-                            .font(.system(size: 13))
+                        // Selected chips swap their icon for a checkmark so the
+                        // state doesn't rely on colour alone.
+                        Image(systemName: isSel ? "checkmark" : opt.icon)
+                            .font(.system(size: 13, weight: isSel ? .bold : .regular))
                         Text(opt.label)
                             .font(.system(size: 13, weight: .medium))
                     }
@@ -1311,44 +1381,46 @@ struct HomeView: View {
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(isSel ? C.sage : C.ghostBorder, lineWidth: 1))
                     .shadow(color: isSel ? C.sage.opacity(0.15) : Color.black.opacity(0.06), radius: 8, x: 0, y: 3)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSel)
+                    .animation(motion(.spring(response: 0.25, dampingFraction: 0.7)), value: isSel)
+                    .pillHitArea()
                 }
                 .buttonStyle(ScalePress())
+                .accessibilityLabel(opt.label)
+                .accessibilityAddTraits(isSel ? .isSelected : [])
             }
             Spacer()
         }
     }
 
     private func ftExtraRow(icon: String, label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isOn ? C.surface : C.neutralBg)
-                    .frame(width: 40, height: 40)
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(isOn ? C.sage : C.muted)
+        // A native switch so VoiceOver announces the role and on/off state.
+        Toggle(isOn: Binding(get: { isOn }, set: { newValue in if newValue != isOn { action() } })) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isOn ? C.surface : C.neutralBg)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(isOn ? C.sage : C.muted)
+                }
+                .accessibilityHidden(true)
+                Text(label)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(C.onSurface)
+                Spacer(minLength: 0)
             }
-            Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(C.onSurface)
-            Spacer()
-            // Toggle
-            ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(isOn ? C.sage : C.toggleOff)
-                    .frame(width: 48, height: 26)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 20, height: 20)
-                    .padding(3)
-                    .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
-            }
+            // Keep the whole row tappable, as before. Only the label area takes
+            // this tap; the switch and VoiceOver activation go through the Toggle.
+            .contentShape(Rectangle())
+            .onTapGesture { action() }
         }
+        .toggleStyle(.switch)
+        .tint(C.sage)
+        .accessibilityIdentifier("fine-tune-extra-" + label.lowercased().replacingOccurrences(of: " ", with: "-"))
         .padding(16)
         .background(C.white)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onTapGesture { action() }
     }
 
     // MARK: - ══════════ LOADING STEP ══════════
@@ -1391,6 +1463,7 @@ struct HomeView: View {
                         .foregroundStyle(C.onSurface)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
+                        .accessibilityAddTraits(.isHeader)
 
                     if !viewModel.recommendations.isEmpty {
                         Text("\(displayedRecommendationCount) spots curated for your vibe")
@@ -1434,7 +1507,7 @@ struct HomeView: View {
                 if viewModel.revealPhase >= .mapIn {
                     BiluMapView(recommendations: viewModel.recommendations, isLoading: viewModel.isEnriching)
                         .padding(.top, 20)
-                        .transition(.scale(scale: 0.96, anchor: .center).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.96, anchor: .center).combined(with: .opacity))
                 }
 
                 // ── Cards (gated on .cardsIn) ─────────────────────────────
@@ -1446,9 +1519,9 @@ struct HomeView: View {
                                 selectedPlaceTags = nil
                                 selectedRestaurant = rec
                             })
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                                 .animation(
-                                    .spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.07),
+                                    motion(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.07)),
                                     value: viewModel.recommendations.count
                                 )
                         }
@@ -1470,6 +1543,7 @@ struct HomeView: View {
                             HStack(spacing: 7) {
                                 Image(systemName: viewModel.currentVibeIsSaved ? "checkmark" : AppTheme.Icon.vibe)
                                     .font(.system(size: 14))
+                                    .accessibilityHidden(true)
                                 Text(viewModel.currentVibeIsSaved ? "Saved" : "Save this vibe")
                                     .font(.system(size: 14, weight: .semibold))
                             }
@@ -1501,6 +1575,8 @@ struct HomeView: View {
                                 .shadow(color: C.shadowColor, radius: 16, y: 6)
                         }
                         .buttonStyle(ScalePress())
+                        .accessibilityLabel("Share these spots")
+                        .accessibilityIdentifier("explore-share")
                     }
 
                     Button(action: { Haptics.light(); viewModel.reset() }) {
@@ -1508,6 +1584,8 @@ struct HomeView: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(C.muted)
                             .padding(.vertical, 8)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(ScalePress())
                 }
@@ -1649,6 +1727,7 @@ private struct SubBubble: View {
     let isSelected: Bool
     let onTap: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
 
     var body: some View {
@@ -1663,32 +1742,43 @@ private struct SubBubble: View {
                         Circle()
                             .strokeBorder(isSelected ? Color.white : Color.clear, lineWidth: 2)
                     )
-                    .scaleEffect(isSelected ? 1.1 : 1.0)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+                    .scaleEffect(isSelected && !reduceMotion ? 1.1 : 1.0)
+                    .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
                 Text(sub.label)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(appeared ? 0.9 : 0))
                     .lineLimit(1)
                     .animation(
-                        .spring(response: 0.3, dampingFraction: 0.65)
+                        reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65)
                             .delay(Double(index) * 0.075 + 0.10),
                         value: appeared
                     )
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(sub.label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .offset(y: appeared ? 0 : 16)
         .scaleEffect(appeared ? 1.0 : 0.78)
         .animation(
-            .spring(response: 0.3, dampingFraction: 0.65)
+            reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.65)
                 .delay(Double(index) * 0.075),
             value: appeared
         )
         .task(id: trigger) {
+            // Reduce Motion: show the bubbles in place, no staggered pop-in.
+            if reduceMotion { appeared = true; return }
             appeared = false
             try? await Task.sleep(nanoseconds: 16_000_000)
             appeared = true
         }
+    }
+}
+
+private extension View {
+    /// Keeps a compact pill's look but gives it a 44 pt tall tap target.
+    func pillHitArea() -> some View {
+        frame(minHeight: 44).contentShape(Rectangle())
     }
 }
 
