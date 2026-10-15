@@ -80,6 +80,7 @@ enum PromptConstants {
         "Cookies & baked":     "The user wants freshly baked cookies or pastries.",
         "Cake & fancy":        "The user wants a patisserie or plated dessert experience.",
         "Boba & sweet drinks": "The user wants boba or sweet drinks.",
+        "Fresh baked":         "The user wants a bakery known for baking fresh — bread, croissants and pastries out of the oven that morning. Favor places with a daily morning bake.",
 
         // Drinks sub-flow — Drinks
         "Cocktail bar":        "The user wants a craft cocktail bar — aesthetic, creative drinks, worth the trip.",

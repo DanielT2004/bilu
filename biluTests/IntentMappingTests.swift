@@ -209,6 +209,36 @@ final class IntentMappingTests: XCTestCase {
         XCTAssertFalse(result.contains { $0.name == "far" || $0.name == "noCoords" })
     }
 
+    // MARK: - Every refinement reaches the prompt (P2-1)
+
+    func testEveryRefinementAnswerHasPromptText() {
+        for intent in FeedIntent.allCases {
+            for chip in intent.refinements {
+                let selection = HomeViewModel.selection(for: intent, refinement: chip, lateNight: false)
+                // Food's chips pick an occasion instead of an answer.
+                if selection.keyQuestionAnswer.isEmpty {
+                    XCTAssertNotNil(chip.occasion, "\(intent) / \(chip.label) changes nothing")
+                    XCTAssertNotNil(PromptConstants.occasionPrompts[selection.occasion], "\(chip.label)")
+                    continue
+                }
+                guard let text = PromptConstants.keyQuestionPrompts[selection.keyQuestionAnswer] else {
+                    XCTFail("\(intent) / \(chip.label) has no prompt text for \(selection.keyQuestionAnswer)")
+                    continue
+                }
+                XCTAssertTrue(PromptBuilder.getPrompt(selection: selection).contains(text), "\(chip.label)")
+            }
+        }
+    }
+
+    func testFreshBakedPromptAsksForAMorningBake() {
+        let selection = HomeViewModel.selection(for: .sweet, refinement: refinement(.sweet, "Fresh baked"),
+                                                lateNight: false)
+        let prompt = PromptBuilder.getPrompt(selection: selection)
+        XCTAssertTrue(prompt.contains("The user wants a great bakery."))
+        XCTAssertTrue(prompt.contains("bread, croissants and pastries"))
+        XCTAssertTrue(prompt.contains("morning bake"))
+    }
+
     // MARK: - No search area, no discovery (P1-1)
 
     func testDirectIntentsWithoutAnAreaStayInTheSheetAndSpendNothing() async {
