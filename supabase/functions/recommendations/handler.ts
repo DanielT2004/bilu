@@ -27,23 +27,37 @@ const GEMINI_ATTEMPT_TIMEOUT_MS = 18_000;
  * One latency budget for the whole request, measured from handler start.
  *
  * Auth, discovery access and paid-API quota checks each have a 5 s fetch
- * timeout, so together they can take up to 15 s. They run before Gemini, so
- * Gemini only gets what is left until `generationDeadlineMs`: slow checks shrink
- * the Gemini window instead of extending the response. A failure then has
- * `refundTimeoutMs` to return the discovery before the error response is sent.
+ * timeout. They run before Gemini, so Gemini only gets what is left until
+ * `generationDeadlineMs`: slow checks shrink the Gemini window instead of
+ * extending the response. The window is checked before access is reserved,
+ * before quota is billed and before Gemini starts; with less than
+ * `minimumGenerationMs` left the request stops (refunding anything reserved).
  *
- * The iOS client waits 30 s (GeminiService.recommendationTimeout). Keep
- * RECOMMENDATIONS_TOTAL_BUDGET_MS well below that so cold starts and network
- * time cannot make a charged success arrive after the client gave up.
+ * That gives two guarantees, measured on the handler's clock:
+ * - a charged success is only ever sent before `generationDeadlineMs` (20 s);
+ * - any later response is a refunded failure, sent by
+ *   RECOMMENDATIONS_WORST_CASE_MS (26 s: the last window check can pass with
+ *   just over 3 s left, one 5 s check can follow, then a 4 s refund).
+ *
+ * The iOS client waits 30 s (GeminiService.recommendationTimeout), leaving
+ * 10 s on the success path for cold start, the gateway and the network.
  */
 export const RECOMMENDATIONS_BUDGET = {
   generationDeadlineMs: 20_000,
-  /** With less than this left after the checks, skip Gemini and refund. */
+  /** With less than this left, do not reserve/bill/start Gemini; refund. */
   minimumGenerationMs: 3_000,
+  /** Upper bound of each pre-check (fetch timeout in paid_api_guard / discovery_access). */
+  precheckTimeoutMs: 5_000,
   refundTimeoutMs: 4_000,
 };
-export const RECOMMENDATIONS_TOTAL_BUDGET_MS =
-  RECOMMENDATIONS_BUDGET.generationDeadlineMs +
+/** A charged success is never sent later than this after handler start. */
+export const RECOMMENDATIONS_SUCCESS_DEADLINE_MS =
+  RECOMMENDATIONS_BUDGET.generationDeadlineMs;
+/** Latest possible (refunded failure) response after handler start. */
+export const RECOMMENDATIONS_WORST_CASE_MS =
+  RECOMMENDATIONS_BUDGET.generationDeadlineMs -
+  RECOMMENDATIONS_BUDGET.minimumGenerationMs +
+  RECOMMENDATIONS_BUDGET.precheckTimeoutMs +
   RECOMMENDATIONS_BUDGET.refundTimeoutMs;
 const CAPACITY_COOLDOWN_MS = 60_000;
 let capacityUnavailableUntil = 0;
@@ -524,6 +538,16 @@ export async function handleRecommendations(
 
     requireMeteredDiscovery(execution);
     const user = execution?.user ?? await dependencies.authenticate(req);
+    // Each later step needs a real Gemini window. Stopping before access is
+    // reserved means a slow auth check never charges (or relies on a refund).
+    const requireGenerationWindow = () => {
+      if (
+        generationDeadline - performance.now() < budget.minimumGenerationMs
+      ) {
+        throw new UpstreamTimeoutError();
+      }
+    };
+    requireGenerationWindow();
 
     // A warm Edge Function instance remembers a recent provider quota failure.
     // This is intentionally a best-effort circuit breaker; it prevents a burst
@@ -565,6 +589,7 @@ export async function handleRecommendations(
       );
       reservedAccess = { userId: user.id, source: accessSource, rewardToken };
     }
+    requireGenerationWindow();
     // Only bill the paid-API quota after access is reserved. A request rejected
     // for needing an ad must never consume the user's API allowance.
     const quota = await dependencies.consumeQuota(user.id, PAID_API_QUOTA);

@@ -5,15 +5,33 @@ import {
 import {
   handleRecommendations,
   RECOMMENDATIONS_BUDGET,
-  RECOMMENDATIONS_TOTAL_BUDGET_MS,
+  RECOMMENDATIONS_SUCCESS_DEADLINE_MS,
+  RECOMMENDATIONS_WORST_CASE_MS,
   recommendationsDependencies,
 } from "./handler.ts";
+import {
+  consumeDiscoveryAccess,
+  refundDiscoveryAccess,
+} from "../_shared/discovery_access.ts";
+import {
+  consumePaidAPIQuota,
+  quotaPolicy,
+  requireAuthenticatedUser,
+} from "../_shared/paid_api_guard.ts";
 
-/** GeminiService.recommendationTimeout in the iOS app. */
-const CLIENT_TIMEOUT_MS = 30_000;
-/** Each pre-check fetch (auth, discovery access, paid quota) times out at 5 s. */
-const PRECHECK_FETCH_TIMEOUT_MS = 5_000;
-const PRECHECK_COUNT = 3;
+/** Read from GeminiService.swift so the two sides cannot drift apart. */
+const CLIENT_TIMEOUT_MS = await (async () => {
+  const swift = await Deno.readTextFile(
+    new URL("../../../bilu/Services/GeminiService.swift", import.meta.url),
+  );
+  const match = swift.match(
+    /static let recommendationTimeout: TimeInterval = (\d+(?:\.\d+)?)/,
+  );
+  if (!match) throw new Error("GeminiService.recommendationTimeout not found");
+  return Number(match[1]) * 1_000;
+})();
+/** Cold start, gateway, TLS and transfer time the handler's clock cannot see. */
+const UNSEEN_OVERHEAD_MS = 5_000;
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -21,11 +39,18 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const testBudget = {
   generationDeadlineMs: 300,
   minimumGenerationMs: 60,
+  precheckTimeoutMs: 100,
   refundTimeoutMs: 100,
 };
+const testWorstCaseMs = testBudget.generationDeadlineMs -
+  testBudget.minimumGenerationMs + testBudget.precheckTimeoutMs +
+  testBudget.refundTimeoutMs;
+/** Timer jitter allowance for wall-clock assertions. */
+const SLACK_MS = 40;
 
 interface Ledger {
   consumed: number;
+  quotaBilled: number;
   refunds: number;
   refundTimeouts: (number | undefined)[];
   generationStarts: number[];
@@ -34,11 +59,15 @@ interface Ledger {
 
 function fakes(options: {
   precheckDelayMs?: number;
+  authMs?: number;
+  accessMs?: number;
+  quotaMs?: number;
   generationMs?: number;
   ignoreAbort?: boolean;
 }) {
   const ledger: Ledger = {
     consumed: 0,
+    quotaBilled: 0,
     refunds: 0,
     refundTimeouts: [],
     generationStarts: [],
@@ -49,16 +78,17 @@ function fakes(options: {
     ...recommendationsDependencies,
     budget: testBudget,
     authenticate: async () => {
-      await delay(precheck);
+      await delay(options.authMs ?? precheck);
       return { id: "user-1", isAnonymous: true };
     },
     consumeAccess: async () => {
-      await delay(precheck);
+      await delay(options.accessMs ?? precheck);
       ledger.consumed += 1;
       return "free" as const;
     },
     consumeQuota: async () => {
-      await delay(precheck);
+      await delay(options.quotaMs ?? precheck);
+      ledger.quotaBilled += 1;
       return {
         allowed: true,
         retryAfterSeconds: 0,
@@ -150,18 +180,21 @@ async function run(dependencies: typeof recommendationsDependencies) {
 }
 
 Deno.test("worst-case server time stays well inside the client timeout", () => {
-  const worstPrechecks = PRECHECK_COUNT * PRECHECK_FETCH_TIMEOUT_MS;
-  // Gemini ends at the generation deadline no matter how long checks took.
-  assert(worstPrechecks < RECOMMENDATIONS_BUDGET.generationDeadlineMs);
-  assertEquals(RECOMMENDATIONS_TOTAL_BUDGET_MS, 24_000);
-  // Leave at least 5 s for cold start, TLS and the gateway, which the
-  // handler's own clock cannot see.
-  assert(CLIENT_TIMEOUT_MS - RECOMMENDATIONS_TOTAL_BUDGET_MS >= 5_000);
-  // Even with the worst checks, a started Gemini call gets a real window.
+  const { generationDeadlineMs, minimumGenerationMs, precheckTimeoutMs } =
+    RECOMMENDATIONS_BUDGET;
+  // Three bounded checks can never by themselves outlast the deadline, and a
+  // started Gemini call always gets at least the minimum window.
+  assert(3 * precheckTimeoutMs < generationDeadlineMs);
+  assert(minimumGenerationMs > 0);
+  assertEquals(RECOMMENDATIONS_SUCCESS_DEADLINE_MS, 20_000);
+  assertEquals(RECOMMENDATIONS_WORST_CASE_MS, 26_000);
+  // A charged success leaves the client room for unseen overhead...
   assert(
-    RECOMMENDATIONS_BUDGET.generationDeadlineMs - worstPrechecks >=
-      RECOMMENDATIONS_BUDGET.minimumGenerationMs,
+    CLIENT_TIMEOUT_MS - RECOMMENDATIONS_SUCCESS_DEADLINE_MS >=
+      2 * UNSEEN_OVERHEAD_MS,
   );
+  // ...and even the slowest refunded failure normally reaches the client.
+  assert(CLIENT_TIMEOUT_MS > RECOMMENDATIONS_WORST_CASE_MS);
 });
 
 Deno.test("a fast request returns results and keeps the discovery spent", async () => {
@@ -170,6 +203,7 @@ Deno.test("a fast request returns results and keeps the discovery spent", async 
   assertEquals(response.status, 200);
   assertEquals(body.recommendations[0].name, "Tartine");
   assertEquals(ledger.consumed, 1);
+  assertEquals(ledger.quotaBilled, 1);
   assertEquals(ledger.refunds, 0);
 });
 
@@ -230,4 +264,133 @@ Deno.test("a success just inside the deadline is returned and not refunded", asy
   assertEquals(response.status, 200);
   assertEquals(ledger.refunds, 0);
   assert(elapsedMs < testBudget.generationDeadlineMs);
+});
+
+Deno.test("a slow auth check that uses up the window never charges", async () => {
+  // Auth alone leaves 300 - 250 = 50 ms, under the 60 ms minimum window.
+  const { ledger, dependencies } = fakes({ authMs: 250, generationMs: 10 });
+  const { response, body, elapsedMs } = await run(dependencies);
+  assertEquals(response.status, 504);
+  assertEquals(body.code, "UPSTREAM_TIMEOUT");
+  assertEquals(ledger.consumed, 0, "No discovery reserved");
+  assertEquals(ledger.quotaBilled, 0, "No paid-API quota billed");
+  assertEquals(ledger.refunds, 0, "Nothing to refund, so nothing can be lost");
+  assertEquals(ledger.generationStarts.length, 0);
+  assert(elapsedMs < testBudget.generationDeadlineMs, `${elapsedMs} ms`);
+});
+
+Deno.test("a slow access check refunds without billing the paid-API quota", async () => {
+  const { ledger, dependencies } = fakes({ accessMs: 260, generationMs: 10 });
+  const { response } = await run(dependencies);
+  assertEquals(response.status, 504);
+  assertEquals(ledger.consumed, 1);
+  assertEquals(ledger.quotaBilled, 0);
+  assertEquals(ledger.refunds, 1);
+  assertEquals(ledger.generationStarts.length, 0);
+});
+
+for (
+  const [name, slow] of [
+    ["auth", { authMs: 230 }],
+    ["access", { accessMs: 230 }],
+    ["quota", { quotaMs: 230 }],
+    ["every", { precheckDelayMs: 95 }],
+  ] as const
+) {
+  Deno.test(`slow ${name} pre-check: response stays inside the full-path budget`, async () => {
+    const { ledger, dependencies } = fakes({
+      ...slow,
+      generationMs: 1_000,
+      ignoreAbort: true,
+    });
+    const { response, elapsedMs } = await run(dependencies);
+    assertEquals(response.status, 504);
+    assertEquals(
+      ledger.refunds,
+      ledger.consumed,
+      "Every reserved discovery is refunded",
+    );
+    assert(elapsedMs <= testWorstCaseMs + SLACK_MS, `${elapsedMs} ms`);
+    await delay(1_000);
+  });
+}
+
+Deno.test("a success is only ever sent before the generation deadline", async () => {
+  for (const generationMs of [50, 150, 230, 290, 320]) {
+    const { ledger, dependencies } = fakes({
+      precheckDelayMs: 10,
+      generationMs,
+    });
+    const { response, elapsedMs } = await run(dependencies);
+    if (response.status === 200) {
+      assert(
+        elapsedMs <= testBudget.generationDeadlineMs + SLACK_MS,
+        `Charged success after ${elapsedMs} ms`,
+      );
+      assertEquals(ledger.refunds, 0);
+    } else {
+      assertEquals(response.status, 504);
+      assertEquals(ledger.refunds, 1);
+    }
+  }
+});
+
+/** Fake fetch that only settles when its abort signal fires. */
+function hangingFetch(): typeof fetch {
+  return (_input, init) =>
+    new Promise((_, reject) => {
+      const signal = init?.signal;
+      if (!signal) return; // A missing timeout would hang the test, failing it.
+      signal.addEventListener("abort", () => reject(signal.reason));
+    });
+}
+
+Deno.test("the real refund gives up at the handler's refund timeout", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = hangingFetch();
+  try {
+    const startedAt = performance.now();
+    const refunded = await refundDiscoveryAccess("user-1", "free", null, 80);
+    const elapsedMs = performance.now() - startedAt;
+    assertEquals(refunded, false);
+    assert(elapsedMs < 80 + SLACK_MS * 5, `${elapsedMs} ms`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("the real pre-checks give up at their fetch timeout", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = hangingFetch();
+  const settle = async (work: () => Promise<unknown>) => {
+    const startedAt = performance.now();
+    await work().then(() => {}, () => {});
+    return performance.now() - startedAt;
+  };
+  try {
+    const durations = await Promise.all([
+      settle(() =>
+        requireAuthenticatedUser(
+          new Request("https://local.invalid", {
+            headers: { Authorization: "Bearer test" },
+          }),
+        )
+      ),
+      settle(() => consumeDiscoveryAccess("user-1", null)),
+      settle(() =>
+        consumePaidAPIQuota(
+          "user-1",
+          quotaPolicy("recommendations", "TEST_ONLY", 5, 30, 1_000),
+        )
+      ),
+    ]);
+    for (const elapsedMs of durations) {
+      assert(
+        elapsedMs <= RECOMMENDATIONS_BUDGET.precheckTimeoutMs + 500,
+        `A pre-check took ${elapsedMs} ms`,
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
