@@ -163,7 +163,7 @@ A candidate is ready only when all of the following are true:
 - [x] Per-user quota returns the documented 429 response and retry guidance.
 - [ ] Global budget/capacity protection returns documented 429/503 behavior without repeated paid calls.
 - [ ] Gemini timeout stays within the client latency budget and returns the documented 504 code.
-  Budget as built: the server gives Gemini 19 s (`RECOMMENDATIONS_DEADLINE_MS`) and refunds the discovery on timeout; the app waits 30 s (`GeminiService.recommendationTimeout`) so it never gives up before the server does.
+  Budget as built (`RECOMMENDATIONS_BUDGET`): auth, access and quota checks plus Gemini share one 20 s window from handler start, so a charged success is sent by 20 s; any later response is a refunded 504, at most 26 s. The app waits 30 s (`GeminiService.recommendationTimeout`), leaving 10 s on the success path for cold start, gateway and network.
 - [ ] Logs contain request IDs and capacity metrics but no access tokens, prompts containing personal data, or API keys.
 - [x] CORS preflight and content-type handling succeed for the intended clients.
 

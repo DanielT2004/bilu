@@ -454,6 +454,92 @@ final class SavedPlacesPersistenceTests: XCTestCase {
         XCTAssertEqual(rows.first?.rating, "great")
     }
 
+    // MARK: Degraded state is reported, never hidden
+
+    func testHealthyStoreReportsPersistentStatus() throws {
+        let opened = PersistenceController.open(storeURL: storeURL)
+        XCTAssertEqual(opened.status, .persistent)
+        XCTAssertTrue(opened.status.isPersistent)
+        XCTAssertEqual(opened.container.configurations.first?.isStoredInMemoryOnly, false)
+
+        let store = SavedPlacesStore(context: opened.container.mainContext, persistenceStatus: opened.status)
+        XCTAssertFalse(store.savesAreTemporary)
+        XCTAssertNil(store.temporarySaveReason)
+    }
+
+    func testUnreadableStoreReportsTemporaryStatusAndStoreExposesIt() throws {
+        let garbage = Data("this is not a sqlite database".utf8)
+        try garbage.write(to: storeURL)
+
+        let opened = PersistenceController.open(storeURL: storeURL)
+
+        XCTAssertEqual(opened.status, .temporary(.unavailable))
+        XCTAssertFalse(opened.status.isPersistent)
+        XCTAssertEqual(opened.container.configurations.first?.isStoredInMemoryOnly, true)
+        let store = SavedPlacesStore(context: opened.container.mainContext, persistenceStatus: opened.status)
+        XCTAssertTrue(store.savesAreTemporary)
+        XCTAssertEqual(store.temporarySaveReason, .unavailable)
+        // Saving still works for the session and the bad file is untouched.
+        store.add(makeRecommendation(placeId: "session-only"), list: .wantToGo)
+        XCTAssertEqual(try places(in: opened.container).count, 1)
+        XCTAssertEqual(try Data(contentsOf: storeURL), garbage)
+    }
+
+    func testStoreThatCannotMigrateReportsTemporaryStatus() throws {
+        do {
+            let legacy = try ModelContainer(for: IncompatibleSchema.schema, configurations: [config(IncompatibleSchema.schema)])
+            let context = ModelContext(legacy)
+            context.insert(IncompatibleSchema.SavedPlace(identityKey: "keep-me", rating: "great", listTypeRaw: "saved"))
+            try context.save()
+        }
+        XCTAssertFalse(PersistenceController.open(storeURL: storeURL).status.isPersistent)
+    }
+
+    func testSimulatedFailureUsesMemoryAndLeavesRealStoreAlone() throws {
+        do {
+            let (container, store) = try openStore()
+            defer { withExtendedLifetime(container) {} }
+            store.add(makeRecommendation(placeId: "real"), list: .saved)
+        }
+        let filesBefore = try storeFiles()
+
+        do {
+            let opened = PersistenceController.open(storeURL: storeURL, simulateFailure: true)
+            XCTAssertEqual(opened.status, .temporary(.unavailable))
+            XCTAssertEqual(opened.container.configurations.first?.isStoredInMemoryOnly, true)
+            XCTAssertTrue(try places(in: opened.container).isEmpty)
+            SavedPlacesStore(context: opened.container.mainContext, persistenceStatus: opened.status)
+                .add(makeRecommendation(placeId: "temp"), list: .saved)
+        }
+
+        XCTAssertEqual(try storeFiles(), filesBefore)
+        // Keep the container alive while reading the fetched models.
+        let reopened = try open()
+        XCTAssertEqual(try places(in: reopened).map(\.identityKey), ["real"])
+    }
+
+    func testStoreDefaultsToPersistent() throws {
+        let container = PersistenceController.previewContainer()
+        XCTAssertFalse(SavedPlacesStore(context: container.mainContext).savesAreTemporary)
+    }
+
+    func testOutOfSpaceErrorsAreReportedAsLowStorage() {
+        let cocoa = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+        let wrapped = NSError(domain: "SwiftData.SwiftDataError", code: 1, userInfo: [NSUnderlyingErrorKey: cocoa])
+        let sqliteFull = NSError(domain: "NSSQLiteErrorDomain", code: 13)
+        let coreDataWithSQLite = NSError(domain: NSCocoaErrorDomain, code: 134_030, userInfo: ["NSSQLiteErrorDomain": 13])
+        let detailed = NSError(domain: NSCocoaErrorDomain, code: 1560, userInfo: ["NSDetailedErrors": [sqliteFull]])
+        let posix = NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))
+
+        for error in [cocoa, wrapped, sqliteFull, coreDataWithSQLite, detailed, posix] {
+            XCTAssertEqual(PersistenceController.failureReason(for: error), .lowStorage, "\(error)")
+        }
+        let corrupt = NSError(domain: NSCocoaErrorDomain, code: NSFileReadCorruptFileError)
+        let migration = NSError(domain: NSCocoaErrorDomain, code: 134_110)
+        XCTAssertEqual(PersistenceController.failureReason(for: corrupt), .unavailable)
+        XCTAssertEqual(PersistenceController.failureReason(for: migration), .unavailable)
+    }
+
     // MARK: Owner decision B: tags
 
     func testTasteTagsComeFromFoodFeelingsAndSubOptions() {

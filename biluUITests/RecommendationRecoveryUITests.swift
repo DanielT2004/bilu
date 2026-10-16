@@ -34,6 +34,16 @@ final class RecommendationRecoveryUITests: XCTestCase {
         }
     }
 
+    func testPlaceDetailsFailureRetriesWithoutANewSearch() {
+        let app = launch("placeDetails")
+        assertCard(app, title: "Couldn't load place details",
+                   message: "We found spots for you but couldn't confirm they're open right now. Try again — it won't use another discovery.",
+                   action: "Try again")
+        app.buttons["search-recovery-action"].tap()
+        XCTAssertTrue(recoveredCard(app).waitForExistence(timeout: 10), "Retrying details should reveal the results")
+        XCTAssertFalse(app.staticTexts["search-recovery-title"].exists)
+    }
+
     func testNoMatchOffersAdjustVibe() {
         let app = launch("noMatches")
         assertCard(app, title: "Nothing matched, yet",

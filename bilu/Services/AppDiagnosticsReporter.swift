@@ -40,6 +40,17 @@ nonisolated final class AppDiagnosticsReporter: NSObject, MXMetricManagerSubscri
         }
     }
 
+    /// Queues a one-off note that the saved-places store fell back to memory.
+    /// Only a fixed event name and reason code are sent (no paths, no user data),
+    /// and only when the user has opted in to sharing diagnostics.
+    func recordPersistenceFallback(reasonCode: String) {
+        guard UserDefaults.standard.bool(forKey: Self.consentDefaultsKey),
+              let payload = try? JSONSerialization.data(
+                  withJSONObject: ["event": "persistence_fallback", "reason": reasonCode]
+              ) else { return }
+        Task { await DiagnosticUploadQueue.shared.enqueue(kind: "diagnostic", payload: payload) }
+    }
+
     private func start() {
         guard !started else { return }
         started = true

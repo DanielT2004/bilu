@@ -66,6 +66,7 @@ export async function refundDiscoveryAccess(
   userId: string,
   accessSource: "free" | "rewarded",
   rewardToken: string | null,
+  timeoutMs = 5_000,
 ): Promise<boolean> {
   try {
     const response = await fetch(
@@ -82,7 +83,7 @@ export async function refundDiscoveryAccess(
           p_access_source: accessSource,
           p_reward_token: rewardToken || null,
         }),
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(timeoutMs),
       },
     );
     if (!response.ok) {

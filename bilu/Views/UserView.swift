@@ -59,6 +59,11 @@ struct UserView: View {
                 )
                 .padding(.horizontal, 20)
 
+                if let reason = store.temporarySaveReason {
+                    SavesNotKeptBanner(reason: reason)
+                        .padding(.horizontal, 20)
+                }
+
                 pendingSharesSection
 
                 savedVibesSection

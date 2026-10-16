@@ -19,13 +19,46 @@ import {
 
 /** Gemini model — see https://ai.google.dev/gemini-api/docs */
 const GEMINI_MODEL = "gemini-3.6-flash";
-// Maps-grounded generations regularly need more than eight seconds. Keep the
-// whole search below the 20-second SLO while allowing the first attempt enough
-// time to complete; fast malformed/empty responses can still use the fallback.
+// Maps-grounded generations regularly need more than eight seconds. Allow the
+// first attempt enough time to complete; fast malformed/empty responses can
+// still use the fallback within the overall generation deadline below.
 const GEMINI_ATTEMPT_TIMEOUT_MS = 18_000;
-// The iOS client waits 30 s (GeminiService.recommendationTimeout) so this
-// deadline, which refunds the reserved discovery, always fires first.
-const RECOMMENDATIONS_DEADLINE_MS = 19_000;
+/**
+ * One latency budget for the whole request, measured from handler start.
+ *
+ * Auth, discovery access and paid-API quota checks each have a 5 s fetch
+ * timeout. They run before Gemini, so Gemini only gets what is left until
+ * `generationDeadlineMs`: slow checks shrink the Gemini window instead of
+ * extending the response. The window is checked before access is reserved,
+ * before quota is billed and before Gemini starts; with less than
+ * `minimumGenerationMs` left the request stops (refunding anything reserved).
+ *
+ * That gives two guarantees, measured on the handler's clock:
+ * - a charged success is only ever sent before `generationDeadlineMs` (20 s);
+ * - any later response is a refunded failure, sent by
+ *   RECOMMENDATIONS_WORST_CASE_MS (26 s: the last window check can pass with
+ *   just over 3 s left, one 5 s check can follow, then a 4 s refund).
+ *
+ * The iOS client waits 30 s (GeminiService.recommendationTimeout), leaving
+ * 10 s on the success path for cold start, the gateway and the network.
+ */
+export const RECOMMENDATIONS_BUDGET = {
+  generationDeadlineMs: 20_000,
+  /** With less than this left, do not reserve/bill/start Gemini; refund. */
+  minimumGenerationMs: 3_000,
+  /** Upper bound of each pre-check (fetch timeout in paid_api_guard / discovery_access). */
+  precheckTimeoutMs: 5_000,
+  refundTimeoutMs: 4_000,
+};
+/** A charged success is never sent later than this after handler start. */
+export const RECOMMENDATIONS_SUCCESS_DEADLINE_MS =
+  RECOMMENDATIONS_BUDGET.generationDeadlineMs;
+/** Latest possible (refunded failure) response after handler start. */
+export const RECOMMENDATIONS_WORST_CASE_MS =
+  RECOMMENDATIONS_BUDGET.generationDeadlineMs -
+  RECOMMENDATIONS_BUDGET.minimumGenerationMs +
+  RECOMMENDATIONS_BUDGET.precheckTimeoutMs +
+  RECOMMENDATIONS_BUDGET.refundTimeoutMs;
 const CAPACITY_COOLDOWN_MS = 60_000;
 let capacityUnavailableUntil = 0;
 const PAID_API_QUOTA = quotaPolicy(
@@ -269,9 +302,9 @@ async function callGemini(
   location: string | undefined,
   occasion: string | undefined,
   metrics: CapacityMetrics,
+  abortSignal: AbortSignal,
 ): Promise<GeminiCallResult & { relaxed: boolean }> {
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-  const abortSignal = AbortSignal.timeout(RECOMMENDATIONS_DEADLINE_MS);
   const hasRadius = lat !== undefined && lng !== undefined &&
     radiusMiles !== undefined;
 
@@ -401,11 +434,52 @@ async function callGemini(
   return { ...result, relaxed: true };
 }
 
+/**
+ * Runs generation with an abort signal that fires after `budgetMs`, and stops
+ * waiting at that moment even if the provider ignores the signal. A late
+ * provider result is discarded; the caller refunds the discovery.
+ */
+async function withGenerationDeadline<T>(
+  budgetMs: number,
+  run: (abortSignal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new UpstreamTimeoutError());
+      controller.abort(new DOMException("Generation deadline", "TimeoutError"));
+    }, Math.max(0, budgetMs));
+  });
+  const generation = run(controller.signal);
+  // The losing promise must not surface as an unhandled rejection.
+  generation.catch(() => {});
+  try {
+    return await Promise.race([generation, expired]);
+  } catch (error) {
+    if (controller.signal.aborted) throw new UpstreamTimeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Handler ──────────────────────────────────────────────────────────────────
+
+/** Injectable for tests; production uses the real auth, RPCs and Gemini. */
+export const recommendationsDependencies = {
+  authenticate: requireAuthenticatedUser,
+  consumeAccess: consumeDiscoveryAccess,
+  refundAccess: refundDiscoveryAccess,
+  consumeQuota: consumePaidAPIQuota,
+  generate: callGemini,
+  budget: RECOMMENDATIONS_BUDGET,
+};
 
 export async function handleRecommendations(
   req: Request,
   execution?: DiscoveryExecution,
+  dependencies = recommendationsDependencies,
 ): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -420,6 +494,8 @@ export async function handleRecommendations(
 
   const requestId = crypto.randomUUID();
   const startedAt = performance.now();
+  const { budget } = dependencies;
+  const generationDeadline = startedAt + budget.generationDeadlineMs;
   const metrics: CapacityMetrics = {
     geminiCalls: 0,
     groundingQueries: 0,
@@ -461,7 +537,17 @@ export async function handleRecommendations(
     }
 
     requireMeteredDiscovery(execution);
-    const user = execution?.user ?? await requireAuthenticatedUser(req);
+    const user = execution?.user ?? await dependencies.authenticate(req);
+    // Each later step needs a real Gemini window. Stopping before access is
+    // reserved means a slow auth check never charges (or relies on a refund).
+    const requireGenerationWindow = () => {
+      if (
+        generationDeadline - performance.now() < budget.minimumGenerationMs
+      ) {
+        throw new UpstreamTimeoutError();
+      }
+    };
+    requireGenerationWindow();
 
     // A warm Edge Function instance remembers a recent provider quota failure.
     // This is intentionally a best-effort circuit breaker; it prevents a burst
@@ -497,12 +583,16 @@ export async function handleRecommendations(
       ? suppliedRewardToken
       : null;
     if (!execution) {
-      const accessSource = await consumeDiscoveryAccess(user.id, rewardToken);
+      const accessSource = await dependencies.consumeAccess(
+        user.id,
+        rewardToken,
+      );
       reservedAccess = { userId: user.id, source: accessSource, rewardToken };
     }
+    requireGenerationWindow();
     // Only bill the paid-API quota after access is reserved. A request rejected
     // for needing an ad must never consume the user's API allowance.
-    const quota = await consumePaidAPIQuota(user.id, PAID_API_QUOTA);
+    const quota = await dependencies.consumeQuota(user.id, PAID_API_QUOTA);
 
     // Only use radius mode when ALL THREE fields are explicitly provided by the client.
     // If any are missing the request is treated as city-wide — no coordinate constraint.
@@ -516,24 +606,41 @@ export async function handleRecommendations(
 
     // Log only non-identifying request metadata. Never retain user-entered
     // prompts, place names, occasions, or precise coordinates.
+    const precheckMs = Math.round(performance.now() - startedAt);
+    const generationBudgetMs = Math.floor(
+      generationDeadline - performance.now(),
+    );
     console.log(JSON.stringify({
       event: "recommendations_request",
       requestId,
       mode: hasRadius ? "radius" : "city-wide",
       hasLocation: Boolean(body.location?.trim()),
       hasOccasion: Boolean(body.occasion?.trim()),
+      precheckMs,
+      generationBudgetMs,
     }));
+    // Slow checks used up the window: refund now rather than start a paid
+    // Gemini call whose result could arrive after the client stopped waiting.
+    if (generationBudgetMs < budget.minimumGenerationMs) {
+      throw new UpstreamTimeoutError();
+    }
 
-    const { recommendations, groundingPlaces, relaxed } = await callGemini(
-      body.prompt,
-      geminiApiKey,
-      lat,
-      lng,
-      radiusMiles,
-      body.location,
-      body.occasion,
-      metrics,
-    );
+    const { recommendations, groundingPlaces, relaxed } =
+      await withGenerationDeadline(
+        generationBudgetMs,
+        (abortSignal) =>
+          dependencies.generate(
+            body.prompt,
+            geminiApiKey,
+            lat,
+            lng,
+            radiusMiles,
+            body.location,
+            body.occasion,
+            metrics,
+            abortSignal,
+          ),
+      );
     console.log(JSON.stringify({
       event: "recommendations_result",
       requestId,
@@ -556,10 +663,11 @@ export async function handleRecommendations(
     );
   } catch (err) {
     if (reservedAccess) {
-      await refundDiscoveryAccess(
+      await dependencies.refundAccess(
         reservedAccess.userId,
         reservedAccess.source,
         reservedAccess.rewardToken,
+        budget.refundTimeoutMs,
       );
     }
     const accessResponse = paidAPIAccessErrorResponse(

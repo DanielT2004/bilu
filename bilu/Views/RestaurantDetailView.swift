@@ -135,7 +135,7 @@ struct RestaurantDetailView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Add to Want to Go")
-            .accessibilityValue(wantToGoSaved ? "On your Want to Go list" : "")
+            .accessibilityValue(wantToGoSaved ? (store.savesAreTemporary ? "On your Want to Go list until you close Bilu" : "On your Want to Go list") : "")
             .accessibilityAddTraits(wantToGoSaved ? .isSelected : [])
         }
         .padding(.horizontal, 20)
@@ -261,6 +261,15 @@ struct RestaurantDetailView: View {
             ctaRow
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
+
+            if let reason = store.temporarySaveReason {
+                SavesNotKeptBanner(reason: reason, style: .compact,
+                                   hasTemporarySave: bookmarkSaved || wantToGoSaved)
+                    .animation(AnimationProfile.selection.animation(reduceMotion: reduceMotion),
+                               value: bookmarkSaved || wantToGoSaved)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+            }
 
             // ── Tab bar ───────────────────────────────────────────────
             tabBar
@@ -424,7 +433,7 @@ struct RestaurantDetailView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Save")
-            .accessibilityValue(bookmarkSaved ? "Saved" : "")
+            .accessibilityValue(bookmarkSaved ? (store.savesAreTemporary ? "Saved until you close Bilu" : "Saved") : "")
             .accessibilityAddTraits(bookmarkSaved ? .isSelected : [])
         }
     }
