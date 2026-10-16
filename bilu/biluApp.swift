@@ -29,9 +29,20 @@ struct biluApp: App {
         URLCache.shared = URLCache(memoryCapacity: 20 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024)
         AppDiagnosticsReporter.shared.startIfConsented()
 
-        let container = PersistenceController.makeContainer()
-        self.container = container
-        _savedStore = StateObject(wrappedValue: SavedPlacesStore(context: container.mainContext))
+        #if DEBUG
+        let isFailureSimulated = PersistenceController.isFailureSimulated
+        #else
+        let isFailureSimulated = false
+        #endif
+        let opened = PersistenceController.open(simulateFailure: isFailureSimulated)
+        if case .temporary(let reason) = opened.status, !isFailureSimulated {
+            AppDiagnosticsReporter.shared.recordPersistenceFallback(reasonCode: reason.diagnosticCode)
+        }
+        self.container = opened.container
+        _savedStore = StateObject(wrappedValue: SavedPlacesStore(
+            context: opened.container.mainContext,
+            persistenceStatus: opened.status
+        ))
     }
 
     var body: some Scene {

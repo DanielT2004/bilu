@@ -16,9 +16,22 @@ import SwiftData
 @MainActor
 final class SavedPlacesStore: ObservableObject {
     private let context: ModelContext
+    /// Whether saves survive a relaunch. When the on-disk store couldn't open,
+    /// saving still works for this session, but views must say it won't be kept.
+    let persistenceStatus: PersistenceStatus
 
-    init(context: ModelContext) {
+    init(context: ModelContext, persistenceStatus: PersistenceStatus = .persistent) {
         self.context = context
+        self.persistenceStatus = persistenceStatus
+    }
+
+    /// True when saves only last until the app closes.
+    var savesAreTemporary: Bool { !persistenceStatus.isPersistent }
+
+    /// Why saves are temporary, or `nil` when they're kept.
+    var temporarySaveReason: PersistenceFailureReason? {
+        if case .temporary(let reason) = persistenceStatus { return reason }
+        return nil
     }
 
     // MARK: - Places
@@ -37,6 +50,7 @@ final class SavedPlacesStore: ObservableObject {
     /// it moves here (one record per place, never two). `tags` are merged into the
     /// record when it's added or moved; removing ignores them. Fires haptics so the
     /// audio grammar has a single source — callers keep only their scale animation.
+    /// A temporary (unkept) save gets a light tap, never the success pulse.
     func toggle(_ rec: Recommendation, list: SavedListType, tags: [String]? = nil) {
         if let place = existing(identityKey: rec.identityKey) {
             if place.listType == list {
@@ -45,11 +59,11 @@ final class SavedPlacesStore: ObservableObject {
             } else {
                 place.listType = list
                 place.mergeTags(tags)
-                Haptics.success()
+                saveHaptic()
             }
         } else {
             context.insert(SavedPlace(from: rec, listType: list, tags: tags))
-            Haptics.success()
+            saveHaptic()
         }
         save()
     }
@@ -114,7 +128,7 @@ final class SavedPlacesStore: ObservableObject {
             Haptics.soft()
         } else {
             context.insert(SavedVibe(selection: selection, summary: selection.shortSummary))
-            Haptics.success()
+            saveHaptic()
         }
         save()
     }
@@ -135,6 +149,10 @@ final class SavedPlacesStore: ObservableObject {
     private func savedVibeMatching(_ selection: VibeSelection) -> SavedVibe? {
         let all = (try? context.fetch(FetchDescriptor<SavedVibe>())) ?? []
         return all.first { $0.selection?.matches(selection) == true }
+    }
+
+    private func saveHaptic() {
+        if savesAreTemporary { Haptics.light() } else { Haptics.success() }
     }
 
     private func save() {
