@@ -33,7 +33,7 @@ final class PersistenceFailureUITests: XCTestCase {
         app.launch()
         openProfile(app)
 
-        XCTAssertTrue(app.buttons["tab-profile"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Profile"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["saves-not-kept-banner"].waitForExistence(timeout: 2))
     }
 
@@ -94,7 +94,7 @@ final class PersistenceFailureUITests: XCTestCase {
         if deferLocation.waitForExistence(timeout: 3) {
             deferLocation.tap()
         }
-        let profileTab = app.buttons["tab-profile"]
+        let profileTab = app.tabBars.buttons["Profile"]
         XCTAssertTrue(profileTab.waitForExistence(timeout: 10))
         profileTab.tap()
     }
