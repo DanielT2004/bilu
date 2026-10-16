@@ -2002,7 +2002,8 @@ struct HomeView: View {
                 Task { await viewModel.performRecoveryAction() }
             } label: {
                 HStack(spacing: 8) {
-                    if recovery.action == .retry || recovery.action == .checkDiscovery {
+                    if recovery.action == .retry || recovery.action == .checkDiscovery
+                        || recovery.action == .retryPlaceDetails {
                         Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium))
                             .accessibilityHidden(true)
                     }

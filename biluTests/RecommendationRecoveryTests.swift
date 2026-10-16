@@ -25,7 +25,8 @@ final class RecommendationRecoveryTests: XCTestCase {
 
     func testEveryFailureHasDistinctCopy() {
         let failures: [SearchFailure] = [.noMatches, .rewardRequired, .purchaseRequired, .pendingDiscovery,
-            .capacityUnavailable, .usageLimitExceeded, .timedOut, .offline, .sessionRejected, .transportError]
+            .capacityUnavailable, .usageLimitExceeded, .timedOut, .offline, .sessionRejected, .transportError,
+            .placeDetailsUnavailable]
         let copies = failures.map(SearchRecoveryCopy.init(failure:))
         XCTAssertEqual(Set(copies.map(\.title)).count, failures.count, "Titles must be distinct")
         XCTAssertEqual(Set(copies.map(\.message)).count, failures.count, "Messages must be distinct")
@@ -207,19 +208,34 @@ final class RecommendationRecoveryTests: XCTestCase {
     // MARK: - Slow responses keep the free discovery
 
     func testClientWaitsLongerThanTheServerDeadline() async {
+        // Server, on its own clock: auth + access + quota checks and Gemini share
+        // one 20 s window, so a charged success is sent by 20 s; the slowest
+        // response is a refunded failure at 26 s. The handler cannot see cold
+        // start, gateway or transfer time, so the client adds a margin for it.
+        XCTAssertEqual(GeminiService.serverSuccessDeadline, 20)
+        XCTAssertEqual(GeminiService.serverWorstCaseResponse, 26)
         XCTAssertGreaterThanOrEqual(GeminiService.recommendationTimeout,
-            GeminiService.serverRecommendationsDeadline + GeminiService.serverPreflightBudget)
+            GeminiService.serverSuccessDeadline + 2 * GeminiService.unseenServerOverhead)
+        XCTAssertGreaterThan(GeminiService.recommendationTimeout, GeminiService.serverWorstCaseResponse)
 
         // The fake transport behaves like URLSession: it times out only when the
-        // simulated latency exceeds the request's own timeout. A response that
-        // lands just after the server's 19 s deadline (plus auth/access checks)
+        // simulated latency exceeds the request's own timeout. A charged success
+        // sent at the server's deadline and delayed by the full unseen overhead
         // must still be accepted rather than dropped while the server bills it.
+        let latestChargedSuccess = GeminiService.serverSuccessDeadline + GeminiService.unseenServerOverhead
         let session = FakeSession()
-        let server = FakeRecommendationsServer([(200, Self.oneResultJSON)], simulatedLatency: 24)
+        let server = FakeRecommendationsServer([(200, Self.oneResultJSON)], simulatedLatency: latestChargedSuccess)
         let outcome = await GeminiService.fetchRecommendations(body: Data("{}".utf8), rewardedAccessToken: nil,
             makeRequest: session.request, invalidateToken: session.invalidate, transport: server.send)
         XCTAssertNil(outcome.failure)
         XCTAssertEqual(server.requests.first?.timeoutInterval, 30)
+
+        // The slowest refunded failure also arrives, so the honest 504 copy shows.
+        let slowFailure = FakeRecommendationsServer([(504, #"{"code":"UPSTREAM_TIMEOUT"}"#)],
+            simulatedLatency: GeminiService.serverWorstCaseResponse)
+        let failed = await GeminiService.fetchRecommendations(body: Data("{}".utf8), rewardedAccessToken: nil,
+            makeRequest: session.request, invalidateToken: session.invalidate, transport: slowFailure.send)
+        XCTAssertEqual(failed.failure, .timedOut)
     }
 
     func testSlowSuccessRevealsAndSpendsExactlyOneFreeDiscovery() async throws {
@@ -250,6 +266,150 @@ final class RecommendationRecoveryTests: XCTestCase {
         await model.performRecoveryAction()
         XCTAssertEqual(ai.calls.map(\.token), [nil, nil], "The retry uses the refunded free discovery, not a reward")
         XCTAssertEqual(allowance.remainingFreeDiscoveries, 0)
+    }
+
+    // MARK: - Places enrichment failure keeps the paid result
+
+    func testPlaceDetailsFailureShowsDistinctStateAndSpendsOnce() async {
+        let ai = ScriptedRecommendations([.success("Tartine")])
+        let places = ScriptedEnrichment([.unavailable])
+        let model = home(ai, places)
+        await model.submitSurvey()
+
+        assertRecoveryCard(model, failure: .placeDetailsUnavailable, title: "Couldn't load place details",
+                           action: .retryPlaceDetails)
+        XCTAssertNotEqual(model.searchRecovery.title, SearchRecoveryCopy(failure: .noMatches).title)
+        XCTAssertEqual(model.searchRecovery.actionTitle, "Try again")
+        XCTAssertEqual(ai.calls.count, 1)
+        XCTAssertEqual(places.calls.map { $0.map(\.name) }, [["Tartine"]])
+        XCTAssertEqual(allowance.remainingFreeDiscoveries, 0, "The successful search was billed exactly once")
+    }
+
+    func testUnconfirmedPlacesAreNotShownAsNothingMatched() async {
+        let ai = ScriptedRecommendations([.success("Tartine")])
+        let places = ScriptedEnrichment([.verified([], unverifiedCount: 1)])
+        let model = home(ai, places)
+        await model.submitSurvey()
+
+        assertRecoveryCard(model, failure: .placeDetailsUnavailable, title: "Couldn't load place details",
+                           action: .retryPlaceDetails)
+    }
+
+    func testPlaceDetailsRetryRunsOnlyEnrichmentAndRevealsResults() async {
+        let ai = ScriptedRecommendations([.success("Tartine")])
+        let places = ScriptedEnrichment([.unavailable, .unavailable, .verified([Self.open("Tartine")], unverifiedCount: 0)])
+        let model = home(ai, places)
+        await model.submitSurvey()
+
+        await model.performRecoveryAction()
+        assertRecoveryCard(model, failure: .placeDetailsUnavailable, title: "Couldn't load place details",
+                           action: .retryPlaceDetails)
+
+        await model.performRecoveryAction()
+        XCTAssertEqual(ai.calls.count, 1, "Retrying details never repeats the paid recommendations call")
+        XCTAssertEqual(places.calls.count, 3)
+        XCTAssertEqual(places.calls.last?.map(\.name), ["Tartine"], "The retry reuses the paid results")
+        XCTAssertEqual(model.step, .reveal)
+        XCTAssertFalse(model.isEnriching)
+        XCTAssertNil(model.lastSearchFailure)
+        XCTAssertEqual(model.recommendations.map(\.name), ["Tartine"])
+        XCTAssertEqual(allowance.remainingFreeDiscoveries, 0)
+        XCTAssertFalse(allowance.canRunDiscovery, "No allowance was returned or spent by the retries")
+
+        await model.retryPlaceDetails()
+        XCTAssertEqual(places.calls.count, 3, "Once details load there is nothing left to retry")
+        XCTAssertEqual(model.recommendations.map(\.name), ["Tartine"])
+    }
+
+    func testPartialEnrichmentShowsTheConfirmedPlaces() async {
+        let ai = ScriptedRecommendations([.success("Tartine")])
+        let places = ScriptedEnrichment([.verified([Self.open("Tartine")], unverifiedCount: 2)])
+        let model = home(ai, places)
+        await model.submitSurvey()
+
+        XCTAssertEqual(model.step, .reveal)
+        XCTAssertNil(model.lastSearchFailure)
+        XCTAssertEqual(model.recommendations.map(\.name), ["Tartine"])
+    }
+
+    func testPlacesConfirmedClosedStillShowsNothingMatched() async {
+        let ai = ScriptedRecommendations([.success("Tartine")])
+        let places = ScriptedEnrichment([.verified([], unverifiedCount: 0)])
+        let model = home(ai, places)
+        await model.submitSurvey()
+
+        XCTAssertEqual(model.step, .reveal)
+        XCTAssertTrue(model.recommendations.isEmpty)
+        XCTAssertNil(model.lastSearchFailure)
+        XCTAssertEqual(model.searchRecovery.title, "Nothing matched, yet")
+        XCTAssertEqual(model.searchRecovery.action, .adjustVibe)
+    }
+
+    func testGenuineNoMatchNeverCallsEnrichment() async {
+        let ai = ScriptedRecommendations([.failure(.noMatches)])
+        let places = ScriptedEnrichment([])
+        let model = home(ai, places)
+        await model.submitSurvey()
+
+        assertRecoveryCard(model, failure: .noMatches, title: "Nothing matched, yet", action: .adjustVibe)
+        XCTAssertTrue(places.calls.isEmpty)
+    }
+
+    func testLatePlacesFailureAfterTheReadinessCapShowsDistinctState() async throws {
+        let ai = ScriptedRecommendations([.success("Tartine")])
+        let places = ControlledEnrichment()
+        let model = home(fetch: ai.fetch, enrichPlaces: places.run, readinessTimeout: 0)
+        let task = Task { await model.submitSurvey() }
+        defer { task.cancel(); places.finish(with: .unavailable) }
+        try await eventually { model.step == .reveal && model.isEnriching && places.isPending }
+        XCTAssertNil(model.lastSearchFailure)
+
+        places.finish(with: .unavailable)
+        try await eventually { !model.isEnriching }
+        XCTAssertEqual(model.lastSearchFailure, .placeDetailsUnavailable)
+        XCTAssertEqual(model.searchRecovery.action, .retryPlaceDetails)
+        XCTAssertEqual(ai.calls.count, 1)
+    }
+
+    func testNewSearchDropsTheRetainedResults() async {
+        let ai = ScriptedRecommendations([.success("Tartine"), .failure(.timedOut)])
+        let places = ScriptedEnrichment([.unavailable])
+        let model = home(ai, places)
+        await model.submitSurvey()
+        model.adjustVibe()
+        // The first search spent the free discovery; the new one needs access.
+        allowance.grantReward(token: "second-search")
+        await model.submitSurvey()
+        XCTAssertEqual(model.lastSearchFailure, .timedOut)
+
+        await model.retryPlaceDetails()
+        XCTAssertEqual(places.calls.count, 1, "Details of an abandoned search are never retried")
+    }
+
+    func testEnrichmentResponsesMapToOutcomes() async {
+        let session = FakeSession()
+        let rec = Self.open("Tartine")
+
+        let failed = await GeminiService.enrichRecommendations([rec], groundingPlaces: [], location: "LA",
+            makeRequest: session.request, transport: FakeRecommendationsServer([(500, "{}")]).send)
+        guard case .unavailable = failed else { return XCTFail("HTTP 500 must be unavailable, got \(failed)") }
+
+        let offline = await GeminiService.enrichRecommendations([rec], groundingPlaces: [], location: "LA",
+            makeRequest: session.request, transport: FakeRecommendationsServer([]).send)
+        guard case .unavailable = offline else { return XCTFail("A transport error must be unavailable") }
+
+        let enrichJSON = #"{"recommendations":[{"name":"Tartine","dish":"Croissant","explanation":"Flaky","mapsUrl":"","isOpen":true},{"name":"Closed","dish":"Toast","explanation":"x","mapsUrl":"","isOpen":false}],"unverifiedCount":2}"#
+        let partial = await GeminiService.enrichRecommendations([rec], groundingPlaces: [], location: "LA",
+            makeRequest: session.request, transport: FakeRecommendationsServer([(200, enrichJSON)]).send)
+        guard case .verified(let recs, let unverified) = partial else { return XCTFail("Expected verified") }
+        XCTAssertEqual(recs.map(\.name), ["Tartine"], "Only explicitly open places are published")
+        XCTAssertEqual(unverified, 2)
+
+        let legacy = await GeminiService.enrichRecommendations([rec], groundingPlaces: [], location: "LA",
+            makeRequest: session.request, transport: FakeRecommendationsServer([(200, #"{"recommendations":[]}"#)]).send)
+        guard case .verified(let none, let count) = legacy else { return XCTFail("Expected verified") }
+        XCTAssertTrue(none.isEmpty)
+        XCTAssertEqual(count, 0, "A server without unverifiedCount keeps the old Nothing-matched meaning")
     }
 
     // MARK: - Helpers
@@ -285,13 +445,29 @@ final class RecommendationRecoveryTests: XCTestCase {
 
     private func home(_ ai: ScriptedRecommendations) -> HomeViewModel { home(fetch: ai.fetch) }
 
+    private func home(_ ai: ScriptedRecommendations, _ places: ScriptedEnrichment) -> HomeViewModel {
+        home(fetch: ai.fetch, enrichPlaces: places.run)
+    }
+
     private func home(fetch: @escaping (VibeSelection, String?) async -> VibeFetchOutcome) -> HomeViewModel {
+        home(fetch: fetch, enrichPlaces: { recommendations, _, _ in .verified(recommendations, unverifiedCount: 0) })
+    }
+
+    private func home(fetch: @escaping (VibeSelection, String?) async -> VibeFetchOutcome,
+                      enrichPlaces: @escaping ([Recommendation], [GroundingPlace], String) async -> EnrichmentOutcome,
+                      readinessTimeout: TimeInterval = 60) -> HomeViewModel {
         let ads = LoadingAdController(frequency: LoadingAdFrequencyStore(defaults: defaults), eligible: { false },
             record: { _, _, _, _, _, _, _, _ in }, observeEnvironment: false)
         let model = HomeViewModel(loadingAds: ads, allowance: allowance, commerceEnabled: { false },
-            fetchRecommendations: fetch, enrich: { recommendations, _, _ in recommendations }, readinessTimeout: 60)
+            fetchRecommendations: fetch, enrichPlaces: enrichPlaces, readinessTimeout: readinessTimeout)
         model.reduceMotionPreference = true
         return model
+    }
+
+    fileprivate static func open(_ name: String) -> Recommendation {
+        Recommendation(name: name, dish: "Lunch", image: nil, explanation: "Test result",
+            mapsUrl: "", latitude: nil, longitude: nil, rating: nil, reviewCount: nil, isOpen: true, photos: nil,
+            address: nil, phone: nil, website: nil, parking: nil, placeId: name, photoRefs: nil, reviews: nil)
     }
 
     private func eventually(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
@@ -331,6 +507,36 @@ private final class ScriptedRecommendations {
     func fetch(_ selection: VibeSelection, _ token: String?) async -> VibeFetchOutcome {
         calls.append(Call(token: token))
         return outcomes.isEmpty ? .failure(.transportError) : outcomes.removeFirst()
+    }
+}
+
+@MainActor
+private final class ScriptedEnrichment {
+    private var outcomes: [EnrichmentOutcome]
+    private(set) var calls: [[Recommendation]] = []
+
+    init(_ outcomes: [EnrichmentOutcome]) { self.outcomes = outcomes }
+
+    func run(_ recommendations: [Recommendation], _ groundingPlaces: [GroundingPlace],
+             _ location: String) async -> EnrichmentOutcome {
+        calls.append(recommendations)
+        return outcomes.isEmpty ? .unavailable : outcomes.removeFirst()
+    }
+}
+
+@MainActor
+private final class ControlledEnrichment {
+    private var continuation: CheckedContinuation<EnrichmentOutcome, Never>?
+    var isPending: Bool { continuation != nil }
+
+    func run(_ recommendations: [Recommendation], _ groundingPlaces: [GroundingPlace],
+             _ location: String) async -> EnrichmentOutcome {
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func finish(with outcome: EnrichmentOutcome) {
+        continuation?.resume(returning: outcome)
+        continuation = nil
     }
 }
 

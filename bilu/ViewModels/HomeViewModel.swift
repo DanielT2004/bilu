@@ -193,7 +193,10 @@ final class HomeViewModel: ObservableObject {
 
     /// Tracks the active search so it can be cancelled when the user exits mid-search.
     private var searchTask: Task<Void, Never>?
-    private var enrichmentTask: Task<[Recommendation], Never>?
+    private var enrichmentTask: Task<EnrichmentOutcome, Never>?
+    /// The paid recommendations behind a "Couldn't load place details" card,
+    /// kept so its retry re-runs only Places enrichment.
+    private var retainedForPlaceDetails: RetainedRecommendations?
     private var activeDiscoveryID: UUID?
     private var latestDiscoveryID: UUID?
     private var isRewardUnlockPending = false
@@ -202,7 +205,7 @@ final class HomeViewModel: ObservableObject {
     private let allowance: DiscoveryAllowance
     private let commerceEnabled: () -> Bool
     private let fetchRecommendations: (VibeSelection, String?) async -> VibeFetchOutcome
-    private let enrich: ([Recommendation], [GroundingPlace], String) async -> [Recommendation]
+    private let enrich: ([Recommendation], [GroundingPlace], String) async -> EnrichmentOutcome
     private let readinessTimeout: TimeInterval
 
     static let newTimeOccasions: Set<String> = ["Casual", "Sit Down", "Brunch", "Late Night"]
@@ -222,6 +225,7 @@ final class HomeViewModel: ObservableObject {
          commerceEnabled: (() -> Bool)? = nil,
          fetchRecommendations: ((VibeSelection, String?) async -> VibeFetchOutcome)? = nil,
          enrich: (([Recommendation], [GroundingPlace], String) async -> [Recommendation])? = nil,
+         enrichPlaces: (([Recommendation], [GroundingPlace], String) async -> EnrichmentOutcome)? = nil,
          readinessTimeout: TimeInterval = 8) {
         self.selection = VibeSelection()
         #if DEBUG
@@ -233,7 +237,7 @@ final class HomeViewModel: ObservableObject {
             self.allowance = fixture.allowance
             self.commerceEnabled = { false }
             self.fetchRecommendations = fixture.fetch
-            self.enrich = { recommendations, _, _ in recommendations }
+            self.enrich = fixture.enrich
             self.readinessTimeout = 0
             didRequestLocation = true
             reduceMotionPreference = true
@@ -250,8 +254,13 @@ final class HomeViewModel: ObservableObject {
         self.fetchRecommendations = fetchRecommendations ?? {
             await GeminiService.getVibeRecommendations(selection: $0, rewardedAccessToken: $1)
         }
-        self.enrich = enrich ?? {
-            await GeminiService.enrichRecommendations($0, groundingPlaces: $1, location: $2)
+        if let enrichPlaces {
+            self.enrich = enrichPlaces
+        } else if let enrich {
+            // Simple seam: a list is a Places answer with nothing unverified.
+            self.enrich = { .verified(await enrich($0, $1, $2), unverifiedCount: 0) }
+        } else {
+            self.enrich = { await GeminiService.enrichRecommendations($0, groundingPlaces: $1, location: $2) }
         }
         self.readinessTimeout = max(0, readinessTimeout)
     }
@@ -528,6 +537,7 @@ final class HomeViewModel: ObservableObject {
         searchTask = nil
         enrichmentTask?.cancel()
         enrichmentTask = nil
+        retainedForPlaceDetails = nil
         isEnriching = false
         if step == .loading { step = .foodFeeling }
     }
@@ -610,6 +620,8 @@ final class HomeViewModel: ObservableObject {
         switch searchRecovery.action {
         case .retry, .checkDiscovery:
             await submitSurvey()
+        case .retryPlaceDetails:
+            await retryPlaceDetails()
         case .viewDiscoveries:
             showingPurchaseGate = true
         case .unlockWithAd:
@@ -656,6 +668,7 @@ final class HomeViewModel: ObservableObject {
         let id = UUID()
         enrichmentTask?.cancel()
         enrichmentTask = nil
+        retainedForPlaceDetails = nil
         isEnriching = false
         activeDiscoveryID = id
         latestDiscoveryID = id
@@ -771,7 +784,11 @@ final class HomeViewModel: ObservableObject {
         // beats the cap) or hand it off as a background fallback (if it doesn't).
         let enrich = self.enrich
         let enrichmentLocation = effectiveLocation
-        let enrichTask = Task<[Recommendation], Never> {
+        // The allowance is already spent for these results. Keep them so a
+        // Places failure can be retried without another paid search.
+        retainedForPlaceDetails = RetainedRecommendations(discoveryID: id, recommendations: initial,
+            groundingPlaces: groundingPlaces, location: enrichmentLocation)
+        let enrichTask = Task<EnrichmentOutcome, Never> {
             await enrich(initial, groundingPlaces, enrichmentLocation)
         }
         enrichmentTask = enrichTask
@@ -786,12 +803,16 @@ final class HomeViewModel: ObservableObject {
             return
         }
 
-        recommendations = outcome2.recs
+        if let enrichment = outcome2.enrichment {
+            recommendations = publish(enrichment)
+        } else {
+            recommendations = []
+        }
         loadingAds.finish(.completed)
         step = .reveal
         revealPhase = .sealed
 
-        if outcome2.isEnriched {
+        if outcome2.enrichment != nil {
             // Synchronized happy path — everything in hand before reveal animates.
             enrichmentTask = nil
             isEnriching = false
@@ -807,7 +828,7 @@ final class HomeViewModel: ObservableObject {
                     guard self.latestDiscoveryID == id else { return }
                     self.enrichmentTask = nil
                     if self.step == .reveal {
-                        self.recommendations = enriched.verifiedOpenRecommendations
+                        self.recommendations = self.publish(enriched)
                     }
                     self.isEnriching = false
                 }
@@ -821,13 +842,20 @@ final class HomeViewModel: ObservableObject {
     /// Returns the recs to reveal with and whether enrichment beat the cap.
     private static let prefetchTimeout: TimeInterval = 1.2
 
+    /// `nil` when the readiness cap fired before Places answered.
     private struct ReadinessOutcome {
-        let recs: [Recommendation]
-        let isEnriched: Bool
+        let enrichment: EnrichmentOutcome?
+    }
+
+    private struct RetainedRecommendations {
+        let discoveryID: UUID
+        let recommendations: [Recommendation]
+        let groundingPlaces: [GroundingPlace]
+        let location: String
     }
 
     private enum EnrichmentRaceResult {
-        case finished([Recommendation])
+        case finished(EnrichmentOutcome)
         case timedOut
         case cancelled
     }
@@ -854,7 +882,7 @@ final class HomeViewModel: ObservableObject {
 
     @MainActor
     private func raceEnrichmentAgainstCap(
-        enrichTask: Task<[Recommendation], Never>,
+        enrichTask: Task<EnrichmentOutcome, Never>,
         initial: [Recommendation]
     ) async -> ReadinessOutcome {
         let phase1URLs = initial.compactMap { $0.image.flatMap(URL.init(string:)) }
@@ -889,16 +917,65 @@ final class HomeViewModel: ObservableObject {
         guard case .finished(let enriched) = raceResult else {
             // Cap fired first. Don't cancel enrichTask — the caller hands it off
             // as a background write. Fail closed while status is unknown.
-            return ReadinessOutcome(recs: [], isEnriched: false)
+            return ReadinessOutcome(enrichment: nil)
         }
 
         // Enrichment beat the cap. Warm any new URLs briefly so the cards land hot.
-        let enrichedURLs = enriched.compactMap { $0.image.flatMap(URL.init(string:)) }
+        let enrichedRecs: [Recommendation]
+        if case .verified(let recs, _) = enriched { enrichedRecs = recs } else { enrichedRecs = [] }
+        let enrichedURLs = enrichedRecs.compactMap { $0.image.flatMap(URL.init(string:)) }
         let newURLs = Set(enrichedURLs).subtracting(phase1URLs)
         if !newURLs.isEmpty {
             await ImagePrefetcher.warm(urls: Array(newURLs), timeout: 0.6)
         }
-        return ReadinessOutcome(recs: enriched, isEnriched: true)
+        return ReadinessOutcome(enrichment: enriched)
+    }
+
+    /// Turns a Places answer into what the results screen shows. Confirmed
+    /// places are always shown, even when others could not be confirmed. With
+    /// none confirmed, an unconfirmed lookup is "Couldn't load place details"
+    /// (retryable without a new search); only places Places confirmed closed
+    /// read as "Nothing matched".
+    private func publish(_ enrichment: EnrichmentOutcome) -> [Recommendation] {
+        let verified: [Recommendation]
+        let lookupFailed: Bool
+        switch enrichment {
+        case .verified(let recs, let unverifiedCount):
+            verified = recs.verifiedOpenRecommendations
+            lookupFailed = verified.isEmpty && unverifiedCount > 0
+        case .unavailable:
+            verified = []
+            lookupFailed = true
+        }
+        lastSearchFailure = lookupFailed ? .placeDetailsUnavailable : nil
+        if !lookupFailed { retainedForPlaceDetails = nil }
+        return verified
+    }
+
+    /// Re-runs only Places enrichment for the results that are already paid
+    /// for. Never calls the recommendations endpoint or touches the allowance.
+    func retryPlaceDetails() async {
+        guard let retained = retainedForPlaceDetails, !isEnriching, step == .reveal,
+              latestDiscoveryID == retained.discoveryID else { return }
+        lastSearchFailure = nil
+        recommendations = []
+        revealPhase = .sealed
+        isEnriching = true
+        let enrich = self.enrich
+        let task = Task<EnrichmentOutcome, Never> {
+            await enrich(retained.recommendations, retained.groundingPlaces, retained.location)
+        }
+        enrichmentTask = task
+        let outcome = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        guard !task.isCancelled, latestDiscoveryID == retained.discoveryID, step == .reveal else { return }
+        enrichmentTask = nil
+        isEnriching = false
+        recommendations = publish(outcome)
+        await stageReveal(id: retained.discoveryID, reduceMotion: reduceMotionPreference)
     }
 
     /// Drives the staged reveal of the recommendations screen.
@@ -1446,6 +1523,7 @@ final class RecoveryFixture {
         case "sessionRejected": return .sessionRejected
         case "transport": return .transportError
         case "rewardRejected": return .rewardRequired
+        case "placeDetails": return .placeDetailsUnavailable
         default: return nil
         }
     }
@@ -1454,6 +1532,7 @@ final class RecoveryFixture {
     let allowance: DiscoveryAllowance
     private let failure: SearchFailure
     private var calls = 0
+    private var enrichCalls = 0
 
     private init(failure: SearchFailure) {
         self.failure = failure
@@ -1469,12 +1548,23 @@ final class RecoveryFixture {
         calls += 1
         try? await Task.sleep(for: .milliseconds(300))
         let empty = VibeResult(recommendations: [], groundingPlaces: [], relaxed: nil)
-        if calls == 1 { return VibeFetchOutcome(result: empty, failure: failure) }
+        // placeDetails fails in enrichment instead, so the search itself succeeds.
+        if calls == 1 && failure != .placeDetailsUnavailable {
+            return VibeFetchOutcome(result: empty, failure: failure)
+        }
         let place = Recommendation(name: "Recovered Bakery", dish: "Croissant", image: nil,
             explanation: "Fixture result after retry", mapsUrl: "", latitude: nil, longitude: nil,
             rating: nil, reviewCount: nil, isOpen: true, photos: nil, address: nil, phone: nil,
             website: nil, parking: "Not confirmed", placeId: "fixture-recovered", photoRefs: nil, reviews: nil)
         return VibeFetchOutcome(result: VibeResult(recommendations: [place], groundingPlaces: [], relaxed: false), failure: nil)
+    }
+
+    /// Places is unavailable once for the placeDetails scenario, then confirms.
+    func enrich(_ recommendations: [Recommendation], _ groundingPlaces: [GroundingPlace],
+                _ location: String) async -> EnrichmentOutcome {
+        enrichCalls += 1
+        if failure == .placeDetailsUnavailable && enrichCalls == 1 { return .unavailable }
+        return .verified(recommendations, unverifiedCount: 0)
     }
 }
 #endif

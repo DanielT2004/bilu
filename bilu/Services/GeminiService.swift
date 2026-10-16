@@ -15,6 +15,7 @@ enum SearchFailure: Equatable {
     case offline         // the device has no usable network connection
     case sessionRejected // the session was still rejected after one refresh
     case transportError  // network / HTTP / decode failure
+    case placeDetailsUnavailable // results were found (and paid for) but Places could not confirm them
 }
 
 /// What the empty-results card offers for each failure. Kept beside the
@@ -24,6 +25,7 @@ enum SearchRecoveryAction: Equatable {
     case checkDiscovery  // recover a pending job without paying twice
     case viewDiscoveries // open the purchase gate
     case unlockWithAd    // open the rewarded-ad gate
+    case retryPlaceDetails // re-run only Places enrichment; never a new paid search
     case adjustVibe      // go back and change the request
     case startOver       // nothing to retry right now; return to Explore
 }
@@ -78,6 +80,10 @@ struct SearchRecoveryCopy: Equatable {
             self.init("exclamationmark.triangle", "Couldn't reach us",
                       "Something went wrong on our end. Tap retry — usually works the second time.",
                       .retry, "Try again")
+        case .placeDetailsUnavailable:
+            self.init("mappin.slash", "Couldn't load place details",
+                      "We found spots for you but couldn't confirm they're open right now. Try again — it won't use another discovery.",
+                      .retryPlaceDetails, "Try again")
         }
     }
 
@@ -96,18 +102,36 @@ struct VibeFetchOutcome {
     let failure: SearchFailure?
 }
 
+/// What the Places step returned. Kept apart from an empty list so a failed
+/// lookup is never shown as "Nothing matched".
+enum EnrichmentOutcome {
+    /// Places answered. `recommendations` are confirmed open; `unverifiedCount`
+    /// could not be confirmed (lookup failed or no live status). An older
+    /// server omits the count, which reads as 0.
+    case verified([Recommendation], unverifiedCount: Int)
+    /// The request failed, timed out or returned something unreadable.
+    case unavailable
+}
+
 enum GeminiService {
     typealias Transport = (URLRequest) async throws -> (Data, URLResponse)
     typealias RequestFactory = (_ path: String, _ timeout: TimeInterval) async throws -> URLRequest
 
     private static let emptyResult = VibeResult(recommendations: [], groundingPlaces: [], relaxed: nil)
-    /// The server's Gemini deadline (RECOMMENDATIONS_DEADLINE_MS) and the
-    /// budget for its auth and access checks that run before that deadline starts.
-    static let serverRecommendationsDeadline: TimeInterval = 19
-    static let serverPreflightBudget: TimeInterval = 5
-    // Must outlast the server's access checks plus its 19 s Gemini deadline.
-    // If the client gives up first, the server can still succeed and spend the
-    // discovery while the results are lost; the server's own timeout refunds it.
+    /// Server budget on the recommendations handler's clock
+    /// (RECOMMENDATIONS_BUDGET in supabase/functions/recommendations/handler.ts).
+    /// Auth, access and quota checks plus Gemini share one 20 s window, so a
+    /// charged success is never sent later than this.
+    static let serverSuccessDeadline: TimeInterval = 20
+    /// The slowest response the server can send: a refunded failure
+    /// (RECOMMENDATIONS_WORST_CASE_MS).
+    static let serverWorstCaseResponse: TimeInterval = 26
+    /// Cold start, gateway, TLS and transfer time the handler cannot see.
+    static let unseenServerOverhead: TimeInterval = 5
+    // Must outlast a charged success plus unseen overhead. If the client gave
+    // up first, the server could spend the discovery while the results are
+    // lost; a server-side timeout refunds it instead. A Deno test reads this
+    // value, so keep the declaration on one line.
     static let recommendationTimeout: TimeInterval = 30
     private static let enrichmentTimeout: TimeInterval = 8
 
@@ -232,12 +256,14 @@ enum GeminiService {
         }
     }
 
-    // Phase 2 — background: Places enrichment (photos + coordinates)
+    // Phase 2 — background: Places enrichment (photos + coordinates + live status)
     static func enrichRecommendations(
         _ recommendations: [Recommendation],
         groundingPlaces: [GroundingPlace],
-        location: String
-    ) async -> [Recommendation] {
+        location: String,
+        makeRequest: RequestFactory = { try await AuthenticatedAPIRequest.post(path: $0, timeout: $1) },
+        transport: Transport = { try await URLSession.shared.data(for: $0) }
+    ) async -> EnrichmentOutcome {
         var body: [String: Any] = [
             "recommendations": recommendations.map {
                 ["name": $0.name, "dish": $0.dish, "image": $0.image ?? "",
@@ -252,29 +278,30 @@ enum GeminiService {
 
         do {
             guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else {
-                return []
+                return .unavailable
             }
-            var request = try await AuthenticatedAPIRequest.post(
-                path: "enrich",
-                timeout: enrichmentTimeout
-            )
+            var request = try await makeRequest("enrich", enrichmentTimeout)
             request.httpBody = httpBody
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await transport(request)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 #if DEBUG
-                let body = String(data: data, encoding: .utf8) ?? ""
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                print("[GeminiService] enrich HTTP \(code): \(body)")
+                print("[GeminiService] enrich HTTP \(code)")
                 #endif
-                return []
+                return .unavailable
             }
-            let decoded = try JSONDecoder().decode(VibeResult.self, from: data)
+            struct EnrichResponse: Decodable {
+                let recommendations: [Recommendation]
+                let unverifiedCount: Int?
+            }
+            let decoded = try JSONDecoder().decode(EnrichResponse.self, from: data)
             // Defense in depth: the backend filters too, but the app never
             // publishes a restaurant without an explicit open confirmation.
-            return decoded.recommendations.verifiedOpenRecommendations
+            return .verified(decoded.recommendations.verifiedOpenRecommendations,
+                             unverifiedCount: max(0, decoded.unverifiedCount ?? 0))
         } catch {
-            return []
+            return .unavailable
         }
     }
 
