@@ -48,6 +48,8 @@ struct FeedView: View {
                     ForEach(wantToGo) { place in
                         placeCard(name: place.name,
                                   detail: place.address ?? place.dish,
+                                  cuisine: CuisineLabel.infer(name: place.name, dish: place.dish,
+                                                              explanation: place.explanation, tags: place.tags),
                                   photoURL: Self.storedPhotoURL(image: place.image, photos: place.photos),
                                   miles: HomeViewModel.milesLabel(from: origin, latitude: place.latitude,
                                                                   longitude: place.longitude),
@@ -64,6 +66,7 @@ struct FeedView: View {
                         // Resolved shares carry no photo yet, so these stay text cards.
                         placeCard(name: item.place.name,
                                   detail: item.place.neighborhood ?? item.place.address,
+                                  cuisine: CuisineLabel.infer(name: item.place.name, tags: item.place.tags),
                                   photoURL: nil,
                                   miles: HomeViewModel.milesLabel(from: origin, latitude: item.place.latitude,
                                                                   longitude: item.place.longitude),
@@ -129,7 +132,7 @@ struct FeedView: View {
             .first { ["https", "http"].contains($0.scheme?.lowercased() ?? "") }
     }
 
-    private func placeCard(name: String, detail: String, photoURL: URL?, miles: String?,
+    private func placeCard(name: String, detail: String, cuisine: String?, photoURL: URL?, miles: String?,
                            identifier: String, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.light()
@@ -138,7 +141,7 @@ struct FeedView: View {
             BiluCard(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     if let photoURL { FeedCardPhoto(url: photoURL) }
-                    placeCardText(name: name, detail: detail, miles: miles)
+                    placeCardText(name: name, detail: detail, cuisine: cuisine, miles: miles)
                         .padding(14)
                 }
             }
@@ -150,8 +153,19 @@ struct FeedView: View {
         .accessibilityIdentifier(identifier)
     }
 
-    private func placeCardText(name: String, detail: String, miles: String?) -> some View {
+    private func placeCardText(name: String, detail: String, cuisine: String?, miles: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
+            if let cuisine {
+                Text(cuisine)
+                    .font(AppTheme.caption)
+                    .foregroundStyle(AppTheme.primaryInk)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(AppTheme.sageLt)
+                    .clipShape(Capsule())
+                    .padding(.bottom, 2)
+                    .accessibilityLabel("\(cuisine) cuisine")
+            }
             Text(name)
                 .font(AppTheme.headline)
                 .foregroundStyle(AppTheme.onSurface)

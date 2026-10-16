@@ -266,20 +266,7 @@ struct RecommendationCard: View {
     }
 
     private var cuisineTag: String? {
-        // Derive a cuisine label from the dish or explanation
-        let text = (rec.dish + " " + rec.explanation).lowercased()
-        if text.contains("italian") || text.contains("pasta") || text.contains("pizza") { return "Italian" }
-        if text.contains("mexican") || text.contains("taco") || text.contains("burrito") { return "Mexican" }
-        if text.contains("japanese") || text.contains("sushi") || text.contains("ramen") { return "Japanese" }
-        if text.contains("thai") { return "Thai" }
-        if text.contains("indian") { return "Indian" }
-        if text.contains("chinese") { return "Chinese" }
-        if text.contains("american") || text.contains("burger") || text.contains("bbq") { return "American" }
-        if text.contains("french") || text.contains("bistro") || text.contains("brasserie") { return "French" }
-        if text.contains("mediterranean") || text.contains("greek") { return "Mediterranean" }
-        if text.contains("farm") || text.contains("organic") { return "Farm-to-Table" }
-        if text.contains("bakery") || text.contains("pastry") || text.contains("coffee") { return "Café & Bakery" }
-        return nil
+        CuisineLabel.infer(name: rec.name, dish: rec.dish, explanation: rec.explanation)
     }
 
     private var priceTag: String? {
