@@ -1316,7 +1316,7 @@ final class HomeViewModel: ObservableObject {
         // 2. User typed a location — take the last meaningful comma-separated segment
         //    e.g. "Reynier Village, Los Angeles, CA" → "Los Angeles, CA"
         let typed = selection.location.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !typed.isEmpty {
+        if !typed.isEmpty && !Self.placeholderLocations.contains(typed) {
             let parts = typed.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             if parts.count >= 2 {
                 // Drop the first part (neighborhood/street) and rejoin the rest
@@ -1326,7 +1326,9 @@ final class HomeViewModel: ObservableObject {
         }
 
         // 3. detectedLocation (set by the map widget) — same strip logic
-        if !detectedLocation.isEmpty {
+        // Never send the "Set your location" placeholder as a city: a paid
+        // TikTok search for it can only miss.
+        if !detectedLocation.isEmpty && !Self.placeholderLocations.contains(detectedLocation) {
             let parts = detectedLocation.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             if parts.count >= 2 { return parts.dropFirst().joined(separator: ", ") }
             return detectedLocation

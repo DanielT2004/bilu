@@ -377,6 +377,19 @@ final class IntentMappingTests: XCTestCase {
         return match
     }
 
+    func testTikTokCityNeverUsesTheLocationPlaceholder() async {
+        let model = home(withArea: false)
+        model.detectedLocation = HomeViewModel.unsetLocationLabel
+        let fromPlaceholder = await model.cityForTikTok()
+        XCTAssertEqual(fromPlaceholder, "")
+        model.selection.location = "your area"
+        let fromTypedPlaceholder = await model.cityForTikTok()
+        XCTAssertEqual(fromTypedPlaceholder, "")
+        model.selection.location = "Echo Park, Los Angeles, CA"
+        let fromRealPlace = await model.cityForTikTok()
+        XCTAssertEqual(fromRealPlace, "Los Angeles, CA")
+    }
+
     private func home(withArea: Bool = true) -> HomeViewModel {
         let ads = LoadingAdController(frequency: LoadingAdFrequencyStore(defaults: defaults), eligible: { false },
             record: { _, _, _, _, _, _, _, _ in }, observeEnvironment: false)
